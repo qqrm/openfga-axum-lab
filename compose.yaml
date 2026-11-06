@@ -33,16 +33,23 @@ services:
     command: run
     networks: [lab]
   bootstrap:
-    image: python:3.13-slim-bookworm
+    build: .
+    image: openfga-axum-lab:local
     depends_on: [openfga]
+    # Only initialization writes the shared configuration volume.
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/lab-tool"]
+    command: ["bootstrap"]
+    environment:
+      FGA_URL: http://openfga:8080
+      FGA_CONFIG: /data/config.json
     volumes:
       - ./fga:/app/fga:ro
-      - ./scripts:/app/scripts:ro
       - fga-config:/data
-    command: python /app/scripts/bootstrap.py
     networks: [lab]
   app:
     build: .
+    image: openfga-axum-lab:local
     environment:
       DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
       FGA_URL: http://openfga:8080
@@ -57,18 +64,7 @@ services:
     volumes:
       - fga-config:/data:ro
     ports:
-      - "127.0.0.1:3000:3000"
-    networks: [lab]
-  test:
-    image: python:3.13-slim-bookworm
-    profiles: [test]
-    environment:
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
-    depends_on: [app]
-    volumes:
-      - ./scripts:/app/scripts:ro
-      - fga-config:/data:ro
-    command: python /app/scripts/e2e.py
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     networks: [lab]
 networks:
   lab:

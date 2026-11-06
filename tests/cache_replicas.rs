@@ -1,7 +1,7 @@
 #[path = "cache_support/proxy.rs"]
 mod proxy;
-#[path = "cache_support/stack.rs"]
-mod stack;
+#[path = "support/stack.rs"]
+pub mod stack;
 
 use proxy::Proxy;
 use reqwest::{Client, Method, StatusCode};

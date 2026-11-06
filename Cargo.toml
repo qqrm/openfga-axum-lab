@@ -2,6 +2,15 @@
 name = "openfga-axum-lab"
 version = "0.1.0"
 edition = "2024"
+default-run = "openfga-axum-lab"
+
+[[bin]]
+name = "lab-tool"
+path = "tools/main.rs"
+
+[[bench]]
+name = "authz_cache"
+harness = false
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
@@ -17,11 +26,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+criterion = { version = "=0.8.2", default-features = false, features = ["async_tokio", "cargo_bench_support", "html_reports", "plotters"] }
 tempfile = "3"
 tokio = { version = "1", features = ["io-util", "process", "time"] }
