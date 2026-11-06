@@ -1,4 +1,4 @@
-name: Criterion preparation
+name: Criterion authorization cache experiment
 on:
   workflow_dispatch:
   push:
@@ -6,18 +6,27 @@ on:
     paths:
       - .github/workflows/cache-ab.yml
       - Cargo.toml
+      - Cargo.lock
       - benches/**
       - examples/**
+      - compose.cache-ab.yaml
+      - src/cached_authorizer.rs
 permissions:
   contents: read
 jobs:
-  prepare:
+  criterion:
+    name: Criterion runner ${{ matrix.replica }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [1, 2, 3]
     env:
       RUSTUP_TOOLCHAIN: 1.98.0
-    permissions:
-      contents: write
+      COMPOSE_FILE: compose.yaml:compose.cache-ab.yaml
+      COMPOSE_PROJECT_NAME: authz-criterion-${{ github.run_id }}-${{ matrix.replica }}
+      BENCH_REPLICA: ${{ matrix.replica }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -26,33 +35,67 @@ jobs:
         with:
           toolchain: '1.98.0'
           components: rustfmt, clippy
-      - name: Prepare formatted Rust sources
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest
+          fallback: none
+      - name: Validate Rust harness
         run: |
-          sed -i 's/"writer":\["off","on"\]\[writer_index\]/"writer":(["off","on"][writer_index])/' examples/cache_experiment.rs
-          cargo fmt --all
-      - name: Compile and lint real Rust targets
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - name: Test benchmark bookkeeping
-        run: cargo test --locked --example cache_experiment
-      - name: Preserve prepared Git objects without changing any branch
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --example cache_experiment
+      - name: Correctness gate on real dependencies
+        run: >-
+          cargo nextest run --locked --release --test system --test cache_replicas
+          --run-ignored only --success-output immediate
+      - name: Build release harnesses before measuring
+        run: |
+          cargo bench --locked --bench authz_cache --no-run
+          cargo build --locked --release --example cache_experiment
+          mkdir -p artifacts/sources
+          cp Cargo.lock Cargo.toml artifacts/sources/
+          cp -r benches examples artifacts/sources/
+          docker compose build app
+      - name: Start fresh shared measurement stand
+        run: |
+          docker compose up -d --no-build app app-uncached
+          docker compose exec -T postgres psql -U petlab -d postgres -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_stat_statements'
+      - name: Record binaries and environment
+        run: |
+          docker compose config > artifacts/compose-resolved.yaml
+          docker compose images > artifacts/images.txt
+          mapfile -t images < <(docker compose images -q | sort -u)
+          docker image inspect "${images[@]}" > artifacts/image-inspect.json
+          docker compose exec -T app sha256sum /usr/local/bin/app > artifacts/binary-on.sha256
+          docker compose exec -T app-uncached sha256sum /usr/local/bin/app > artifacts/binary-off.sha256
+          cmp artifacts/binary-on.sha256 artifacts/binary-off.sha256
+          rustc -Vv > artifacts/rustc-version.txt
+          cargo -V > artifacts/cargo-version.txt
+          docker version > artifacts/docker-version.txt
+          docker compose version > artifacts/compose-version.txt
+          uname -a > artifacts/uname.txt
+          lscpu > artifacts/lscpu.txt
+          cat /proc/meminfo > artifacts/meminfo.txt
+          git rev-parse HEAD > artifacts/commit.txt
+          sha256sum Cargo.lock Dockerfile fga/model.json fga/legacy.json migrations/*.sql benches/authz_cache.rs benches/support/mod.rs examples/cache_experiment.rs > artifacts/input-hashes.txt
+      - name: Criterion A/A controls and randomized A/B pairs
+        run: |
+          export AB_SEED=$((2606 + BENCH_REPLICA))
+          cargo run --locked --release --example cache_experiment | tee artifacts/criterion-experiment.log
+      - name: Capture diagnostics
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p artifacts
-          for path in Cargo.lock src/main.rs src/cached_authorizer.rs src/infrastructure.rs src/metrics.rs benches/authz_cache.rs benches/support/mod.rs examples/cache_experiment.rs; do
-            sha=$(jq -n --rawfile content "$path" '{content:$content,encoding:"utf-8"}' | gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq '.sha')
-            jq -cn --arg path "$path" --arg sha "$sha" '{path:$path,sha:$sha}' >> artifacts/prepared-blobs.jsonl
-          done
-          cat artifacts/prepared-blobs.jsonl
-          git diff --stat > artifacts/preparation-diff.txt
+          docker stats --no-stream --format '{{json .}}' > artifacts/docker-stats.jsonl || true
+          docker compose logs --no-color > artifacts/compose.log 2>&1 || true
+          docker compose exec -T postgres psql -U petlab -d postgres -XAt -c "SELECT row_to_json(s) FROM pg_stat_statements s" > artifacts/pg-stat-statements.jsonl || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: criterion-prepared-sources
-          path: |
-            Cargo.lock
-            benches/
-            examples/
-            artifacts/
+          name: criterion-authz-${{ matrix.replica }}
+          path: artifacts/
+          retention-days: 30
           if-no-files-found: error
+      - name: Clean up disposable stand
+        if: always()
+        run: docker compose down -v -t 2

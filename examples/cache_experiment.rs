@@ -161,7 +161,7 @@ async fn revocations(fixtures: &[Arc<Fixture>; 2]) -> BenchResult<Value> {
                 }
             }
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(json!({
-                "writer":["off","on"][writer_index],"revoke_latency_ns":latency,"post_ack_denials":denials}))
+                "writer":(["off","on"][writer_index]),"revoke_latency_ns":latency,"post_ack_denials":denials}))
         }.await;
         // Restore the original fixture even when the check fails.
         let cleanup = writer.expect(&carol, Method::DELETE, RELATION, 204).await;
