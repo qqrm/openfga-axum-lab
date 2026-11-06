@@ -1,9 +1,12 @@
 services:
+  postgres:
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
   app:
+    image: authz-cache-ab:local
     environment:
       AUTHZ_CACHE_ENABLED: "true"
   app-uncached:
-    build: .
+    image: authz-cache-ab:local
     environment:
       DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
       FGA_URL: http://openfga:8080
