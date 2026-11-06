@@ -8,14 +8,16 @@ import statistics
 import time
 import urllib.error
 import urllib.request
+from client import login
 
 BASE = os.getenv("APP_URL", "http://127.0.0.1:3000")
 WARMUP = 50
 SAMPLES = 400
 TIMEOUT = 5
+TOKEN = login(BASE, "alice")
 
 def request_once(index):
-    request = urllib.request.Request(BASE + "/pets/fox", headers={"Authorization": "Bearer demo-alice"})
+    request = urllib.request.Request(BASE + "/pets/fox", headers={"Authorization": "Bearer " + TOKEN})
     start = time.perf_counter_ns()
     error = None
     status = None

@@ -5,10 +5,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from client import login
 
 base = os.getenv("APP_URL", "http://127.0.0.1:3000")
+tokens = {}
 def call(method, path, user, body=None):
-    headers = {"Authorization": "Bearer demo-" + user}
+    if user not in tokens:
+        tokens[user] = login(base, user)
+    headers = {"Authorization": "Bearer " + tokens[user]}
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"

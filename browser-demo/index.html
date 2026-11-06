@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Лапки · интерактивная модель</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+<header><span class="logo">✳ Лапки</span><span class="badge">Интерактивная модель</span></header>
+<main>
+<section class="hero">
+  <div><p class="eyebrow">НЕБОЛЬШОЙ МИР ЗАБОТЫ</p><h1>У каждой лапки<br>есть история<span>.</span></h1>
+  <p>Попробуйте роли в приюте и посмотрите, кто какие карточки видит.</p></div>
+  <div class="hero-art" aria-hidden="true"><span>🐈</span><span>🐕</span><span>🦊</span></div>
+</section>
+<aside class="notice"><strong>Демо в браузере.</strong> Жизненный цикл работает на том же Rust-коде, собранном в WASM. Данные и права здесь имитируются; Axum, OpenFGA и PostgreSQL запускаются в отдельном Compose-стенде.</aside>
+<section class="controls"><div><p class="eyebrow">ПРОВЕРКА ДОСТУПА</p><h2>Посмотреть как</h2></div><label>Роль
+<select id="user"><option value="alice">Алиса · администратор</option><option value="bob">Боб · сотрудник</option><option value="carol">Кэрол · владелец лисы</option><option value="dave">Дэйв · читатель кота</option></select></label></section>
+<p id="error" role="alert"></p><section id="cards" class="grid" aria-live="polite"></section>
+<section class="explain"><div><p class="eyebrow">ЧТО ЗДЕСЬ ПРОИСХОДИТ</p><h2>Маленький приют,<br>настоящие правила.</h2></div><p>Администратор и сотрудник видят всех. Владелец видит своего питомца, а читатель — только карточку, к которой ему дали доступ. Модель намеренно работает без персональных данных и сервера.</p></section>
+</main><footer>🐾 Лапки <span>Учебный проект · данные вымышлены</span></footer>
+</body>
+</html>
