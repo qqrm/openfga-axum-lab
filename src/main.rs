@@ -70,11 +70,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
         infrastructure::recover_pending(&db, auth.as_ref()).await?;
     }
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let address = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
+    let listener = tokio::net::TcpListener::bind(address).await?;
     // Unknown usernames still execute password verification, using a value
     // generated for this process and unrelated to configured accounts.
     let dummy_password_hash: Arc<str> =
         infrastructure::hash_password(&uuid::Uuid::new_v4().to_string())?.into();
+    println!("Listening on {}", listener.local_addr()?);
     axum::serve(
         listener,
         http::router(App {
