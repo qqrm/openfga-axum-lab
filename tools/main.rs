@@ -1,6 +1,7 @@
 mod bootstrap;
 mod dependency_policy;
 mod delivery;
+mod delivery_policy;
 #[path = "../src/configuration.rs"]
 mod configuration;
 
@@ -15,6 +16,7 @@ async fn main() -> ToolResult {
         [command] if command == "probe" => delivery::probe().await,
         [command] if command == "acceptance" => delivery::acceptance().await,
         [command, directory, image] if command == "init-env" => delivery::initialize(directory, image),
-        _ => Err("usage: lab-tool <bootstrap|dependency-policy|probe|acceptance|init-env DIRECTORY IMAGE-DIGEST>".into()),
+        [command, rest @ ..] if command == "delivery-policy" => delivery_policy::run(rest),
+        _ => Err("usage: lab-tool <bootstrap|dependency-policy|probe|acceptance|init-env DIRECTORY IMAGE-DIGEST|delivery-policy ...>".into()),
     }
 }

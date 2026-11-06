@@ -26,7 +26,8 @@ impl Stand {
         c
     }
     async fn run(&self, args: &[&str]) -> TestResult<String> {
-        let out = timeout(Duration::from_secs(180), self.command().args(args).output()).await??;
+        let out = timeout(Duration::from_secs(180), self.command().args(args).output()).await
+            .map_err(|_| format!("compose {} exceeded 180 seconds", args.join(" ")))??;
         if !out.status.success() { return Err(format!("compose {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr)).into()); }
         Ok(String::from_utf8(out.stdout)?)
     }
@@ -48,7 +49,8 @@ impl Stand {
             .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn()?;
         let mut input = child.stdin.take().ok_or("missing stdin")?;
         input.write_all(dump.as_bytes()).await?; drop(input);
-        let output = timeout(Duration::from_secs(60), child.wait_with_output()).await??;
+        let output = timeout(Duration::from_secs(60), child.wait_with_output()).await
+            .map_err(|_| format!("restore of {database} timed out"))??;
         if !output.status.success() { return Err("restore failed; disposable database only".into()); }
         Ok(())
     }
@@ -72,7 +74,7 @@ async fn wait_ready(client: &Client, base: &str) -> TestResult {
             if client.get(format!("{base}/readyz")).send().await.is_ok_and(|r| r.status() == StatusCode::OK) { break; }
             sleep(Duration::from_millis(250)).await;
         }
-    }).await?; Ok(())
+    }).await.map_err(|_| format!("readiness timed out at {base}; verify current container port"))?; Ok(())
 }
 
 #[tokio::test]
@@ -82,6 +84,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     let stage = Stand::new(&image).await?;
     let stable = Stand::new(&image).await?;
     assert_ne!(stage.password()?, stable.password()?);
+    println!("delivery: starting isolated stage and stable");
     stage.start().await?; stable.start().await?;
     let client = Client::builder().no_proxy().timeout(Duration::from_secs(6)).build()?;
     let stage_url = stage.address("app", "3000").await?;
@@ -95,6 +98,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
         assert_ne!(stage_topology["volumes"][volume]["name"], stable_topology["volumes"][volume]["name"]);
     }
     assert_ne!(stage_topology["networks"]["lab"]["name"], stable_topology["networks"]["lab"]["name"]);
+    println!("delivery: verifying real authorization and session isolation");
     let stage_acceptance = stage.acceptance().await?;
     let stable_acceptance = stable.acceptance().await?;
     assert_eq!(stage_acceptance["version"], stable_acceptance["version"]);
@@ -104,9 +108,13 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     let token = session["token"].as_str().ok_or("token")?;
     assert_eq!(client.get(format!("{stable_url}/pets/fox")).bearer_auth(token).send().await?.status(), StatusCode::UNAUTHORIZED);
     let original: Value = client.get(format!("{stage_url}/pets/fox")).bearer_auth(token).send().await?.error_for_status()?.json().await?;
-    stage.run(&["restart", "app"]).await?; wait_ready(&client, &stage_url).await?;
+    println!("delivery: restarting app and resolving its ephemeral port again");
+    stage.run(&["restart", "app"]).await?;
+    let stage_url = stage.address("app", "3000").await?;
+    wait_ready(&client, &stage_url).await?;
     assert_eq!(stage.fga_config().await?, stage_config);
     status(&client, &stage_url, "/healthz", StatusCode::OK).await?;
+    println!("delivery: quiesced backup and restore of both databases");
     // Quiesce both systems before backing up. Dumps and session hashes stay in memory.
     stage.run(&["stop", "-t", "2", "app", "openfga"]).await?;
     let mut dumps = Vec::new();
@@ -121,12 +129,14 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     assert_eq!(original, restored);
     assert_eq!(stage.fga_config().await?, stage_config);
     stage.acceptance().await?;
+    println!("delivery: dependency outage must not affect the other stand");
     stage.run(&["stop", "-t", "1", "openfga"]).await?;
     status(&client, &stage_url, "/readyz", StatusCode::SERVICE_UNAVAILABLE).await?;
     status(&client, &stage_url, "/healthz", StatusCode::OK).await?;
     status(&client, &stable_url, "/readyz", StatusCode::OK).await?;
     assert_eq!(client.get(format!("{stage_url}/pets/fox")).bearer_auth(token).send().await?.status(), StatusCode::SERVICE_UNAVAILABLE);
     stage.run(&["start", "openfga"]).await?; wait_ready(&client, &stage_url).await?;
+    println!("delivery: missing store must fail readiness while liveness remains healthy");
     let fga = stage.address("openfga", "8080").await?;
     client.delete(format!("{fga}/stores/{}", stage_config["store_id"].as_str().ok_or("store")?)).send().await?.error_for_status()?;
     status(&client, &stage_url, "/readyz", StatusCode::SERVICE_UNAVAILABLE).await?;

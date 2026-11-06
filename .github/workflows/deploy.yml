@@ -1,0 +1,135 @@
+name: Deploy verified environment
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Verified candidate or published release tag
+        required: true
+        type: string
+      environment:
+        description: Destination; stable requires a published release and matching staging receipt
+        required: true
+        type: choice
+        options: [staging, stable]
+      compatibility_confirmed:
+        description: Backup exists and database/model compatibility has been reviewed
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: petlab-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      ENABLED: ${{ vars.PETLAB_REMOTE_DEPLOY_ENABLED }}
+      CONFIRMED: ${{ inputs.compatibility_confirmed }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      TARGET: ${{ inputs.environment }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require explicitly configured infrastructure
+        run: |
+          test "$ENABLED" = true || { echo 'Remote deployment is not configured; no self-hosted job will be queued.'; exit 1; }
+          test "$CONFIRMED" = true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: '1.98.0'
+      - name: Check candidate, exact source and environment policy
+        run: |
+          cargo +1.98.0 build --locked --bin lab-tool
+          target/debug/lab-tool delivery-policy tag "$RELEASE_TAG"
+          mkdir -p candidate
+          gh api "repos/$GITHUB_REPOSITORY/environments/$TARGET" > candidate/environment.json
+          target/debug/lab-tool delivery-policy environment candidate/environment.json "$TARGET"
+          gh release download "$RELEASE_TAG" --pattern manifest.json --dir candidate
+          target/debug/lab-tool delivery-policy manifest candidate/manifest.json "$RELEASE_TAG"
+          revision=$(jq -r .revision candidate/manifest.json)
+          git merge-base --is-ancestor "$revision" origin/main
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$revision&per_page=100" > candidate/checks.json
+          target/debug/lab-tool delivery-policy runs candidate/checks.json "$revision"
+          if test "$TARGET" = stable; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
+            gh release download "$RELEASE_TAG" --pattern staging-receipt.json --dir candidate
+            target/debug/lab-tool delivery-policy receipt candidate/staging-receipt.json candidate/manifest.json
+          fi
+  deploy:
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, petlab-deploy]
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.PETLAB_URL }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      TARGET: ${{ inputs.environment }}
+      LAB_URL: ${{ vars.PETLAB_URL }}
+      GH_TOKEN: ${{ github.token }}
+      DOCKER_CONFIG: ${{ runner.temp }}/petlab-registry-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve verified distribution
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]
+          case "$TARGET" in staging|stable) ;; *) exit 1;; esac
+          [[ "$LAB_URL" == https://* ]] || { echo 'Set the approved HTTPS endpoint in PETLAB_URL'; exit 1; }
+          mkdir -p "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
+          cd "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
+          gh release download "$RELEASE_TAG" --pattern "delivery-$RELEASE_TAG.tar.gz" --pattern manifest.json --pattern SHA256SUMS
+          sha256sum --check SHA256SUMS
+          image=$(jq -r .image manifest.json)
+          [[ "$image" =~ ^ghcr\.io/qqrm/openfga-axum-lab@sha256:[a-f0-9]{64}$ ]]
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$image"
+          docker run --rm --entrypoint /usr/local/bin/lab-tool -v "$PWD:/candidate:ro" "$image" delivery-policy manifest /candidate/manifest.json "$RELEASE_TAG"
+          root="/srv/petlab/$TARGET"
+          test -f "$root/state/environment.env" || { echo 'Provision the private per-environment state directory first'; exit 1; }
+          mkdir -p "$root/releases/$RELEASE_TAG"
+          tar -xzf "delivery-$RELEASE_TAG.tar.gz" --no-same-owner --no-same-permissions -C "$root/releases/$RELEASE_TAG"
+      - name: Deploy exact digest and verify real authorization
+        run: |
+          root="/srv/petlab/$TARGET"
+          cd "$root/releases/$RELEASE_TAG"
+          export LAB_IMAGE
+          export POSTGRES_IMAGE
+          export OPENFGA_IMAGE
+          export LAB_STATE_DIR="$root/state"
+          LAB_IMAGE=$(jq -r .image manifest.json)
+          POSTGRES_IMAGE=$(jq -r .postgres_image manifest.json)
+          OPENFGA_IMAGE=$(jq -r .openfga_image manifest.json)
+          if test "$TARGET" = staging; then export APP_PORT=3001; else export APP_PORT=3000; fi
+          compose=(docker compose -p "petlab-$TARGET" --env-file "$root/state/environment.env" -f compose.release.yaml)
+          "${compose[@]}" pull
+          "${compose[@]}" up -d --wait --wait-timeout 120 app
+          "${compose[@]}" run --rm --no-deps acceptance > "$RUNNER_TEMP/acceptance-$GITHUB_RUN_ID.json"
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 10 "${LAB_URL%/}/readyz" > /dev/null
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 10 "${LAB_URL%/}/version" > "$RUNNER_TEMP/version-$GITHUB_RUN_ID.json"
+          revision=$(jq -r .revision manifest.json)
+          test "$(jq -r .revision "$RUNNER_TEMP/version-$GITHUB_RUN_ID.json")" = "$revision"
+          test "$(jq -r .version.revision "$RUNNER_TEMP/acceptance-$GITHUB_RUN_ID.json")" = "$revision"
+          jq --arg environment "$TARGET" --arg url "$LAB_URL" --arg run "$GITHUB_RUN_ID" '. + {success:true,environment:$environment,url:$url,run_id:$run,observed_revision:.revision}' manifest.json > "$RUNNER_TEMP/$TARGET-receipt.json"
+          if test -f "$root/last-successful.json"; then cp "$root/last-successful.json" "$root/previous-successful.json"; fi
+          cp "$RUNNER_TEMP/$TARGET-receipt.json" "$root/last-successful.tmp"
+          mv "$root/last-successful.tmp" "$root/last-successful.json"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/$TARGET-receipt.json" --clobber
+      - name: Remove ephemeral registry credentials
+        if: always()
+        run: rm -rf "$DOCKER_CONFIG"

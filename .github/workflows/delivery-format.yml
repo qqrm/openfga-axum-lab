@@ -1,0 +1,43 @@
+name: One-time delivery source preparation
+on:
+  push:
+    branches: [feature/goal-10-delivery]
+    paths: [.github/workflows/delivery-format.yml]
+permissions:
+  contents: read
+jobs:
+  format:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/goal-10-delivery'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt
+      - name: Format and save unreferenced Git objects only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cargo +1.98.0 fmt --all
+          mkdir -p artifacts
+          for path in src/configuration.rs src/operations.rs src/main.rs tools/main.rs tools/delivery.rs tools/delivery_policy.rs tests/delivery.rs; do
+            sha=$(jq -n --rawfile content "$path" '{content:$content,encoding:"utf-8"}' | gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+            jq -cn --arg path "$path" --arg sha "$sha" '{path:$path,sha:$sha}' >> artifacts/formatted-blobs.jsonl
+          done
+          cat artifacts/formatted-blobs.jsonl
+          git diff --stat
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: formatted-delivery-sources
+          path: |
+            artifacts/formatted-blobs.jsonl
+            src/
+            tools/
+            tests/
+          retention-days: 7
