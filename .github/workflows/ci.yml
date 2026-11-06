@@ -66,19 +66,21 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_FILE: compose.yaml:compose.cache-test.yaml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Start test stand
-        run: docker compose up -d --build
+        run: docker compose up -d --build app
       - name: Run authorization scenarios
         run: docker compose --profile test run --rm test
       - name: Verify data and authorization survive restart
         run: |
           python3 scripts/persistence.py before
           docker compose stop -t 2 app openfga postgres
-          docker compose up -d
+          docker compose up -d app
           python3 scripts/persistence.py after
       - name: Verify pending creation recovery
         run: |
@@ -96,6 +98,12 @@ jobs:
           docker stats --no-stream --format '{{json .}}' > artifacts/docker-stats.jsonl
           docker version > artifacts/docker-version.txt
           docker compose images > artifacts/images.txt
+      - name: Verify cache invalidation across two replicas
+        run: |
+          docker compose up -d --no-build app2
+          docker compose --profile test run --rm --no-deps test python /app/scripts/cache-replicas.py
+          docker compose restart -t 2 app2
+          docker compose --profile test run --rm --no-deps test python /app/scripts/cache-replicas.py --after-restart
       - name: Verify fail closed
         run: |
           docker compose stop openfga

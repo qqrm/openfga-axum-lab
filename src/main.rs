@@ -1,5 +1,6 @@
 mod application;
 mod authentication;
+mod cached_authorizer;
 mod http;
 mod infrastructure;
 mod metrics;
@@ -52,7 +53,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
+    let metrics = metrics::Metrics::new()?;
+    let mut auth = auth;
     if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
+        // Pet mutations can hold a connection from the main pool while
+        // checking authorization. Keep revision queries on a separate pool.
+        let coordinator = PgPoolOptions::new()
+            .max_connections(4)
+            .acquire_timeout(Duration::from_secs(2))
+            .connect(&database)
+            .await?;
+        auth = Arc::new(cached_authorizer::CachedAuthorizer::new(
+            auth,
+            coordinator,
+            metrics.authz_cache.clone(),
+        ));
         infrastructure::recover_pending(&db, auth.as_ref()).await?;
     }
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -67,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auth,
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,
-            metrics: metrics::Metrics::new()?,
+            metrics,
         }),
     )
     .await?;

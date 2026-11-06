@@ -13,6 +13,7 @@ pub(crate) struct Tuple {
 }
 #[async_trait]
 pub(crate) trait Authorizer: Send + Sync {
+    async fn ensure_available(&self) -> Result<(), AuthError>;
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError>;
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError>;
     async fn delete_object(&self, object: &str) -> Result<(), AuthError>;

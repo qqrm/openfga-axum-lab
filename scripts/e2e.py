@@ -27,7 +27,7 @@ def req(method, path, user=None, body=None, key=None):
 
 def expect(method, path, user, status, body=None, key=None):
     code, payload = req(method, path, user, body, key)
-    assert code == status, (method, path, user, code, status, payload)
+    assert code == status, (method, path, code, status)
     return payload
 
 for _ in range(60):

@@ -1,0 +1,23 @@
+# Test overlay: a second real API process and a controllable OpenFGA proxy.
+services:
+  app:
+    image: petlab-cache-test-app
+  app2:
+    extends:
+      file: compose.yaml
+      service: app
+    build: !reset null
+    image: petlab-cache-test-app
+    pull_policy: never
+    ports: !reset []
+    environment:
+      FGA_URL: http://authz-test-proxy:8080
+    depends_on:
+      authz-test-proxy:
+        condition: service_started
+  authz-test-proxy:
+    image: python:3.13-slim-bookworm
+    volumes:
+      - ./scripts:/app/scripts:ro
+    command: python /app/scripts/authz-test-proxy.py
+    networks: [lab]
