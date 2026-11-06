@@ -39,7 +39,10 @@ impl Metrics {
         )?;
         registry.register(Box::new(authz_revision_reads.clone()))?;
         let authz_openfga = IntCounterVec::new(
-            Opts::new("authz_openfga_requests_total", "OpenFGA HTTP request attempts"),
+            Opts::new(
+                "authz_openfga_requests_total",
+                "OpenFGA HTTP request attempts",
+            ),
             &["operation"],
         )?;
         registry.register(Box::new(authz_openfga.clone()))?;
