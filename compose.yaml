@@ -1,0 +1,39 @@
+services:
+  openfga:
+    image: openfga/openfga:v1.10.3
+    command: run
+    networks: [lab]
+  bootstrap:
+    image: python:3.13-slim-bookworm
+    depends_on: [openfga]
+    volumes:
+      - ./fga:/app/fga:ro
+      - ./scripts:/app/scripts:ro
+      - state:/data
+    command: python /app/scripts/bootstrap.py
+    networks: [lab]
+  app:
+    build: .
+    environment:
+      FGA_URL: http://openfga:8080
+      FGA_CONFIG: /data/config.json
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - state:/data:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [lab]
+  test:
+    image: python:3.13-slim-bookworm
+    profiles: [test]
+    depends_on: [app]
+    volumes:
+      - ./scripts:/app/scripts:ro
+    command: python /app/scripts/e2e.py
+    networks: [lab]
+networks:
+  lab:
+volumes:
+  state:
