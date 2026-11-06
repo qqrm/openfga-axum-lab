@@ -50,3 +50,42 @@ are for an isolated local lab. A public service needs real identity lifecycle,
 per-client and distributed abuse controls, operational session revocation and
 cleanup, secret management, scoped database/service accounts, transport
 security, backup/restore and independent security review.
+
+## Authorization cache
+
+Each replica caches successful allow and deny decisions with Moka (10,000
+entries, two-second TTL). The key includes a generation read from the same
+PostgreSQL primary by every replica. A permission change commits a generation
+increase and a pending marker before sending the OpenFGA write. After OpenFGA
+acknowledges success, a second commit advances the generation and removes that
+operation's marker. While any marker remains, all replicas bypass their caches.
+The generation applies to the whole graph, including inherited permissions.
+
+Both cache hits and live checks re-read the generation before returning. A
+change triggers a fresh check; repeated contention returns 503. If a cache
+insert races with a revoke after the final read, it can only populate a key
+for the old generation. After a successful revoke, a new check on any replica
+cannot reuse a pre-revoke allow. A request authorized before the final commit
+can still finish; revoking access does not cancel work already authorized.
+
+Cached allows require a live OpenFGA readiness response. A health check is
+cheaper in intent than evaluating the authorization graph, but still uses a
+network request, and readiness cannot detect every individual Check failure.
+Errors are not cached. Every decision also costs PostgreSQL reads. Measure
+the tradeoff before claiming a latency gain. Cache metrics distinguish hits,
+misses, retries and pending bypasses without recording subjects or objects.
+
+If the response to a mutation is lost, the pending marker persists across
+process restarts. Subsequent successes only clear their own markers. A
+nonzero `authz_cache_state.pending` after mutation traffic is drained is an
+operator signal: stop all writers and drain or stop OpenFGA before verifying
+the authoritative relationships and reconciling any uncertain writes. Only
+then, while writers are still stopped, clear the marker count and increment
+the generation in one committed SQL update. Until recovery, requests perform
+live checks. They can still see the authoritative result of a late remote
+write; the cache does not provide distributed transactions.
+
+All replicas must use the same durable PostgreSQL primary and the same
+OpenFGA store/model. Upgrade all writers before enabling the cache on that
+store. Direct OpenFGA writes and restores to older snapshots fall outside
+the protocol; quiesce the service and clear process caches for maintenance.

@@ -24,6 +24,30 @@ docker compose --profile test run --rm test
 `docker compose down` сохраняет тома, а `docker compose down -v` удаляет
 все данные стенда.
 
+## Проверки через GitHub
+
+Откройте [Actions → CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml),
+выберите **Run workflow** и нужную ветку. Из терминала это тот же запуск:
+
+```sh
+gh workflow run ci.yml --repo qqrm/openfga-axum-lab --ref main
+gh run list --repo qqrm/openfga-axum-lab --workflow ci.yml
+```
+
+CI собирает полный Compose-стенд и проверяет права, отказ OpenFGA,
+восстановление и инвалидацию положительного кэша на двух экземплярах.
+Проверки работают с вымышленными данными и не требуют личных секретов.
+Изменения можно подготовить в веб-редакторе GitHub в отдельной ветке:
+для PR запускаются CI, проверка workflow, CodeQL и сканирование секретов.
+
+Отдельный прогон проверок кэша на пустом локальном стенде:
+
+```sh
+docker compose -p petlab-cache -f compose.yaml -f compose.cache-test.yaml up -d --build app app2
+docker compose -p petlab-cache -f compose.yaml -f compose.cache-test.yaml --profile test run --rm --no-deps test python /app/scripts/cache-replicas.py
+docker compose -p petlab-cache -f compose.yaml -f compose.cache-test.yaml down -v
+```
+
 ## Аккаунты и роли
 
 В Compose включены четыре тестовых пользователя с паролем

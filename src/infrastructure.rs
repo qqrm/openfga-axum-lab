@@ -24,6 +24,9 @@ pub(crate) fn hash_password(password: &str) -> Result<String, Box<dyn std::error
 pub(crate) struct DenyAll;
 #[async_trait]
 impl Authorizer for DenyAll {
+    async fn ensure_available(&self) -> Result<(), AuthError> {
+        Err(AuthError)
+    }
     async fn check(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthError> {
         Ok(false)
     }
@@ -45,6 +48,10 @@ struct Check {
     allowed: bool,
 }
 #[derive(Deserialize)]
+struct Health {
+    status: String,
+}
+#[derive(Deserialize)]
 struct ReadTuple {
     key: Tuple,
 }
@@ -55,6 +62,24 @@ struct ReadResponse {
 }
 #[async_trait]
 impl Authorizer for OpenFga {
+    async fn ensure_available(&self) -> Result<(), AuthError> {
+        let health = self
+            .client
+            .get(format!("{}/healthz", self.url))
+            .send()
+            .await
+            .map_err(|_| AuthError)?
+            .error_for_status()
+            .map_err(|_| AuthError)?
+            .json::<Health>()
+            .await
+            .map_err(|_| AuthError)?;
+        if health.status == "SERVING" {
+            Ok(())
+        } else {
+            Err(AuthError)
+        }
+    }
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         let response = self
             .client

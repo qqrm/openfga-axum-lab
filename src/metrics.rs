@@ -7,6 +7,7 @@ pub(crate) struct Metrics {
     registry: Registry,
     pub(crate) requests: IntCounterVec,
     pub(crate) duration: HistogramVec,
+    pub(crate) authz_cache: IntCounterVec,
 }
 
 impl Metrics {
@@ -22,10 +23,19 @@ impl Metrics {
         )?;
         registry.register(Box::new(requests.clone()))?;
         registry.register(Box::new(duration.clone()))?;
+        let authz_cache = IntCounterVec::new(
+            Opts::new(
+                "authz_cache_events_total",
+                "Authorization decision cache events",
+            ),
+            &["event"],
+        )?;
+        registry.register(Box::new(authz_cache.clone()))?;
         Ok(Self {
             registry,
             requests,
             duration,
+            authz_cache,
         })
     }
     pub(crate) fn render(&self) -> Result<String, Box<dyn std::error::Error>> {
