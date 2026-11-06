@@ -1,0 +1,12 @@
+services:
+  app:
+    environment:
+      AUTHZ_CACHE_ENABLED: "true"
+  app-uncached:
+    extends:
+      file: compose.yaml
+      service: app
+    environment:
+      AUTHZ_CACHE_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3001:3000"

@@ -42,6 +42,7 @@ pub(crate) struct OpenFga {
     pub(crate) url: String,
     pub(crate) store: String,
     pub(crate) model: String,
+    pub(crate) requests: prometheus::IntCounterVec,
 }
 #[derive(Deserialize)]
 struct Check {
@@ -63,6 +64,7 @@ struct ReadResponse {
 #[async_trait]
 impl Authorizer for OpenFga {
     async fn ensure_available(&self) -> Result<(), AuthError> {
+        self.requests.with_label_values(&["health"]).inc();
         let health = self
             .client
             .get(format!("{}/healthz", self.url))
@@ -81,6 +83,7 @@ impl Authorizer for OpenFga {
         }
     }
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
+        self.requests.with_label_values(&["check"]).inc();
         let response = self
             .client
             .post(format!("{}/stores/{}/check", self.url, self.store))
@@ -99,6 +102,7 @@ impl Authorizer for OpenFga {
         Ok(response.allowed)
     }
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
+        self.requests.with_label_values(&["write"]).inc();
         let mut data = json!({"authorization_model_id":self.model});
         data[if add { "writes" } else { "deletes" }] = if add {
             json!({"tuple_keys":tuples, "on_duplicate":"ignore"})
@@ -119,6 +123,7 @@ impl Authorizer for OpenFga {
         // Re-read the first page after every deletion: continuation tokens do
         // not give a stable snapshot while the underlying tuples are removed.
         for _ in 0..1000 {
+            self.requests.with_label_values(&["read"]).inc();
             let page = self
                 .client
                 .post(format!("{}/stores/{}/read", self.url, self.store))
