@@ -1,7 +1,7 @@
-"""Randomized A/B comparison of the same binary with authorization cache on/off.
+"""Exploratory paired HTTP benchmark: A/A-off, A/A-on and cache A/B.
 
-A = disabled, B = enabled. Report-only: never infer significance from single-run
-request bootstrap samples. Requires the experiment's two running containers.
+All labels use one image and one PostgreSQL/OpenFGA dataset. The independent
+replication unit is a runner, not an individual request. No capacity claim.
 """
 import concurrent.futures
 import datetime
@@ -13,40 +13,29 @@ from pathlib import Path
 import platform
 import random
 import statistics
+import subprocess
 import time
 import urllib.error
 import urllib.request
 
-from client import login
-
-BASES = {
-    "A": os.getenv("UNCACHED_URL", "http://127.0.0.1:3001"),
-    "B": os.getenv("CACHED_URL", "http://127.0.0.1:3000"),
-}
+BASES = {"off": "http://127.0.0.1:3001", "on": "http://127.0.0.1:3000"}
+COMPOSE = ["docker", "compose", "-f", "compose.yaml", "-f", "compose.cache-ab.yaml"]
 SEED = int(os.getenv("AB_SEED", "2606"))
 BLOCKS = int(os.getenv("AB_BLOCKS", "8"))
-SAMPLES = int(os.getenv("AB_SAMPLES", "240"))
-WARMUP = int(os.getenv("AB_WARMUP", "40"))
+SAMPLES = int(os.getenv("AB_SAMPLES", "2000"))
+AA_SAMPLES = int(os.getenv("AA_SAMPLES", "1000"))
+WARMUP = int(os.getenv("AB_WARMUP", "200"))
 WORKERS = int(os.getenv("AB_WORKERS", "4"))
 TIMEOUT = 5
-assert BLOCKS > 0 and BLOCKS % 2 == 0
-assert SAMPLES > 0 and WARMUP > 0 and WORKERS > 0
-rng = random.Random(SEED)
-order = ["AB"] * (BLOCKS // 2) + ["BA"] * (BLOCKS // 2)
-rng.shuffle(order)
-tokens = {label: login(url, "alice") for label, url in BASES.items()}
+OUTPUT = Path("artifacts/cache-ab.json")
 
 
-def http(url, method="GET", token=None, body=None):
-    headers = {"Accept": "application/json"}
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    if body is not None:
+def http(mode, path, token=None, method="GET", body=None):
+    headers = {} if token is None else {"Authorization": "Bearer " + token}
+    data = None if body is None else json.dumps(body).encode()
+    if data is not None:
         headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(
-        url, data=None if body is None else json.dumps(body).encode(),
-        headers=headers, method=method,
-    )
+    request = urllib.request.Request(BASES[mode] + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
             return response.status, response.read()
@@ -54,183 +43,259 @@ def http(url, method="GET", token=None, body=None):
         return exc.code, exc.read()
 
 
-def metrics(label):
-    status, data = http(BASES[label] + "/metrics")
-    if status != 200:
-        raise RuntimeError("metrics unavailable")
-    counters = {}
-    for line in data.decode().splitlines():
-        if not line or line.startswith("#"):
-            continue
-        key, sep, value = line.rpartition(" ")
-        if sep:
-            try:
-                counters[key] = float(value)
-            except ValueError:
-                pass
-    return counters
+def require(mode, path, token, expected, method="GET", body=None):
+    status, raw = http(mode, path, token, method, body)
+    if status != expected:
+        raise RuntimeError(f"{mode} {method} {path}: expected {expected}, got {status}")
+    return raw
 
 
-def counter_delta(before, after, prefix):
-    return {
-        k: after.get(k, 0) - before.get(k, 0)
-        for k in sorted(set(before) | set(after))
-        if k.startswith(prefix)
-    }
+def login(mode, user):
+    raw = require(mode, "/session", None, 200, "POST", {
+        "username": user, "password": os.getenv("DEMO_PASSWORD", "local-demo-password")})
+    return json.loads(raw)["token"]
 
 
-def request_once(label, index, endpoint="/pets/fox", expected=200):
+def wait_ready(mode):
+    for _ in range(90):
+        try:
+            if http(mode, "/healthz")[0] == 200:
+                return
+        except OSError:
+            pass
+        time.sleep(1)
+    raise RuntimeError(f"{mode}: app not ready")
+
+
+def metrics(mode):
+    raw = require(mode, "/metrics", None, 200)
+    result = {}
+    for line in raw.decode().splitlines():
+        if line.startswith("authz_"):
+            key, value = line.rsplit(" ", 1)
+            result[key] = float(value)
+    return result
+
+
+def sql(query):
+    result = subprocess.run(COMPOSE + ["exec", "-T", "postgres", "psql", "-U", "petlab",
+        "-d", "postgres", "-XAt", "-v", "ON_ERROR_STOP=1", "-c", query],
+        text=True, capture_output=True, check=True, timeout=20)
+    return result.stdout.strip()
+
+
+def pg_snapshot():
+    # Observe from the maintenance DB: the observation query is not counted
+    # in either measured database. These are executed statements, not packets.
+    return json.loads(sql("""SELECT coalesce(jsonb_object_agg(datname, calls), '{}'::jsonb)
+        FROM (SELECT d.datname, sum(s.calls) AS calls FROM pg_stat_statements s
+        JOIN pg_database d ON d.oid=s.dbid WHERE d.datname IN ('petlab','openfga')
+        GROUP BY d.datname) totals"""))
+
+
+def delta(before, after):
+    result = {key: after.get(key, 0) - before.get(key, 0) for key in sorted(set(before) | set(after))}
+    if any(value < 0 for value in result.values()):
+        raise RuntimeError("counter reset during observation")
+    return result
+
+
+def host_snapshot():
+    return {"cpu_ticks": [int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]],
+            "loadavg": os.getloadavg(), "cpu_pressure": Path("/proc/pressure/cpu").read_text()}
+
+
+def request_once(mode, token, index, expected_body):
     start = time.perf_counter_ns()
     status, error = None, None
     try:
-        status, body = http(BASES[label] + endpoint, token=tokens[label])
-        if status != expected:
-            error = f"expected {expected}, received {status}: {body[:120]!r}"
-        elif expected == 200:
-            parsed = json.loads(body)
-            if parsed.get("id") != "fox":
-                error = "incorrect response body"
+        status, body = http(mode, "/pets/fox", token)
+        if status != 200 or json.loads(body) != expected_body:
+            error = "unexpected status or body"
     except (OSError, ValueError) as exc:
         error = f"{type(exc).__name__}: {exc}"
-    return {
-        "index": index,
-        "latency_ns": time.perf_counter_ns() - start,
-        "status": status,
-        "error": error,
-    }
+    return {"index": index, "latency_ns": time.perf_counter_ns() - start,
+            "status": status, "error": error}
 
 
-def percentile(values, percent):
+def percentile(values, p):
     ordered = sorted(values)
-    return ordered[math.ceil(len(ordered) * percent) - 1] if ordered else None
+    return ordered[max(0, math.ceil(len(ordered) * p) - 1)] if ordered else None
 
 
-def arm(label):
-    before = metrics(label)
+def arm(mode, token, count, expected_body):
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        warm = list(pool.map(lambda i: request_once(label, i), range(WARMUP)))
+        run = lambda i: request_once(mode, token, i, expected_body)
+        warm = list(pool.map(run, range(WARMUP)))
+        pg_before = pg_snapshot()
+        before = metrics(mode)
+        host_before = host_snapshot()
+        cpu = time.process_time_ns()
         start = time.perf_counter_ns()
-        raw = list(pool.map(lambda i: request_once(label, i), range(SAMPLES)))
-    elapsed = time.perf_counter_ns() - start
-    after = metrics(label)
-    valid = [x["latency_ns"] for x in raw if x["error"] is None]
-    events = counter_delta(before, after, "authz_cache_events_total")
-    return {
-        "warmup_errors": [x for x in warm if x["error"]],
-        "errors": [x for x in raw if x["error"]],
-        "raw": raw,
-        "elapsed_ns": elapsed,
-        "throughput_rps": len(raw) * 1e9 / elapsed,
+        raw = list(pool.map(run, range(count)))
+        elapsed = time.perf_counter_ns() - start
+        client_cpu = time.process_time_ns() - cpu
+        host_after = host_snapshot()
+        after = metrics(mode)
+        pg_after = pg_snapshot()
+    counters = delta(before, after)
+    event = lambda name: counters.get('authz_cache_events_total{event="' + name + '"}', 0)
+    decisions = sum(event(x) for x in ("hit_allow", "hit_deny", "miss", "uncached", "bypass_pending"))
+    errors = sum(item["error"] is not None for item in warm + raw)
+    counter_errors = []
+    if decisions != count:
+        counter_errors.append(f"expected {count} decisions, observed {decisions}")
+    if mode == "off" and event("uncached") != count:
+        counter_errors.append("uncached mode not observed")
+    if mode == "on" and event("hit_allow") <= 0:
+        counter_errors.append("no allow cache hits observed")
+    valid = [item["latency_ns"] for item in raw if item["error"] is None]
+    return {"mode": mode, "warmup_raw": warm, "raw": raw, "error_count": errors,
+        "counter_errors": counter_errors, "elapsed_ns": elapsed,
+        "client_process_cpu_ns": client_cpu, "throughput_rps": len(valid) * 1e9 / elapsed,
         "p50_ns": statistics.median(valid) if valid else None,
-        "p95_ns": percentile(valid, .95),
-        "p99_ns": percentile(valid, .99),
-        "cache_events": events,
-        "revision_reads": counter_delta(before, after, "authz_revision_reads_total"),
-        "openfga_requests": counter_delta(before, after, "authz_openfga_requests_total"),
-    }
+        "p95_ns": percentile(valid, .95), "p99_ns": percentile(valid, .99),
+        "cache_hit_rate": (event("hit_allow") + event("hit_deny")) / decisions if decisions else None,
+        "counters": counters, "pg_statements": delta(pg_before, pg_after),
+        "snapshots": {"metrics_before": before, "metrics_after": after,
+            "pg_before": pg_before, "pg_after": pg_after,
+            "host_before": host_before, "host_after": host_after}}
 
 
-def revoke_test(label):
-    """Control each arm separately: carol owns fox, dave is caregiver."""
-    base = BASES[label]
-    admin = login(base, "carol")
-    target = login(base, "dave")
-    relation = "/pets/fox/relations/caregiver/dave"
+def geomean(values):
+    return math.exp(statistics.mean(math.log(x) for x in values))
 
-    def check(expected):
-        status, body = http(base + "/pets/fox", token=target)
-        if status != expected:
-            raise RuntimeError(f"{label} revoke expected {expected}, got {status}: {body[:120]!r}")
 
-    # Always restore, even if a previous run was interrupted.
-    status, body = http(base + relation, method="PUT", token=admin)
-    if status != 204:
-        raise RuntimeError(f"{label} grant failed: {status}: {body[:120]!r}")
-    try:
-        check(200)
+def summarize(blocks, seed):
+    result = {}
+    for metric in ("p50_ns", "p95_ns", "p99_ns", "throughput_rps"):
+        ratios = [b["arms"]["B"][metric] / b["arms"]["A"][metric] for b in blocks]
+        rng = random.Random(seed)
+        boot = [geomean(rng.choices(ratios, k=len(ratios))) for _ in range(5000)]
+        result[metric] = {"ratio_B_over_A": geomean(ratios), "block_ratios": ratios,
+            "within_runner_paired_block_bootstrap_95": [percentile(boot, .025), percentile(boot, .975)],
+            "A_median_of_blocks": statistics.median(b["arms"]["A"][metric] for b in blocks),
+            "B_median_of_blocks": statistics.median(b["arms"]["B"][metric] for b in blocks)}
+    return result
+
+
+def revocations(tokens):
+    records = []
+    path = "/pets/fox/relations/caregiver/dave"
+    for writer in BASES:
+        require(writer, path, tokens["carol"], 204, "PUT")
+        try:
+            hit_before = metrics("on").get('authz_cache_events_total{event="hit_allow"}', 0)
+            for mode in BASES:
+                for _ in range(3):
+                    require(mode, "/pets/fox", tokens["dave"], 200)
+            hit_after = metrics("on").get('authz_cache_events_total{event="hit_allow"}', 0)
+            if hit_after <= hit_before:
+                raise RuntimeError("revocation fixture did not warm the allow cache")
+            start = time.perf_counter_ns()
+            require(writer, path, tokens["carol"], 204, "DELETE")
+            acknowledged = time.perf_counter_ns()
+            observations = []
+            for mode in BASES:
+                for _ in range(10):
+                    begin = time.perf_counter_ns()
+                    require(mode, "/pets/fox", tokens["dave"], 403)
+                    observations.append({"mode": mode, "status": 403,
+                        "started_after_ack_ns": begin - acknowledged,
+                        "latency_ns": time.perf_counter_ns() - begin})
+            records.append({"writer": writer, "revoke_latency_ns": acknowledged - start,
+                "post_ack_denials": observations, "warm_hits_observed": hit_after - hit_before})
+        finally:
+            # Restore the original fixture (dave has no access to fox).
+            require(writer, path, tokens["carol"], 204, "DELETE")
+    return records
+
+
+def fail_closed(tokens):
+    for mode in BASES:
         for _ in range(3):
-            check(200)  # warm cache
-        start = time.perf_counter_ns()
-        status, body = http(base + relation, method="DELETE", token=admin)
-        if status != 204:
-            raise RuntimeError(f"{label} revoke failed: {status}: {body[:120]!r}")
-        committed_ns = time.perf_counter_ns()
-        check(403)
-        first_denial_ns = time.perf_counter_ns()
-        return {
-            "revoke_http_latency_ns": committed_ns - start,
-            "first_denial_after_revoke_response_ns": first_denial_ns - committed_ns,
-            "verified": True,
-        }
+            require(mode, "/pets/fox", tokens["alice"], 200)
+    subprocess.run(COMPOSE + ["stop", "-t", "1", "openfga"], check=True, timeout=30)
+    result = {}
+    try:
+        for mode in BASES:
+            require(mode, "/pets/fox", tokens["alice"], 503)
+            result[mode] = 503
     finally:
-        status, body = http(base + relation, method="PUT", token=admin)
-        if status != 204:
-            raise RuntimeError(f"{label} restore failed: {status}: {body[:120]!r}")
+        subprocess.run(COMPOSE + ["start", "openfga"], check=True, timeout=30)
+    return result
 
 
-def geometric_mean(values):
-    return math.exp(sum(math.log(value) for value in values) / len(values))
+def save(report):
+    OUTPUT.parent.mkdir(exist_ok=True)
+    temporary = OUTPUT.with_suffix(".tmp")
+    temporary.write_text(json.dumps(report, indent=2))
+    temporary.replace(OUTPUT)
 
 
 def main():
-    # Fail before measurement if the arms do not correspond to the intended modes.
-    for label, expected in [("A", "uncached"), ("B", "miss")]:
-        before = metrics(label)
-        request_once(label, 0)
-        after = metrics(label)
-        changes = counter_delta(before, after, "authz_cache_events_total")
-        if not any(expected in k and v > 0 for k, v in changes.items()):
-            raise RuntimeError(f"{label} mode not observed in metrics: {changes}")
-    blocks = []
-    for index, sequence in enumerate(order):
-        runs = {label: arm(label) for label in sequence}
-        blocks.append({"index": index, "order": sequence, "arms": runs})
-    errors = sum(len(a["errors"]) + len(a["warmup_errors"])
-                 for block in blocks for a in block["arms"].values())
-    revocations, revoke_error = {}, None
-    try:
-        for label in ["A", "B"]:
-            revocations[label] = revoke_test(label)
-    except Exception as exc:
-        revoke_error = str(exc)
-    valid = errors == 0 and revoke_error is None
-    ratios = [
-        block["arms"]["B"]["p50_ns"] / block["arms"]["A"]["p50_ns"]
-        for block in blocks
-    ] if valid else []
-    report = {
-        "purpose": "cache A/B exploratory comparison, no performance claim",
-        "valid": valid,
+    if BLOCKS < 4 or BLOCKS % 2 or min(SAMPLES, AA_SAMPLES, WARMUP, WORKERS) < 1:
+        raise ValueError("positive sample counts and an even number of at least four blocks required")
+    report = {"valid": False, "purpose": "exploratory, not a capacity or production claim",
+        "commit": os.getenv("GITHUB_SHA", "unrecorded"), "seed": SEED,
+        "replica": os.getenv("BENCH_REPLICA", "local"),
         "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "commit": os.getenv("GITHUB_SHA", "unrecorded working tree"),
-        "seed": SEED,
-        "order": order,
-        "platform": platform.platform(),
-        "cpu_count": os.cpu_count(),
+        "platform": platform.platform(), "python": platform.python_version(), "cpu_count": os.cpu_count(),
         "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "load": {"workers": WORKERS, "samples_per_arm": SAMPLES, "warmup": WARMUP,
-                 "timeout_seconds": TIMEOUT, "retries": 0,
-                 "operation": "GET /pets/fox", "model": "closed-loop, new connection/request"},
-        "arms": {"A": "cache disabled", "B": "cache enabled"},
-        "blocks": blocks,
-        "error_count": errors,
-        "revocation": revocations,
-        "revocation_error": revoke_error,
-        "median_B_over_A_geomean": geometric_mean(ratios) if ratios else None,
-        "limitations": [
-            "No between-runner variation estimated",
-            "Arms run in the same VM with separate processes sharing the database",
-            "PostgreSQL counters cover revision reads only, not all application SQL",
-            "Revocation correctness is a sequential post-response check, not a concurrency proof",
-            "No statistical significance verdict without independent runs",
-        ],
-    }
-    os.makedirs("artifacts", exist_ok=True)
-    with open("artifacts/cache-ab.json", "w", encoding="utf-8") as file:
-        json.dump(report, file, indent=2)
-    print(json.dumps({k: v for k, v in report.items() if k != "blocks"}, indent=2))
-    if not valid:
-        raise SystemExit("invalid comparison: authorization or HTTP failures")
+        "load": {"workers": WORKERS, "samples_per_arm": SAMPLES, "aa_samples_per_arm": AA_SAMPLES,
+            "warmup_per_arm": WARMUP, "blocks_per_stage": BLOCKS, "timeout_seconds": TIMEOUT,
+            "model": "closed-loop, new HTTP connection per request", "operation": "GET /pets/fox as alice",
+            "retries": 0, "primary_metric": "p50", "practical_effect_threshold": .05},
+        "stages": [], "limitations": ["Small hot-key dataset; no mixed-write or capacity workload",
+            "Client, app, PostgreSQL and OpenFGA share a hosted VM; generator can bottleneck",
+            "Bootstrap intervals resample paired blocks within a VM, not independent hosts",
+            "PG counts are successful statement executions in the observation windows, not network packets",
+            "No automatic performance verdict; compare independent replicas and A/A noise"]}
+    save(report)
+    try:
+        for mode in BASES:
+            wait_ready(mode)
+        tokens = {user: login("on", user) for user in ("alice", "carol", "dave")}
+        for mode in BASES:
+            require(mode, "/pets/fox", None, 401)
+            require(mode, "/pets/fox", tokens["dave"], 403)
+        report["revocation_before"] = revocations(tokens)
+        expected = json.loads(require("off", "/pets/fox", tokens["alice"], 200))
+        if json.loads(require("on", "/pets/fox", tokens["alice"], 200)) != expected:
+            raise RuntimeError("different datasets between modes")
+        report["response_fixture"] = expected
+        definitions = [("AA-off", "off", "off", AA_SAMPLES),
+            ("AA-on", "on", "on", AA_SAMPLES), ("AB", "off", "on", SAMPLES)]
+        rng = random.Random(SEED)
+        rng.shuffle(definitions)
+        report["stage_order"] = [stage[0] for stage in definitions]
+        for name, a, b, count in definitions:
+            orders = ["AB"] * (BLOCKS // 2) + ["BA"] * (BLOCKS // 2)
+            rng.shuffle(orders)
+            stage = {"name": name, "mapping": {"A": a, "B": b}, "blocks": []}
+            report["stages"].append(stage)
+            for index, order in enumerate(orders):
+                block = {"index": index, "order": order, "arms": {}}
+                stage["blocks"].append(block)
+                for label in order:
+                    result = arm(stage["mapping"][label], tokens["alice"], count, expected)
+                    block["arms"][label] = result
+                    save(report)
+                    if result["error_count"] or result["counter_errors"]:
+                        raise RuntimeError(f"invalid measurement: {name} block {index} arm {label}")
+            stage["summary"] = summarize(stage["blocks"], SEED + len(report["stages"]))
+            print(json.dumps({"stage": name, "summary": stage["summary"]}), flush=True)
+            save(report)
+        report["revocation_after"] = revocations(tokens)
+        report["fail_closed"] = fail_closed(tokens)
+        report["valid"] = True
+    except Exception as exc:
+        report["failure"] = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        save(report)
+    print(json.dumps({"valid": report["valid"], "replica": report["replica"],
+        "stages": [{"name": s["name"], "summary": s["summary"]} for s in report["stages"]]}), flush=True)
 
 
 if __name__ == "__main__":
