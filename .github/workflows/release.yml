@@ -24,7 +24,6 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag }}
       GH_TOKEN: ${{ github.token }}
-      DOCKER_CONFIG: ${{ runner.temp }}/petlab-registry
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -39,6 +38,8 @@ jobs:
           fallback: none
       - name: Require reviewed environment and successful exact-SHA checks
         run: |
+          registry_config=$(mktemp -d "$RUNNER_TEMP/petlab-registry.XXXXXX")
+          echo "DOCKER_CONFIG=$registry_config" >> "$GITHUB_ENV"
           mkdir -p artifacts
           cargo +1.98.0 build --locked --bin lab-tool
           target/debug/lab-tool delivery-policy tag "$RELEASE_TAG"
@@ -55,9 +56,11 @@ jobs:
           docker build --build-arg APP_REVISION="$GITHUB_SHA" -t petlab-release:ci .
           docker pull postgres:17-bookworm
           docker pull openfga/openfga:v1.10.3
-          echo "POSTGRES_IMAGE=$(docker image inspect postgres:17-bookworm --format '{{index .RepoDigests 0}}')" >> "$GITHUB_ENV"
-          echo "OPENFGA_IMAGE=$(docker image inspect openfga/openfga:v1.10.3 --format '{{index .RepoDigests 0}}')" >> "$GITHUB_ENV"
-          echo "DELIVERY_IMAGE=$(docker image inspect petlab-release:ci --format '{{.Id}}')" >> "$GITHUB_ENV"
+          {
+            echo "POSTGRES_IMAGE=$(docker image inspect postgres:17-bookworm --format '{{index .RepoDigests 0}}')"
+            echo "OPENFGA_IMAGE=$(docker image inspect openfga/openfga:v1.10.3 --format '{{index .RepoDigests 0}}')"
+            echo "DELIVERY_IMAGE=$(docker image inspect petlab-release:ci --format '{{.Id}}')"
+          } >> "$GITHUB_ENV"
       - name: Test the actual candidate image
         run: cargo +1.98.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Push candidate and verify fresh authenticated pull
@@ -70,8 +73,10 @@ jobs:
           docker image rm "$image_tag" petlab-release:ci
           docker pull "$image"
           test "$(docker image inspect "$image" --format '{{.Id}}')" = "$DELIVERY_IMAGE"
-          echo "PUBLISHED_IMAGE=$image" >> "$GITHUB_ENV"
-          echo "DELIVERY_IMAGE=$image" >> "$GITHUB_ENV"
+          {
+            echo "PUBLISHED_IMAGE=$image"
+            echo "DELIVERY_IMAGE=$image"
+          } >> "$GITHUB_ENV"
       - name: Verify pulled distribution, not a rebuild
         run: cargo +1.98.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Package a complete image-only distribution
@@ -86,7 +91,7 @@ jobs:
           printf 'LAB_IMAGE=%s\nPOSTGRES_IMAGE=%s\nOPENFGA_IMAGE=%s\n' "$PUBLISHED_IMAGE" "$POSTGRES_IMAGE" "$OPENFGA_IMAGE" > dist/package/images.env
           tar -czf "dist/delivery-$RELEASE_TAG.tar.gz" -C dist/package .
           (cd dist && sha256sum "delivery-$RELEASE_TAG.tar.gz" manifest.json > SHA256SUMS)
-          printf 'Verified source: `%s`\n\nImage: `%s`\n\nDraft candidate: not deployed, not a published stable release. See docs/delivery.md.\n' "$GITHUB_SHA" "$PUBLISHED_IMAGE" > dist/NOTES.md
+          printf 'Verified source: %s\n\nImage: %s\n\nDraft candidate: not deployed, not a published stable release. See docs/delivery.md.\n' "$GITHUB_SHA" "$PUBLISHED_IMAGE" > dist/NOTES.md
           flags=()
           if [[ "$RELEASE_TAG" == *-rc.* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" "dist/delivery-$RELEASE_TAG.tar.gz" dist/manifest.json dist/SHA256SUMS --draft --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file dist/NOTES.md "${flags[@]}"
@@ -100,4 +105,5 @@ jobs:
           retention-days: 30
       - name: Remove temporary registry credentials
         if: always()
-        run: rm -rf "$DOCKER_CONFIG"
+        run: |
+          if test -n "${DOCKER_CONFIG:-}"; then rm -rf "$DOCKER_CONFIG"; fi

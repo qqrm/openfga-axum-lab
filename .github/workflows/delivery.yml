@@ -20,6 +20,7 @@ jobs:
           fallback: none
       - name: Validate source and tools
         run: |
+          cargo +1.98.0 fmt --all -- --check
           cargo +1.98.0 clippy --locked --all-targets --all-features -- -D warnings
           cargo +1.98.0 nextest run --locked --profile ci
       - name: Build candidate once
@@ -39,18 +40,11 @@ jobs:
           docker version > artifacts/docker.txt
           git rev-parse HEAD > artifacts/commit.txt
           sha256sum Cargo.lock Dockerfile compose.release.yaml > artifacts/inputs.sha256
-      - name: Preserve formatting suggestions
-        if: always()
-        run: |
-          cargo +1.98.0 fmt --all
-          git diff > artifacts/formatting.patch
-          mkdir -p artifacts/formatting-tool
-          cp "$(rustup which --toolchain 1.98.0 rustfmt)" artifacts/formatting-tool/rustfmt
-          tar -czf artifacts/formatted-sources.tar.gz src tools tests
+          docker image inspect postgres:17-bookworm openfga/openfga:v1.10.3 --format '{{json .RepoDigests}}' > artifacts/dependencies.jsonl
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: delivery-evidence
           path: artifacts/
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error

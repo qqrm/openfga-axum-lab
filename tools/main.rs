@@ -1,9 +1,9 @@
 mod bootstrap;
-mod dependency_policy;
-mod delivery;
-mod delivery_policy;
 #[path = "../src/configuration.rs"]
 mod configuration;
+mod delivery;
+mod delivery_policy;
+mod dependency_policy;
 
 type ToolResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

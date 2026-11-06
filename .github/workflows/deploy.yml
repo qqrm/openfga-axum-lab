@@ -29,6 +29,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
     env:
       ENABLED: ${{ vars.PETLAB_REMOTE_DEPLOY_ENABLED }}
       CONFIRMED: ${{ inputs.compatibility_confirmed }}
@@ -48,6 +50,7 @@ jobs:
         with:
           toolchain: '1.98.0'
       - name: Check candidate, exact source and environment policy
+        id: verify
         run: |
           cargo +1.98.0 build --locked --bin lab-tool
           target/debug/lab-tool delivery-policy tag "$RELEASE_TAG"
@@ -65,6 +68,7 @@ jobs:
             gh release download "$RELEASE_TAG" --pattern staging-receipt.json --dir candidate
             target/debug/lab-tool delivery-policy receipt candidate/staging-receipt.json candidate/manifest.json
           fi
+          echo "manifest_sha256=$(sha256sum candidate/manifest.json | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
   deploy:
     needs: preflight
     if: github.ref == 'refs/heads/main'
@@ -80,20 +84,24 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       TARGET: ${{ inputs.environment }}
       LAB_URL: ${{ vars.PETLAB_URL }}
+      VERIFIED_MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
       GH_TOKEN: ${{ github.token }}
-      DOCKER_CONFIG: ${{ runner.temp }}/petlab-registry-${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Retrieve verified distribution
         run: |
+          registry_config=$(mktemp -d "$RUNNER_TEMP/petlab-registry.XXXXXX")
+          export DOCKER_CONFIG="$registry_config"
+          echo "DOCKER_CONFIG=$registry_config" >> "$GITHUB_ENV"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]
           case "$TARGET" in staging|stable) ;; *) exit 1;; esac
           [[ "$LAB_URL" == https://* ]] || { echo 'Set the approved HTTPS endpoint in PETLAB_URL'; exit 1; }
           mkdir -p "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
           cd "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
           gh release download "$RELEASE_TAG" --pattern "delivery-$RELEASE_TAG.tar.gz" --pattern manifest.json --pattern SHA256SUMS
+          test "$(sha256sum manifest.json | cut -d ' ' -f1)" = "$VERIFIED_MANIFEST"
           sha256sum --check SHA256SUMS
           image=$(jq -r .image manifest.json)
           [[ "$image" =~ ^ghcr\.io/qqrm/openfga-axum-lab@sha256:[a-f0-9]{64}$ ]]
@@ -104,6 +112,7 @@ jobs:
           test -f "$root/state/environment.env" || { echo 'Provision the private per-environment state directory first'; exit 1; }
           mkdir -p "$root/releases/$RELEASE_TAG"
           tar -xzf "delivery-$RELEASE_TAG.tar.gz" --no-same-owner --no-same-permissions -C "$root/releases/$RELEASE_TAG"
+          test "$(sha256sum "$root/releases/$RELEASE_TAG/manifest.json" | cut -d ' ' -f1)" = "$VERIFIED_MANIFEST"
       - name: Deploy exact digest and verify real authorization
         run: |
           root="/srv/petlab/$TARGET"
@@ -132,4 +141,5 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/$TARGET-receipt.json" --clobber
       - name: Remove ephemeral registry credentials
         if: always()
-        run: rm -rf "$DOCKER_CONFIG"
+        run: |
+          if test -n "${DOCKER_CONFIG:-}"; then rm -rf "$DOCKER_CONFIG"; fi
