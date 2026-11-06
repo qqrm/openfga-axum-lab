@@ -10,9 +10,56 @@
 | cargo-machete | unused dependencies | deliberately unused dependency fixture | Static usage heuristics |
 | Gitleaks | Git history secret patterns | synthetically constructed fake AWS key | Pattern coverage is incomplete; two old demo values are narrowly allowlisted |
 | actionlint / zizmor | workflow syntax and security patterns | intentionally invalid / unsafe workflow fixtures | Does not prove GitHub settings or authorization |
-| Dependabot provenance | signed bot commits and expected head | six unit tests including bad actor and stale head | Does not prove a live merge occurred |
+| Rust Dependabot provenance | signed bot commits and expected head | seven unit tests including bad actor, stale head and missing SHA | Does not prove a live merge occurred |
+| Rust bootstrap | model fingerprint, persisted store/model, atomic config publication | changed model, missing identifiers, deleted store | No proof of crash consistency across PostgreSQL and filesystem |
 | Kani | pure lifecycle functions | mutate visibility to expose deleting state; proof must fail | No proof of SQL, HTTP, OpenFGA, networking, or concurrency |
-| Compose end-to-end | API, PostgreSQL and OpenFGA | denied roles, bad credentials, outage, concurrent retries, recovery | Bounded scenarios, not exhaustive |
+| nextest system suite | real API, PostgreSQL and OpenFGA | denied roles, bad credentials, outage, concurrent retries, recovery | Bounded scenarios, not exhaustive |
+| nextest cache suite | two actual Axum replicas | delayed allow, concurrent revoke, unavailable health endpoint, lost write response and restart | Not an exhaustive distributed-system proof |
+| nextest Compose deployment | actual Dockerfile and Rust bootstrap service | HTTP login and authorized data read after image build | Local deployment smoke test, not production certification |
+| nextest workflow contract | tracked sources and explicit CI suite selection | rejection of Python files/runtime references and missing suites | String-level guard; actionlint still validates workflow syntax |
+
+## Behavior retained from the former scripts
+
+`tests/system.rs` covers authorization and sessions, normalized metrics without
+credentials, idempotent grants/revokes, six concurrent creates with one key,
+conflicting payloads, deleted-key reuse, an eight-operation delete/grant race,
+and direct checks that deleted pets have no remaining OpenFGA tuples.
+
+Persistence stops Axum, OpenFGA and PostgreSQL, then restarts them without
+removing volumes. It checks saved data and relations, reuses the **old sessions**,
+and verifies that a subsequent revoke takes effect. Separate creation and
+deletion recovery tests apply the original SQL fixtures before restarting Axum.
+The outage test warms allows first, then requires 503 for both single-pet and
+list requests after OpenFGA is stopped.
+
+Each test owns a fresh Compose project and temporary configuration. Published
+ports are loopback-only and ephemeral; addresses are resolved again after a
+restart. The cache and system suites use the same stack support and the same
+`lab-tool bootstrap` implementation as the deployment. A separate test builds
+and starts the actual Compose application image.
+
+Run unit and policy checks without Docker:
+
+```sh
+cargo nextest run --locked --profile ci
+```
+
+Run the ordinary full suite with Docker, including explicitly ignored tests:
+
+```sh
+cargo nextest run --locked --release --profile ci --run-ignored all \
+  -E 'not test(paired_aa_calibration)' --success-output immediate
+```
+
+The CI integration job explicitly selects `system`, `cache_replicas`,
+`compose_deployment` and `performance` with `--run-ignored only`. A normal
+nextest invocation without that option does **not** establish integration
+coverage. A/A calibration remains a separate manual workflow. The CI profile
+uses no retries, bounds test duration, serializes Docker-intensive tests and
+writes JUnit. RAII cleanup handles normal exits and panic; forced termination
+can leave containers/volumes on a local engine. Hosted CI runners are disposable.
+
+## Formal and tooling boundaries
 
 Kani exhaustively explores the finite lifecycle/event choices in the two
 harnesses. The service calls the same visibility and transition functions, but
@@ -25,7 +72,8 @@ bash scripts/check-tooling.sh
 bash scripts/audit-negative.sh
 ```
 
-The GitHub branch-protection API currently returned HTTP 403 for this private
-repository. Dependabot auto-merge checks the live protection before enabling
-native auto-merge and otherwise leaves the PR open. A synthetic policy test is
-not evidence that a real Dependabot PR has merged.
+Dependabot auto-merge checks live branch protection before enabling native
+auto-merge and otherwise leaves the PR open. The privileged workflow does not
+check out or execute PR code. The Rust provenance command runs only in the
+read-only workflow. A synthetic policy test is not evidence that a real
+Dependabot PR has merged.
