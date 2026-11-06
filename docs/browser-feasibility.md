@@ -14,6 +14,10 @@
   inside Docker build steps. The manual GitHub workflow is a reproducible,
   bounded feasibility experiment; Alpine conversion alone cannot establish that
   our full stack works.
+- On 2026-11-06, the [GitHub-hosted experiment](https://github.com/qqrm/openfga-axum-lab/actions/runs/42250133868)
+  converted Alpine successfully in 12m 40s. Its uploaded archive was 46,719,939
+  bytes and has limited retention. This measured a build, not browser startup,
+  networking, or the combined application; none of those are established.
 - [Webernetes](https://github.com/ngrok/webernetes) simulates a subset of
   Kubernetes in a browser but does not run ordinary OCI images.
   [PGlite](https://pglite.dev/docs/about) runs PostgreSQL as WASM, but is not

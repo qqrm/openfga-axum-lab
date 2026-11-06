@@ -26,3 +26,13 @@ hardware, but Android scheduling, thermal throttling, battery/charging, CPU clus
 Termux/proot or virtualization and process interference affect results.
 Hardware and workload are not equivalent to x86 cloud VMs. No device settings,
 processes or benchmark runner have been changed or installed on the phone.
+
+## Example calibration
+
+The [2026-11-06 GitHub Actions run](https://github.com/qqrm/openfga-axum-lab/actions/runs/42250134346)
+recorded six A/A blocks with four closed-loop clients and 120 measured requests
+per arm per block. It reported zero errors, a geometric mean of block-level
+B/A median-latency ratios of 1.003, and a within-run bootstrap interval of
+0.916–1.075. The raw artifact has limited
+retention. These numbers describe only this VM and run; they do not establish a
+regression threshold, cross-run variability, or production capacity.
