@@ -131,14 +131,14 @@ def arm(label):
 
 
 def revoke_test(label):
-    """Control each arm separately: alice manages the cat, bob is viewer."""
+    """Control each arm separately: carol owns fox, dave is caregiver."""
     base = BASES[label]
-    admin = login(base, "alice")
-    target = login(base, "bob")
-    relation = "/pets/cat/relations/viewer/bob"
+    admin = login(base, "carol")
+    target = login(base, "dave")
+    relation = "/pets/fox/relations/caregiver/dave"
 
     def check(expected):
-        status, body = http(base + "/pets/cat", token=target)
+        status, body = http(base + "/pets/fox", token=target)
         if status != expected:
             raise RuntimeError(f"{label} revoke expected {expected}, got {status}: {body[:120]!r}")
 
