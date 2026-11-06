@@ -50,6 +50,8 @@ jobs:
           target/debug/lab-tool delivery-policy environment artifacts/environment.json release
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > artifacts/checks.json
           target/debug/lab-tool delivery-policy runs artifacts/checks.json "$GITHUB_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" > artifacts/tag-refs.json
+          test "$(jq --arg ref "refs/tags/$RELEASE_TAG" '[.[] | select(.ref == $ref)] | length' artifacts/tag-refs.json)" = 0
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then echo 'Release already exists; refusing replacement'; exit 1; fi
       - name: Build once and resolve dependency identities
         run: |
@@ -84,9 +86,9 @@ jobs:
           mkdir -p dist/package/db dist/package/docs
           jq -n --arg tag "$RELEASE_TAG" --arg revision "$GITHUB_SHA" --arg image "$PUBLISHED_IMAGE" --arg pg "$POSTGRES_IMAGE" --arg fga "$OPENFGA_IMAGE" '{schema:1,tag:$tag,revision:$revision,image:$image,postgres_image:$pg,openfga_image:$fga}' > dist/manifest.json
           target/debug/lab-tool delivery-policy manifest dist/manifest.json "$RELEASE_TAG"
-          cp compose.release.yaml README.md dist/package/
+          cp compose.release.yaml README.md INTENT.md dist/package/
           cp db/init.sql dist/package/db/
-          cp docs/delivery.md dist/package/docs/
+          cp docs/*.md dist/package/docs/
           cp dist/manifest.json dist/package/
           printf 'LAB_IMAGE=%s\nPOSTGRES_IMAGE=%s\nOPENFGA_IMAGE=%s\n' "$PUBLISHED_IMAGE" "$POSTGRES_IMAGE" "$OPENFGA_IMAGE" > dist/package/images.env
           tar -czf "dist/delivery-$RELEASE_TAG.tar.gz" -C dist/package .

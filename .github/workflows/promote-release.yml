@@ -46,6 +46,14 @@ jobs:
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$revision&per_page=100" > artifacts/checks.json
           target/debug/lab-tool delivery-policy runs artifacts/checks.json "$revision"
           test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" > artifacts/tag-refs.json
+          matches=$(jq --arg ref "refs/tags/$RELEASE_TAG" '[.[] | select(.ref == $ref)] | length' artifacts/tag-refs.json)
+          if test "$matches" = 0; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$revision" > artifacts/created-tag.json
+          else
+            test "$matches" = 1
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$revision"
           gh release edit "$RELEASE_TAG" --draft=false
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
