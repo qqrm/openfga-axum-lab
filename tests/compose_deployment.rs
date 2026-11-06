@@ -1,7 +1,10 @@
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, time::Duration};
-use tokio::{process::Command, time::{sleep, timeout}};
+use tokio::{
+    process::Command,
+    time::{sleep, timeout},
+};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -24,7 +27,10 @@ impl Deployment {
 
 impl Drop for Deployment {
     fn drop(&mut self) {
-        if !self.command().args(["down", "-v", "-t", "2"]).output()
+        if !self
+            .command()
+            .args(["down", "-v", "-t", "2"])
+            .output()
             .is_ok_and(|output| output.status.success())
         {
             eprintln!("Could not clean up Compose deployment {}", self.project);
@@ -48,9 +54,16 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
     )
     .await??;
     if !output.status.success() {
-        return Err(format!("Compose build/start failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+        return Err(format!(
+            "Compose build/start failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
     }
-    let output = Command::from(deployment.command()).args(["port", "app", "3000"]).output().await?;
+    let output = Command::from(deployment.command())
+        .args(["port", "app", "3000"])
+        .output()
+        .await?;
     if !output.status.success() {
         return Err("could not resolve Compose API port".into());
     }
@@ -71,13 +84,25 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
             }
             sleep(Duration::from_millis(250)).await;
         }
-    }).await?;
-    let session: Value = client.post(format!("{base}/session"))
+    })
+    .await?;
+    let session: Value = client
+        .post(format!("{base}/session"))
         .json(&json!({"username": "alice", "password": deployment.password}))
-        .send().await?.error_for_status()?.json().await?;
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     let token = session["token"].as_str().ok_or("missing session token")?;
-    let pets: Vec<Value> = client.get(format!("{base}/pets"))
-        .bearer_auth(token).send().await?.error_for_status()?.json().await?;
+    let pets: Vec<Value> = client
+        .get(format!("{base}/pets"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     assert!(pets.iter().any(|pet| pet["id"] == "fox"));
     Ok(())
 }

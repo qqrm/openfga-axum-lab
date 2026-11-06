@@ -59,19 +59,34 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     assert!(metrics.contains("http_requests_total"));
     assert!(metrics.contains("route=\"/pets/{id}\""));
     assert!(!metrics.contains("route=\"/pets/fox\""));
-    for secret in [alice.as_str(), bob.as_str(), carol.as_str(), dave.as_str(), "demo-", "Authorization"] {
+    for secret in [
+        alice.as_str(),
+        bob.as_str(),
+        carol.as_str(),
+        dave.as_str(),
+        "demo-",
+        "Authorization",
+    ] {
         assert!(!metrics.contains(secret), "metrics leaked credential data");
     }
     let edit = json!({"name": "Mika", "species": "fox", "biography": "Mika likes apples."});
     for token in [&dave, &bob] {
-        expect(api.call(M::PATCH, "/pets/fox", token).json(&edit), S::FORBIDDEN).await?;
+        expect(
+            api.call(M::PATCH, "/pets/fox", token).json(&edit),
+            S::FORBIDDEN,
+        )
+        .await?;
     }
     let relation = "/pets/fox/relations/caregiver/dave";
     expect(api.call(M::PUT, relation, &bob), S::FORBIDDEN).await?;
     for _ in 0..2 {
         expect(api.call(M::PUT, relation, &carol), S::NO_CONTENT).await?;
     }
-    expect(api.call(M::PATCH, "/pets/fox", &dave).json(&edit), S::NO_CONTENT).await?;
+    expect(
+        api.call(M::PATCH, "/pets/fox", &dave).json(&edit),
+        S::NO_CONTENT,
+    )
+    .await?;
     let pet = expect(api.call(M::GET, "/pets/fox", &carol), S::OK).await?;
     assert_eq!(pet["biography"], edit["biography"]);
     for _ in 0..2 {
@@ -102,7 +117,11 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
     let bob = stack.login(&client, &app, "bob").await?;
     let carol = stack.login(&client, &app, "carol").await?;
     let payload = json!({"name": "Biscuit", "species": "rabbit", "biography": "Likes carrots."});
-    expect(api.call(M::POST, "/pets", &bob).json(&payload), S::BAD_REQUEST).await?;
+    expect(
+        api.call(M::POST, "/pets", &bob).json(&payload),
+        S::BAD_REQUEST,
+    )
+    .await?;
     let key = Uuid::new_v4().to_string();
     let barrier = Arc::new(Barrier::new(6));
     let mut tasks = JoinSet::new();
@@ -205,14 +224,18 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
 #[ignore = "requires a local Docker engine"]
 async fn data_relations_and_sessions_survive_full_restart() -> TestResult {
     let client = client()?;
-    let stack = Stack::start(&client).await?;
+    let mut stack = Stack::start(&client).await?;
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
     let carol = stack.login(&client, &app, "carol").await?;
     let dave = stack.login(&client, &app, "dave").await?;
     let edit = json!({"name": "Mika", "species": "fox", "biography": "Persistent across restart"});
     let relation = "/pets/fox/relations/viewer/dave";
-    expect(api.call(M::PATCH, "/pets/fox", &carol).json(&edit), S::NO_CONTENT).await?;
+    expect(
+        api.call(M::PATCH, "/pets/fox", &carol).json(&edit),
+        S::NO_CONTENT,
+    )
+    .await?;
     expect(api.call(M::PUT, relation, &carol), S::NO_CONTENT).await?;
     expect(api.call(M::GET, "/pets/fox", &dave), S::OK).await?;
     let config_before = std::fs::read(stack.config_path())?;
@@ -238,7 +261,9 @@ async fn pending_creation_recovers_after_restart() -> TestResult {
     let app = stack.app(&stack.fga_url).await?;
     let carol = stack.login(&client, &app, "carol").await?;
     app.stop().await?;
-    stack.sql(include_str!("../scripts/recovery-fixture.sql")).await?;
+    stack
+        .sql(include_str!("../scripts/recovery-fixture.sql"))
+        .await?;
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
     let path = "/pets/recovery-fixture";
@@ -257,7 +282,9 @@ async fn pending_deletion_recovers_and_removes_all_tuples() -> TestResult {
     let app = stack.app(&stack.fga_url).await?;
     let bob = stack.login(&client, &app, "bob").await?;
     app.stop().await?;
-    stack.sql(include_str!("../scripts/deletion-fixture.sql")).await?;
+    stack
+        .sql(include_str!("../scripts/deletion-fixture.sql"))
+        .await?;
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
     expect(api.call(M::GET, "/pets/dog", &bob), S::NOT_FOUND).await?;

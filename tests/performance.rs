@@ -102,11 +102,22 @@ async fn requests(
     }
     samples.sort_unstable_by_key(|sample| sample.index);
     assert_eq!(samples.len(), count, "missing measurement observations");
-    assert!(samples.iter().enumerate().all(|(index, sample)| index == sample.index));
+    assert!(
+        samples
+            .iter()
+            .enumerate()
+            .all(|(index, sample)| index == sample.index)
+    );
     Ok(samples)
 }
 
-async fn arm(client: &Client, url: &str, token: &str, paired: bool, concurrency: usize) -> TestResult<Arm> {
+async fn arm(
+    client: &Client,
+    url: &str,
+    token: &str,
+    paired: bool,
+    concurrency: usize,
+) -> TestResult<Arm> {
     let (warmup_count, count, warmup_concurrency) = if paired {
         (20, 120, concurrency)
     } else {
@@ -116,7 +127,11 @@ async fn arm(client: &Client, url: &str, token: &str, paired: bool, concurrency:
     let start = Instant::now();
     let raw = requests(client, url, token, count, concurrency).await?;
     let elapsed_ns = start.elapsed().as_nanos().try_into()?;
-    let error_count = warmup.iter().chain(&raw).filter(|sample| sample.error.is_some()).count();
+    let error_count = warmup
+        .iter()
+        .chain(&raw)
+        .filter(|sample| sample.error.is_some())
+        .count();
     let values: Vec<_> = raw
         .iter()
         .filter(|sample| sample.error.is_none())
@@ -133,7 +148,9 @@ async fn arm(client: &Client, url: &str, token: &str, paired: bool, concurrency:
 
 fn environment() -> TestResult<Value> {
     let binary = std::fs::read(env!("CARGO_BIN_EXE_openfga-axum-lab"))?;
-    let rustc = std::process::Command::new("rustc").arg("--version").output()?;
+    let rustc = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()?;
     if !rustc.status.success() {
         return Err("could not record Rust toolchain".into());
     }
@@ -186,7 +203,12 @@ async fn diagnostic_latency() -> TestResult {
     for concurrency in [1, 8] {
         let result = arm(&client, &app.url, &token, false, concurrency).await?;
         errors += result.error_count;
-        let values: Vec<_> = result.raw.iter().filter(|s| s.error.is_none()).map(|s| s.latency_ns).collect();
+        let values: Vec<_> = result
+            .raw
+            .iter()
+            .filter(|s| s.error.is_none())
+            .map(|s| s.latency_ns)
+            .collect();
         lanes.push(json!({
             "concurrency": concurrency, "warmup_requests": 50, "requested": 400,
             "completed": result.raw.len(), "successful": values.len(),
@@ -201,9 +223,17 @@ async fn diagnostic_latency() -> TestResult {
     let report = json!({"purpose": "report-only, not a regression or capacity claim",
         "environment": environment()?, "lanes": lanes});
     let directory = artifacts()?;
-    std::fs::write(directory.join("benchmark.json"), serde_json::to_vec_pretty(&report)?)?;
-    stack.diagnostics(&directory.join("benchmark-environment")).await?;
-    assert_eq!(errors, 0, "invalid measurement: inspect artifacts/benchmark.json");
+    std::fs::write(
+        directory.join("benchmark.json"),
+        serde_json::to_vec_pretty(&report)?,
+    )?;
+    stack
+        .diagnostics(&directory.join("benchmark-environment"))
+        .await?;
+    assert_eq!(
+        errors, 0,
+        "invalid measurement: inspect artifacts/benchmark.json"
+    );
     println!("Recorded 800 measured requests and 100 warmups; no performance verdict.");
     Ok(())
 }
@@ -250,7 +280,9 @@ fn geometric_mean(values: &[f64]) -> f64 {
 fn bootstrap_interval(ratios: &[f64], rng: &mut Rng) -> [f64; 2] {
     let mut bootstrap = Vec::with_capacity(5000);
     for _ in 0..5000 {
-        let sample: Vec<_> = (0..ratios.len()).map(|_| ratios[rng.index(ratios.len())]).collect();
+        let sample: Vec<_> = (0..ratios.len())
+            .map(|_| ratios[rng.index(ratios.len())])
+            .collect();
         bootstrap.push(geometric_mean(&sample));
     }
     bootstrap.sort_by(f64::total_cmp);
@@ -300,9 +332,17 @@ async fn paired_aa_calibration() -> TestResult {
         "blocks": blocks, "error_count": errors, "statistics": statistics
     });
     let directory = artifacts()?;
-    std::fs::write(directory.join("paired-aa.json"), serde_json::to_vec_pretty(&report)?)?;
-    stack.diagnostics(&directory.join("paired-aa-environment")).await?;
-    assert!(valid, "invalid measurement: inspect artifacts/paired-aa.json");
+    std::fs::write(
+        directory.join("paired-aa.json"),
+        serde_json::to_vec_pretty(&report)?,
+    )?;
+    stack
+        .diagnostics(&directory.join("paired-aa-environment"))
+        .await?;
+    assert!(
+        valid,
+        "invalid measurement: inspect artifacts/paired-aa.json"
+    );
     println!("Recorded six balanced A/A blocks; no regression verdict.");
     Ok(())
 }

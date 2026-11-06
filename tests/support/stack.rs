@@ -32,6 +32,14 @@ struct Compose {
     password: String,
 }
 
+#[derive(serde::Deserialize)]
+struct TuplePage {
+    #[serde(default)]
+    tuples: Vec<Value>,
+    #[serde(default)]
+    continuation_token: String,
+}
+
 impl Compose {
     fn command(&self) -> std::process::Command {
         let mut command = std::process::Command::new("docker");
@@ -83,7 +91,10 @@ impl Drop for Compose {
     fn drop(&mut self) {
         let cleanup = self.command().args(["down", "-v", "-t", "2"]).output();
         if !cleanup.is_ok_and(|output| output.status.success()) {
-            eprintln!("Could not remove disposable Compose project {}", self.project);
+            eprintln!(
+                "Could not remove disposable Compose project {}",
+                self.project
+            );
         }
     }
 }
@@ -144,7 +155,10 @@ impl Stack {
             .arg("bootstrap")
             .env("FGA_URL", &self.fga_url)
             .env("FGA_CONFIG", self.config_path())
-            .env("FGA_MODEL", concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"))
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
             .env(
                 "FGA_TUPLES",
                 concat!(env!("CARGO_MANIFEST_DIR"), "/fga/legacy.json"),
@@ -154,11 +168,7 @@ impl Stack {
     }
 
     pub async fn bootstrap(&self) -> TestResult {
-        let output = timeout(
-            Duration::from_secs(75),
-            self.bootstrap_command().output(),
-        )
-        .await??;
+        let output = timeout(Duration::from_secs(75), self.bootstrap_command().output()).await??;
         if !output.status.success() {
             return Err(format!(
                 "Rust bootstrap failed: {}",
@@ -232,11 +242,18 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn restart_dependencies(&self, client: &Client) -> TestResult {
+    pub async fn restart_dependencies(&mut self, client: &Client) -> TestResult {
         self.compose
             .run(&["stop", "-t", "2", "openfga", "postgres"])
             .await?;
         self.compose.run(&["up", "-d", "openfga"]).await?;
+        // Docker may assign different ephemeral host ports after a stop/start.
+        let postgres = self.compose.address("postgres", "5432").await?;
+        self.database = format!(
+            "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
+            self.compose.password
+        );
+        self.fga_url = format!("http://{}", self.compose.address("openfga", "8080").await?);
         self.wait_ready(client).await
     }
 
@@ -248,7 +265,7 @@ impl Stack {
     pub async fn assert_no_tuples(&self, client: &Client, pet: &str) -> TestResult {
         let config = self.config()?;
         let store = config["store_id"].as_str().ok_or("missing store id")?;
-        let response: Value = client
+        let response: TuplePage = client
             .post(format!("{}/stores/{store}/read", self.fga_url))
             .json(&json!({"tuple_key": {"object": format!("pet:{pet}")},
                 "consistency": "HIGHER_CONSISTENCY"}))
@@ -257,18 +274,42 @@ impl Stack {
             .error_for_status()?
             .json()
             .await?;
-        let tuples = response["tuples"].as_array().ok_or("missing tuples array")?;
-        assert!(tuples.is_empty(), "deleted pet still has authorization tuples");
+        assert!(
+            response.tuples.is_empty() && response.continuation_token.is_empty(),
+            "deleted pet still has authorization tuples"
+        );
         Ok(())
     }
 
     pub async fn diagnostics(&self, directory: &std::path::Path) -> TestResult {
         std::fs::create_dir_all(directory)?;
-        std::fs::write(directory.join("images.txt"), self.compose.run(&["images"]).await?)?;
+        std::fs::write(
+            directory.join("images.txt"),
+            self.compose.run(&["images"]).await?,
+        )?;
         std::fs::write(
             directory.join("containers.jsonl"),
-            self.compose.run(&["ps", "--all", "--format", "json"]).await?,
+            self.compose
+                .run(&["ps", "--all", "--format", "json"])
+                .await?,
         )?;
+        let ids = self.compose.run(&["ps", "-q"]).await?;
+        if ids.trim().is_empty() {
+            return Err("no benchmark containers to measure".into());
+        }
+        let stats = timeout(
+            Duration::from_secs(20),
+            Command::new("docker")
+                .args(["stats", "--no-stream", "--format", "{{json .}}", "--"])
+                .args(ids.lines())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await??;
+        if !stats.status.success() {
+            return Err("could not capture container resource statistics".into());
+        }
+        std::fs::write(directory.join("docker-stats.jsonl"), stats.stdout)?;
         Ok(())
     }
 }

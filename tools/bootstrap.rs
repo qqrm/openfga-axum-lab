@@ -67,10 +67,8 @@ fn write_config(path: &Path, config: &Config) -> ToolResult {
 pub async fn run() -> ToolResult {
     let base = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
     let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
-    let model_path =
-        std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
-    let tuples_path =
-        std::env::var("FGA_TUPLES").unwrap_or_else(|_| "/app/fga/legacy.json".into());
+    let model_path = std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
+    let tuples_path = std::env::var("FGA_TUPLES").unwrap_or_else(|_| "/app/fga/legacy.json".into());
     let model_bytes = fs::read(model_path)?;
     let model: Value = serde_json::from_slice(&model_bytes)?;
     let client = Client::builder()
