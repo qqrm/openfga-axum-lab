@@ -20,6 +20,33 @@ fn ids(value: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
+fn metrics_have_no_credentials(metrics: &str, tokens: &[&str]) -> bool {
+    let lower = metrics.to_ascii_lowercase();
+    !metrics.contains("demo-")
+        && !lower.contains("authorization:")
+        && !lower.contains("bearer ")
+        && tokens
+            .iter()
+            .all(|token| !token.is_empty() && !metrics.contains(token))
+}
+
+#[test]
+fn metrics_guard_allows_help_but_rejects_credentials() {
+    let help = "# HELP authz_cache_events_total Authorization decision cache events\n";
+    assert!(metrics_have_no_credentials(help, &["synthetic-session"]));
+    for leaked in [
+        "metric{token=\"synthetic-session\"} 1",
+        "# HELP metric synthetic-session",
+        "Authorization: synthetic-value",
+        "aUtHoRiZaTiOn: synthetic-value",
+        "Bearer synthetic-value",
+        "metric{value=\"demo-value\"} 1",
+    ] {
+        assert!(!metrics_have_no_credentials(leaked, &["synthetic-session"]));
+    }
+    assert!(!metrics_have_no_credentials(help, &[""]));
+}
+
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
 async fn authorization_sessions_and_metrics() -> TestResult {
@@ -59,16 +86,10 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     assert!(metrics.contains("http_requests_total"));
     assert!(metrics.contains("route=\"/pets/{id}\""));
     assert!(!metrics.contains("route=\"/pets/fox\""));
-    for secret in [
-        alice.as_str(),
-        bob.as_str(),
-        carol.as_str(),
-        dave.as_str(),
-        "demo-",
-        "Authorization",
-    ] {
-        assert!(!metrics.contains(secret), "metrics leaked credential data");
-    }
+    assert!(
+        metrics_have_no_credentials(&metrics, &[&alice, &bob, &carol, &dave]),
+        "metrics leaked credential data"
+    );
     let edit = json!({"name": "Mika", "species": "fox", "biography": "Mika likes apples."});
     for token in [&dave, &bob] {
         expect(

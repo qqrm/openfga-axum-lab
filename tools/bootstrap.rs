@@ -81,17 +81,21 @@ pub async fn run() -> ToolResult {
             let config: Config = serde_json::from_slice(&bytes)?;
             validate_existing(&config, &model_bytes)?;
             wait_ready(&client, &base).await?;
-            let response = client
-                .get(format!(
+            // A model can remain readable after its store is soft-deleted.
+            // Check both resources before accepting a persisted configuration.
+            for endpoint in [
+                format!("{base}/stores/{}", config.store_id),
+                format!(
                     "{base}/stores/{}/authorization-models/{}",
                     config.store_id, config.model_id
-                ))
-                .send()
-                .await?;
-            if response.status() == StatusCode::NOT_FOUND {
-                return Err("existing store/model missing; refusing silent reset".into());
+                ),
+            ] {
+                let response = client.get(endpoint).send().await?;
+                if response.status() == StatusCode::NOT_FOUND {
+                    return Err("existing store/model missing; refusing silent reset".into());
+                }
+                response.error_for_status()?;
             }
-            response.error_for_status()?;
             println!("Using existing store and model");
             return Ok(());
         }

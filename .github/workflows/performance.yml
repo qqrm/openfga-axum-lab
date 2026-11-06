@@ -19,6 +19,13 @@ jobs:
           fallback: none
       - name: Require correctness before calibration
         run: cargo nextest run --locked --release --profile ci --test system --run-ignored only --success-output immediate
+      - name: Preserve correctness results
+        if: always()
+        run: |
+          mkdir -p artifacts
+          if test -f target/nextest/ci/junit.xml; then
+            cp target/nextest/ci/junit.xml artifacts/correctness-junit.xml
+          fi
       - name: Capture randomized balanced A/A samples
         run: cargo nextest run --locked --release --profile ci --test performance --run-ignored only -E 'test(paired_aa_calibration)' --success-output immediate
       - name: Record Docker engine

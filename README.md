@@ -10,19 +10,21 @@
 
 ## Запуск
 
-Нужны Docker и Docker Compose:
+Для сервиса нужны Docker и Docker Compose:
 
 ```sh
 git clone --recurse-submodules https://github.com/qqrm/openfga-axum-lab.git
 cd openfga-axum-lab
-docker compose up -d --build
-docker compose --profile test run --rm test
+docker compose up -d --build app
 ```
 
 Откройте [http://localhost:3000](http://localhost:3000). Compose создаёт две
 отдельные базы в одном PostgreSQL: данные приюта и хранилище OpenFGA.
+Подготовку модели и исходных отношений выполняет Rust-бинарник `lab-tool`.
+При повторном запуске он использует существующую конфигурацию; изменение
+модели или исчезновение сохранённого хранилища не приводит к молчаливому сбросу.
 `docker compose down` сохраняет тома, а `docker compose down -v` удаляет
-все данные стенда.
+все данные стенда. Порт API можно изменить переменной `APP_PORT`.
 
 ## Работа через веб-интерфейс GitHub
 
@@ -36,23 +38,52 @@ docker compose --profile test run --rm test
 
 | Workflow | Что запускает |
 | --- | --- |
-| [CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml) | Rust, Kani, тесты авторизации и восстановления на реальном стенде, сборку WASM-демо |
-| [Workflow Security](https://github.com/qqrm/openfga-axum-lab/actions/workflows/workflow-security.yml) | Проверки конфигурации GitHub Actions |
-| [CodeQL](https://github.com/qqrm/openfga-axum-lab/actions/workflows/codeql.yml) | Статический анализ кода |
+| [CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml) | Rust/nextest, Kani, реальные проверки авторизации, гонок, перезапусков, восстановления и отказов, Docker-сборку и WASM-демо |
+| [Workflow Security](https://github.com/qqrm/openfga-axum-lab/actions/workflows/workflow-security.yml) | actionlint, zizmor и Rust-тесты политики Dependabot |
+| [CodeQL](https://github.com/qqrm/openfga-axum-lab/actions/workflows/codeql.yml) | Статический анализ Rust и JavaScript |
 | [Secret scan](https://github.com/qqrm/openfga-axum-lab/actions/workflows/secrets.yml) | Сканирование Git-истории на секреты |
-| [Manual performance calibration](https://github.com/qqrm/openfga-axum-lab/actions/workflows/performance.yml) | A/A-замер и выгрузку сырых результатов |
+| [Manual performance calibration](https://github.com/qqrm/openfga-axum-lab/actions/workflows/performance.yml) | Rust/nextest A/A-замер после проверок корректности и выгрузку сырых результатов |
 | [Browser preview](https://github.com/qqrm/openfga-axum-lab/actions/workflows/pages.yml) | Сборку, проверку и публикацию демонстрации на Pages |
 
-CI собирает полный Compose-стенд и проверяет права, отказ OpenFGA и
-восстановление. Nextest отдельно проверяет инвалидацию кэша на двух
-экземплярах Axum с PostgreSQL и OpenFGA в отдельном Compose-проекте.
-Проверки работают с вымышленными данными и не требуют личных секретов.
+Одна кнопка **CI → Run workflow** запускает обычные проверки и реальные
+интеграционные сценарии. Nextest управляет изолированными Compose-проектами:
+PostgreSQL и OpenFGA работают в контейнерах, Axum — отдельными Rust-процессами.
+Дополнительный тест собирает Dockerfile и проверяет обычный Compose-сервис.
+Тесты не используют локальный демонстрационный том и не требуют личных секретов.
 
-Проверки кэша локально с Docker и `cargo-nextest`:
+## Тесты локально
+
+Нужны Rust, Docker с Compose и `cargo-nextest`. Python и старый Compose-сервис
+`test` больше не используются. Быстрые тесты без запуска Docker:
 
 ```sh
-cargo nextest run --locked --test cache_replicas --run-ignored only --success-output immediate
+cargo nextest run --locked --profile ci
 ```
+
+Полный обычный прогон, включая контейнерные сценарии и короткий замер:
+
+```sh
+cargo nextest run --locked --release --profile ci --run-ignored all \
+  -E 'not test(paired_aa_calibration)' --success-output immediate
+```
+
+Контейнерные тесты помечены `#[ignore]`, чтобы обычный запуск не требовал Docker;
+CI **явно включает** их через `--run-ignored only`. Профиль `ci` ограничивает
+параллельность Docker-тестов, задаёт таймауты, запрещает автоматические повторы
+и сохраняет JUnit в `target/nextest/ci/junit.xml`. Каждый сценарий имеет отдельные
+тома, случайные учётные данные и loopback-порты; очистка выполняется при выходе
+из теста, в том числе при обычной ошибке или panic. Принудительное завершение
+процесса/runner может потребовать ручной очистки оставшегося тестового проекта.
+
+Кэш на двух репликах можно проверить отдельно:
+
+```sh
+cargo nextest run --locked --profile ci --test cache_replicas --run-ignored only --success-output immediate
+```
+
+A/A-калибровка остаётся отдельным ручным workflow; её также можно запустить
+локально по [протоколу](docs/performance.md). CI выгружает JUnit и диагностические
+JSON-артефакты даже при ошибках, если файлы успели появиться.
 
 ## Аккаунты и роли
 
@@ -97,12 +128,15 @@ Kani в ограниченной модели. Прохождение модел
 CI включает форматирование, Clippy, nextest, cargo-audit/deny/machete,
 ShellCheck, actionlint, zizmor, Kani и контейнерные сценарии с отказами.
 Намеренно ошибочные примеры проверяют чувствительность ряда инструментов.
+Rust-тест контракта запрещает возврат Python-исходников и Python-вызовов в
+workflows/Compose и проверяет наличие интеграционных наборов в ручном CI.
 Таблица покрытия и пробелов: [проверки](docs/verification.md).
 
 GitHub Dependabot использует расписание из пользовательского шаблона.
 Автослияние дополнительно проверяет защиту основной ветки и не включается,
-если требуемая защита отсутствует. Сканирование кода CodeQL запускается для
-публичной версии репозитория.
+если требуемая защита отсутствует. Проверка подписей и авторства коммитов
+реализована в `lab-tool dependency-policy`; workflow с правом записи по-прежнему
+не извлекает и не выполняет код PR. CodeQL анализирует публичный репозиторий.
 
 В Cargo.lock присутствует необязательная MySQL-зависимость `rsa` из SQLx с
 RUSTSEC-2023-0071. Аудит допускает только это предупреждение и сначала требует,
@@ -119,10 +153,10 @@ Rust, собранное в WebAssembly. Настоящие Axum, OpenFGA и Pos
 затем раздайте каталог `browser-output` любым HTTP-сервером. Ручной workflow
 `Browser preview` публикует этот вариант на GitHub Pages.
 
-Короткий тест фиксирует сырые задержки, ошибки и окружение. Отдельный ручной
-workflow выполняет рандомизированную A/A-калибровку. На виртуальном runner
-это диагностика, а не доказательство регрессии или ёмкости системы:
-[протокол](docs/performance.md).
+Rust-тест `diagnostic_latency` фиксирует сырые задержки, ошибки и окружение.
+Отдельный ручной workflow выполняет рандомизированную A/A-калибровку.
+На виртуальном runner это диагностика, а не доказательство регрессии или
+ёмкости системы: [протокол](docs/performance.md).
 
 [Варианты запуска в браузере](docs/browser-feasibility.md) рассматриваются
 отдельно. Compose-стенд, эмуляция контейнеров и статическая демонстрация имеют
