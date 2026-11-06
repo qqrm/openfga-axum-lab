@@ -25,6 +25,8 @@ pub(crate) struct CachedAuthorizer {
     coordinator: PgPool,
     decisions: Cache<Key, bool>,
     events: IntCounterVec,
+    revision_reads: prometheus::IntCounter,
+    enabled: bool,
 }
 
 impl CachedAuthorizer {
@@ -32,6 +34,8 @@ impl CachedAuthorizer {
         inner: Arc<dyn Authorizer>,
         coordinator: PgPool,
         events: IntCounterVec,
+        revision_reads: prometheus::IntCounter,
+        enabled: bool,
     ) -> Self {
         Self {
             inner,
@@ -41,10 +45,13 @@ impl CachedAuthorizer {
                 .time_to_live(Duration::from_secs(2))
                 .build(),
             events,
+            revision_reads,
+            enabled,
         }
     }
 
     async fn revision(&self) -> Result<Revision, AuthError> {
+        self.revision_reads.inc();
         let (generation, pending) =
             sqlx::query_as("SELECT generation, pending FROM authz_cache_state WHERE singleton")
                 .fetch_one(&self.coordinator)
@@ -90,6 +97,11 @@ impl Authorizer for CachedAuthorizer {
     }
 
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
+        if !self.enabled {
+            // Uncached decisions still use the same fenced mutation protocol.
+            self.events.with_label_values(&["uncached"]).inc();
+            return self.inner.check(user, relation, object).await;
+        }
         for _ in 0..3 {
             let before = self.revision().await?;
             let key = Key {

@@ -1,5 +1,10 @@
 # Performance measurement
 
+For the native Criterion cache-on/cache-off experiment, executed results,
+A/A noise controls and reproduction commands, see
+[Criterion authorization-cache experiment](criterion-performance.md).
+The nextest diagnostics below remain separate and use a different connection policy.
+
 The Rust nextest binary `tests/performance.rs` measures a complete HTTP read:
 token lookup in PostgreSQL, object lookup, the current authorization/cache path
 including OpenFGA availability checks, and data read. It uses closed-loop

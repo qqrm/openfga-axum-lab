@@ -8,6 +8,8 @@ pub(crate) struct Metrics {
     pub(crate) requests: IntCounterVec,
     pub(crate) duration: HistogramVec,
     pub(crate) authz_cache: IntCounterVec,
+    pub(crate) authz_revision_reads: prometheus::IntCounter,
+    pub(crate) authz_openfga: IntCounterVec,
 }
 
 impl Metrics {
@@ -31,11 +33,26 @@ impl Metrics {
             &["event"],
         )?;
         registry.register(Box::new(authz_cache.clone()))?;
+        let authz_revision_reads = prometheus::IntCounter::new(
+            "authz_revision_reads_total",
+            "PostgreSQL authorization revision read attempts",
+        )?;
+        registry.register(Box::new(authz_revision_reads.clone()))?;
+        let authz_openfga = IntCounterVec::new(
+            Opts::new(
+                "authz_openfga_requests_total",
+                "OpenFGA HTTP request attempts",
+            ),
+            &["operation"],
+        )?;
+        registry.register(Box::new(authz_openfga.clone()))?;
         Ok(Self {
             registry,
             requests,
             duration,
             authz_cache,
+            authz_revision_reads,
+            authz_openfga,
         })
     }
     pub(crate) fn render(&self) -> Result<String, Box<dyn std::error::Error>> {

@@ -3,6 +3,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY tools ./tools
+COPY benches ./benches
 COPY assets ./assets
 COPY db ./db
 COPY migrations ./migrations

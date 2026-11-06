@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(str::to_owned)
             .ok_or_else(|| format!("missing {k}").into())
     };
+    let metrics = metrics::Metrics::new()?;
     let auth: Arc<dyn Authorizer> = match std::env::var("AUTHZ_MODE").as_deref() {
         Ok("deny") => Arc::new(DenyAll),
         Ok("openfga") | Err(std::env::VarError::NotPresent) => Arc::new(OpenFga {
@@ -50,10 +51,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             url: std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into()),
             store: val("store_id")?,
             model: val("model_id")?,
+            requests: metrics.authz_openfga.clone(),
         }),
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
-    let metrics = metrics::Metrics::new()?;
+    // Bench-only switch. Default is still the coordinated cache.
+    let cache_enabled = match std::env::var("AUTHZ_CACHE_ENABLED").as_deref() {
+        Ok("false") => false,
+        Ok("true") | Err(std::env::VarError::NotPresent) => true,
+        _ => return Err("AUTHZ_CACHE_ENABLED must be true or false".into()),
+    };
     let mut auth = auth;
     if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
         // Pet mutations can hold a connection from the main pool while
@@ -67,6 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auth,
             coordinator,
             metrics.authz_cache.clone(),
+            metrics.authz_revision_reads.clone(),
+            cache_enabled,
         ));
         infrastructure::recover_pending(&db, auth.as_ref()).await?;
     }
