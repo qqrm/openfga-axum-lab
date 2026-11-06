@@ -1,72 +1,98 @@
-# OpenFGA + Axum lab
+# Лапки: приют и объектная авторизация
 
-A self-contained Rust authorization lab inspired by a vacancy. It is not an
-integration with the employer's unnamed platform. The lab contains a small
-observability-style dashboard API, an authorization trait, an OpenFGA HTTP
-client, Axum route middleware, relationship writes, a sample bootstrap
-migration, filtered lists, a feature switch and containerized tests.
+Учебный pet-проект: Rust/Axum API и небольшой веб-интерфейс для вымышленных
+животных. Карточки и учётные записи хранятся в PostgreSQL, отношения доступа —
+в OpenFGA с отдельной базой PostgreSQL. Всё запускается через Docker Compose.
+Проект вдохновлён вакансией, но не связан с платформой работодателя.
 
-**Demo only. Do not expose this service or use it to secure real data.**
-The `x-demo-user` header is intentionally unauthenticated and can be forged.
-The OpenFGA instance is in-memory, unauthenticated and reachable within the
-Compose network. A real integration needs authenticated identity, secure
-service transport, a persistent store, audited policy and production review.
+## Запуск
 
-## Run
-
-Requirements: Docker and Docker Compose, with network access for image builds.
+Нужны Docker и Docker Compose с доступом в сеть для сборки:
 
 ```sh
 docker compose up -d --build
 docker compose --profile test run --rm test
-curl -H 'x-demo-user: bob' http://127.0.0.1:3000/dashboards
-docker compose down -v
 ```
 
-The endpoint is bound to loopback. The bootstrap container creates a new
-in-memory store and model, imports `fga/legacy.json`, and writes its IDs into
-the Compose volume. It is a fixture migration, not a database migration or
-rollback tool. Recreating the test stand resets its state.
+Открыть [http://localhost:3000](http://localhost:3000). Приложение слушает
+только loopback на хосте. Обычный `docker compose down` сохраняет данные;
+`docker compose down -v` удаляет обе базы и начальные данные этого стенда.
 
-## Policy and interface
+## Тестовые пользователи
 
-- Alice is an organization admin; Bob is a member. They can view dashboards
-  inherited from the organization; Alice can manage relationships.
-- Carol owns a private dashboard; Dave has direct viewer access to dashboard
-  two; Eve begins with no access.
-- `GET /dashboards` filters the sample list by individual checks.
-  `GET /dashboards/{id}` checks `can_view`.
-- `PUT`/`DELETE /dashboards/{id}/relations/{relation}/{subject}` changes
-  viewer, editor, owner or parent tuples after `can_manage`. For the lab,
-  the only accepted parent organization is `acme`.
-- `PUT`/`DELETE /organizations/acme/members/{subject}` requires the
-  organization admin relation. Unsupported actions are denied.
-- `AUTH_BACKEND=fga` is the default. `AUTH_BACKEND=legacy` selects a fixed,
-  read-only demo legacy policy rather than allowing everything. It is not a
-  safe production rollback: changes made in OpenFGA are not synchronized back.
-- Failed checks and writes return 503, denied checks return 403, and missing or
-  malformed demo identities return 401. The client has a two-second timeout.
+| Пользователь | Bearer-токен | Роль и доступ |
+| --- | --- | --- |
+| Alice | `demo-alice` | Администратор приюта: видит и управляет всеми карточками |
+| Bob | `demo-bob` | Сотрудник: видит карточки, может создавать, владелец Rex |
+| Carol | `demo-carol` | Владелец Mika; может управлять её карточкой и правами |
+| Dave | `demo-dave` | Видит Pixel; иные права выдаются адресно |
 
-The e2e script exercises inherited and direct access, filtering, role changes,
-owner changes, hierarchy, membership, denied mutations and revocation. CI also
-stops OpenFGA and checks fail-closed behavior.
+Токены вымышленные и общедоступные, их хэши проверяются по базе. Это работающая
+проверка Bearer-токена для лаборатории, но не production-аутентификация:
+нет входа по паролю, выдачи/ротации токенов и TLS. Секрет БД также тестовый.
+Не подключайте стенд к реальным данным и не публикуйте его в интернет.
 
-## Performance
+## API
 
-`python3 scripts/benchmark.py` runs after the stand and correctness tests. It
-warms up with 50 sequential requests and records 500 single-client requests,
-raw latency, status errors, timer, host and commit metadata in
-`artifacts/benchmark.json`. The GitHub Actions job uploads this file.
-This is **diagnostic only**: a shared runner, one process, one workload and no
-paired baseline do not establish regression, capacity, SLO or production
-performance. Compare changes only with a separately designed same-job,
-balanced paired experiment, correctness controls and an uncertainty estimate.
+Передайте `Authorization: Bearer demo-alice`.
 
-## Integration boundaries
+- `GET /pets` — только доступные пользователю карточки;
+- `GET /pets/{id}` — чтение карточки;
+- `POST /pets` — создать карточку, JSON `name`, `species`, `biography`;
+- `PATCH /pets/{id}` — изменить эти поля;
+- `DELETE /pets/{id}` — логически удалить карточку;
+- `PUT` и `DELETE /pets/{id}/relations/{viewer|caregiver}/{user}` —
+  выдать или отозвать прямой доступ. Куратор может редактировать карточку.
 
-Real systems require an explicit object/route inventory, a policy model
-approved by the product owner, reliable identity and object lookup, tenant
-isolation, scalable list filtering, durable and idempotent tuple/data updates,
-retry and reconciliation semantics, a resumable migration and rollback, and
-tests against the real data model. Those are not established by this lab.
-No assumptions about the employer's API or existing access model are made.
+Маршруты защищены Axum middleware: идентификация по токену, сопоставление
+метода/шаблона пути с отношением OpenFGA и проверка конкретного объекта.
+Неизвестное правило запрещено. Отказ OpenFGA при проверке возвращает 503,
+отказ по праву — 403. Список фильтруется по отдельным проверкам, а при ошибке
+любой проверки возвращается 503 вместо неполного результата.
+
+`AUTHZ_MODE=deny` — аварийный переключатель, запрещающий все защищённые
+операции; по умолчанию используется `openfga`. Это не замена старой системе
+прав и не автоматический обход при ошибках.
+
+Схема приложения версионирована через миграции SQLx. OpenFGA запускает
+собственные миграции PostgreSQL. Начальная модель и отношения загружаются один
+раз: bootstrap сохраняет идентификаторы и хэш модели в отдельном томе и при
+перезапуске проверяет их. Изменение модели требует явной миграции.
+
+Создание карточки сначала записывает в PostgreSQL состояние `pending`, затем
+создаёт отношения OpenFGA и только после успеха активирует карточку. Ошибка
+оставляет её недоступной; при следующем запуске незавершённые создания
+повторяются с идемпотентной записью отношений. Клиентский запрос с ошибкой
+может завершиться позже: ключей идемпотентности для повторного POST пока нет.
+При логическом удалении карточка скрывается в приложении,
+а отношения OpenFGA пока не удаляются; идентификаторы UUID не переиспользуются.
+Эти ограничения нужно устранить перед реальным внедрением.
+
+## Проверки
+
+Тестовый контейнер проверяет разные роли, фильтрацию, изменение карточки,
+создание и удаление, выдачу и отзыв доступа. CI дополнительно проверяет
+сохранность карточки и отношения после полного перезапуска и fail-closed при
+остановке OpenFGA. Rust CI использует fmt, check, clippy, nextest, audit, deny,
+machete и проверки workflow из актуального Rust-шаблона. Автоматические
+обновления зависимостей и авто-merge из шаблона здесь не включены.
+
+Cargo.lock содержит необязательную MySQL-зависимость `rsa` из SQLx; для неё
+RustSec сообщает RUSTSEC-2023-0071. `scripts/audit-dependencies.sh` допускает
+только это предупреждение, предварительно проверив, что `rsa` отсутствует в
+разрешённом графе зависимостей для всех целей. Если он появится, проверка упадёт.
+
+## Производительность
+
+`python3 scripts/benchmark.py` запускает последовательный и 8-поточный
+closed-loop сценарии чтения карточки с реальной проверкой прав и запросами к
+PostgreSQL. Для каждого сценария: 50 прогревочных и 400 измеряемых запросов,
+таймаут 5 с, без повторов, отдельное HTTP-соединение на запрос. В JSON
+сохраняются все задержки, ошибки, завершённая нагрузка, время, CPU клиента и
+данные окружения. CI сохраняет файл как артефакт.
+
+Это короткая диагностика, а не замер предельной нагрузки или регрессионный
+гейт. На общей виртуалке числа шумные, а закрытый контур не показывает
+задержку очереди генератора. Для сравнения изменений нужны одинаковый стенд,
+парные перемешанные запуски контрольной и новой версий, интервалы
+неопределённости и независимая проверка корректности.

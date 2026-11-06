@@ -1,4 +1,49 @@
-{"schema_version":"1.1","type_definitions":[
-{"type":"user"},
-{"type":"organization","relations":{"admin":{"this":{}},"member":{"union":{"child":[{"this":{}},{"computedUserset":{"relation":"admin"}}]}}},"metadata":{"relations":{"admin":{"directly_related_user_types":[{"type":"user"}]},"member":{"directly_related_user_types":[{"type":"user"}]}}}},
-{"type":"dashboard","relations":{"parent":{"this":{}},"owner":{"this":{}},"viewer":{"this":{}},"editor":{"this":{}},"can_view":{"union":{"child":[{"computedUserset":{"relation":"owner"}},{"computedUserset":{"relation":"viewer"}},{"computedUserset":{"relation":"editor"}},{"tupleToUserset":{"tupleset":{"relation":"parent"},"computedUserset":{"relation":"member"}}}]}},"can_manage":{"union":{"child":[{"computedUserset":{"relation":"owner"}},{"tupleToUserset":{"tupleset":{"relation":"parent"},"computedUserset":{"relation":"admin"}}}]}}},"metadata":{"relations":{"parent":{"directly_related_user_types":[{"type":"organization"}]},"owner":{"directly_related_user_types":[{"type":"user"}]},"viewer":{"directly_related_user_types":[{"type":"user"}]},"editor":{"directly_related_user_types":[{"type":"user"}]}}}}]}
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {"type": "user"},
+    {
+      "type": "shelter",
+      "relations": {
+        "admin": {"this": {}},
+        "staff": {"this": {}},
+        "can_create": {"union": {"child": [{"computedUserset": {"relation": "admin"}}, {"computedUserset": {"relation": "staff"}}]}},
+        "can_view": {"union": {"child": [{"computedUserset": {"relation": "admin"}}, {"computedUserset": {"relation": "staff"}}]}}
+      },
+      "metadata": {"relations": {
+        "admin": {"directly_related_user_types": [{"type": "user"}]},
+        "staff": {"directly_related_user_types": [{"type": "user"}]}
+      }}
+    },
+    {
+      "type": "pet",
+      "relations": {
+        "shelter": {"this": {}},
+        "owner": {"this": {}},
+        "viewer": {"this": {}},
+        "caregiver": {"this": {}},
+        "can_view": {"union": {"child": [
+          {"computedUserset": {"relation": "owner"}},
+          {"computedUserset": {"relation": "viewer"}},
+          {"computedUserset": {"relation": "caregiver"}},
+          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "can_view"}}}
+        ]}},
+        "can_edit": {"union": {"child": [
+          {"computedUserset": {"relation": "owner"}},
+          {"computedUserset": {"relation": "caregiver"}},
+          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "admin"}}}
+        ]}},
+        "can_manage": {"union": {"child": [
+          {"computedUserset": {"relation": "owner"}},
+          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "admin"}}}
+        ]}}
+      },
+      "metadata": {"relations": {
+        "shelter": {"directly_related_user_types": [{"type": "shelter"}]},
+        "owner": {"directly_related_user_types": [{"type": "user"}]},
+        "viewer": {"directly_related_user_types": [{"type": "user"}]},
+        "caregiver": {"directly_related_user_types": [{"type": "user"}]}
+      }}
+    }
+  ]
+}

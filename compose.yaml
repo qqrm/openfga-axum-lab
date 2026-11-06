@@ -1,6 +1,35 @@
 services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: petlab
+      POSTGRES_PASSWORD: petlab-local-only
+      POSTGRES_DB: petlab
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-create-openfga.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petlab -d petlab"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [lab]
+  fga-migrate:
+    image: openfga/openfga:v1.10.3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &fga-db
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+    command: migrate
+    networks: [lab]
   openfga:
     image: openfga/openfga:v1.10.3
+    depends_on:
+      fga-migrate:
+        condition: service_completed_successfully
+    environment: *fga-db
     command: run
     networks: [lab]
   bootstrap:
@@ -9,19 +38,22 @@ services:
     volumes:
       - ./fga:/app/fga:ro
       - ./scripts:/app/scripts:ro
-      - state:/data
+      - fga-config:/data
     command: python /app/scripts/bootstrap.py
     networks: [lab]
   app:
     build: .
     environment:
+      DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
       FGA_URL: http://openfga:8080
       FGA_CONFIG: /data/config.json
     depends_on:
+      postgres:
+        condition: service_healthy
       bootstrap:
         condition: service_completed_successfully
     volumes:
-      - state:/data:ro
+      - fga-config:/data:ro
     ports:
       - "127.0.0.1:3000:3000"
     networks: [lab]
@@ -36,4 +68,5 @@ services:
 networks:
   lab:
 volumes:
-  state:
+  database:
+  fga-config:

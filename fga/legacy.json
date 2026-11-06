@@ -1,8 +1,11 @@
 [
-{"user":"user:alice","relation":"admin","object":"organization:acme"},
-{"user":"user:bob","relation":"member","object":"organization:acme"},
-{"user":"organization:acme","relation":"parent","object":"dashboard:one"},
-{"user":"organization:acme","relation":"parent","object":"dashboard:two"},
-{"user":"user:carol","relation":"owner","object":"dashboard:private"},
-{"user":"user:dave","relation":"viewer","object":"dashboard:two"}
+  {"user":"user:alice","relation":"admin","object":"shelter:central"},
+  {"user":"user:bob","relation":"staff","object":"shelter:central"},
+  {"user":"shelter:central","relation":"shelter","object":"pet:fox"},
+  {"user":"shelter:central","relation":"shelter","object":"pet:cat"},
+  {"user":"shelter:central","relation":"shelter","object":"pet:dog"},
+  {"user":"user:carol","relation":"owner","object":"pet:fox"},
+  {"user":"user:alice","relation":"owner","object":"pet:cat"},
+  {"user":"user:bob","relation":"owner","object":"pet:dog"},
+  {"user":"user:dave","relation":"viewer","object":"pet:cat"}
 ]
