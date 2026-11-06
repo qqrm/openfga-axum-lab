@@ -1,5 +1,8 @@
 mod bootstrap;
 mod dependency_policy;
+mod delivery;
+#[path = "../src/configuration.rs"]
+mod configuration;
 
 type ToolResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -9,6 +12,9 @@ async fn main() -> ToolResult {
     match args.as_slice() {
         [command] if command == "bootstrap" => bootstrap::run().await,
         [command] if command == "dependency-policy" => dependency_policy::run(),
-        _ => Err("usage: lab-tool <bootstrap|dependency-policy>".into()),
+        [command] if command == "probe" => delivery::probe().await,
+        [command] if command == "acceptance" => delivery::acceptance().await,
+        [command, directory, image] if command == "init-env" => delivery::initialize(directory, image),
+        _ => Err("usage: lab-tool <bootstrap|dependency-policy|probe|acceptance|init-env DIRECTORY IMAGE-DIGEST>".into()),
     }
 }
