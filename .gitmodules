@@ -1,0 +1,3 @@
+[submodule "vendor/rust-skills"]
+	path = vendor/rust-skills
+	url = https://github.com/leonardomso/rust-skills.git

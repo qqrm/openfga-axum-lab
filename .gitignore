@@ -2,3 +2,4 @@
 .env
 /artifacts
 __pycache__/
+/browser-output/

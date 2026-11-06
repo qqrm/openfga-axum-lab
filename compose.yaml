@@ -47,6 +47,8 @@ services:
       DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
       FGA_URL: http://openfga:8080
       FGA_CONFIG: /data/config.json
+      DEMO_SEED: "true"
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,9 +62,12 @@ services:
   test:
     image: python:3.13-slim-bookworm
     profiles: [test]
+    environment:
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
     depends_on: [app]
     volumes:
       - ./scripts:/app/scripts:ro
+      - fga-config:/data:ro
     command: python /app/scripts/e2e.py
     networks: [lab]
 networks:

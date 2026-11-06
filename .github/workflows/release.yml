@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Package artifact
+        env:
+          ARCHIVE_REPOSITORY: ${{ github.event.repository.name }}
+          ARCHIVE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          archive_name="${ARCHIVE_REPOSITORY}-${ARCHIVE_TAG}-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir -p package
+          cp target/release/openfga-axum-lab package/
+          cp -R migrations package/
+          cp README.md package/
+          tar -czf "dist/${archive_name}" -C package .
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz --generate-notes

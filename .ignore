@@ -1,0 +1,2 @@
+# Third-party submodule is a reference, not a crate in this workspace.
+vendor/rust-skills/

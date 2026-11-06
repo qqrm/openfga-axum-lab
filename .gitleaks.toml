@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Historical fake lab identity, replaced by sessions"
+condition = "AND"
+commits = ["5b75657d81e74ea44578d0030f33ff3f5247940d"]
+paths = ['^\.github/workflows/ci\.yml$']
+regexTarget = "line"
+regexes = ['Authorization: Bearer demo-alice']

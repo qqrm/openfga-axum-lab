@@ -1,8 +1,40 @@
 name: CI
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck scripts/*.sh
+      - run: bash scripts/check-tooling.sh
+  formal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1
+        with:
+          kani-version: '0.67.0'
+          args: '--lib'
+      - run: bash scripts/kani-negative.sh
+  browser-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - run: bash scripts/build-browser-demo.sh
+      - run: node scripts/check-browser-demo.mjs
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -26,8 +58,11 @@ jobs:
           fallback: none
       - run: cargo nextest run --locked
       - run: bash scripts/audit-dependencies.sh
+      - run: bash scripts/audit-negative.sh
       - run: cargo deny check advisories bans sources
+      - run: bash scripts/deny-negative.sh
       - run: cargo machete
+      - run: bash scripts/machete-negative.sh
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -50,6 +85,11 @@ jobs:
           docker compose exec -T postgres psql -U petlab -d petlab -v ON_ERROR_STOP=1 < scripts/recovery-fixture.sql
           docker compose restart -t 2 app
           python3 scripts/recovery.py
+      - name: Verify pending deletion recovery
+        run: |
+          docker compose exec -T postgres psql -U petlab -d petlab -v ON_ERROR_STOP=1 < scripts/deletion-fixture.sql
+          docker compose restart -t 2 app
+          docker compose --profile test run --rm --no-deps test python /app/scripts/deletion-recovery.py
       - name: Capture diagnostic latency
         run: |
           python3 scripts/benchmark.py
@@ -59,8 +99,7 @@ jobs:
       - name: Verify fail closed
         run: |
           docker compose stop openfga
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer demo-alice' http://127.0.0.1:3000/pets/fox)" = 503
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer demo-alice' http://127.0.0.1:3000/pets)" = 503
+          python3 scripts/failclosed.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -70,3 +109,21 @@ jobs:
       - name: Clean up
         if: always()
         run: docker compose down -v
+  ci-gate:
+    if: always()
+    needs: [rust, integration, shell, formal, browser-demo]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks
+        env:
+          RUST_RESULT: ${{ needs.rust.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          SHELL_RESULT: ${{ needs.shell.result }}
+          FORMAL_RESULT: ${{ needs.formal.result }}
+          BROWSER_RESULT: ${{ needs.browser-demo.result }}
+        run: |
+          test "$RUST_RESULT" = success
+          test "$INTEGRATION_RESULT" = success
+          test "$SHELL_RESULT" = success
+          test "$FORMAL_RESULT" = success
+          test "$BROWSER_RESULT" = success
