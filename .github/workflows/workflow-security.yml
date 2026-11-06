@@ -13,19 +13,26 @@ permissions:
 jobs:
   dependency-policy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - name: Checkout for read-only policy checks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Test dependency policy
-        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest
+          fallback: none
+      - name: Test Rust dependency policy and bootstrap guards
+        run: cargo nextest run --locked --bin lab-tool
       - name: Verify Dependabot commit provenance
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/dependency_policy.py
+        run: cargo run --locked --bin lab-tool -- dependency-policy
 
   actionlint:
     name: actionlint

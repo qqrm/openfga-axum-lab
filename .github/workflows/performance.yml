@@ -10,15 +10,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker compose up -d --build
-      - run: docker compose --profile test run --rm test
-      - run: python3 scripts/paired-benchmark.py
-      - run: docker stats --no-stream --format '{{json .}}' > artifacts/docker-stats.jsonl
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest
+          fallback: none
+      - name: Require correctness before calibration
+        run: cargo nextest run --locked --release --profile ci --test system --run-ignored only --success-output immediate
+      - name: Capture randomized balanced A/A samples
+        run: cargo nextest run --locked --release --profile ci --test performance --run-ignored only -E 'test(paired_aa_calibration)' --success-output immediate
+      - name: Record Docker engine
+        if: always()
+        run: |
+          mkdir -p artifacts
+          docker version > artifacts/docker-version.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: paired-aa
-          path: artifacts/
+          path: |
+            artifacts/
+            target/nextest/ci/junit.xml
           if-no-files-found: warn
-      - if: always()
-        run: docker compose down -v

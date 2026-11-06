@@ -37,6 +37,7 @@ jobs:
       - run: node scripts/check-browser-demo.mjs
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,61 +57,52 @@ jobs:
             cargo-deny@0.20.2
             cargo-machete@0.9.2
           fallback: none
-      - run: cargo nextest run --locked
-      - name: Verify cache invalidation across two replicas
-        run: cargo nextest run --locked --test cache_replicas --run-ignored only --success-output immediate
+      - run: cargo nextest run --locked --profile ci
       - run: bash scripts/audit-dependencies.sh
       - run: bash scripts/audit-negative.sh
       - run: cargo deny check advisories bans sources
       - run: bash scripts/deny-negative.sh
       - run: cargo machete
       - run: bash scripts/machete-negative.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: rust-nextest-results
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Start test stand
-        run: docker compose up -d --build app
-      - name: Run authorization scenarios
-        run: docker compose --profile test run --rm test
-      - name: Verify data and authorization survive restart
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest
+          fallback: none
+      - name: Run real-stack scenarios, cache races, deployment and latency in Rust
+        run: >-
+          cargo nextest run --locked --release --profile ci
+          --test system --test cache_replicas --test compose_deployment --test performance
+          --run-ignored only -E 'not test(paired_aa_calibration)'
+          --success-output immediate
+      - name: Record Docker engine
+        if: always()
         run: |
-          python3 scripts/persistence.py before
-          docker compose stop -t 2 app openfga postgres
-          docker compose up -d app
-          python3 scripts/persistence.py after
-      - name: Verify pending creation recovery
-        run: |
-          docker compose exec -T postgres psql -U petlab -d petlab -v ON_ERROR_STOP=1 < scripts/recovery-fixture.sql
-          docker compose restart -t 2 app
-          python3 scripts/recovery.py
-      - name: Verify pending deletion recovery
-        run: |
-          docker compose exec -T postgres psql -U petlab -d petlab -v ON_ERROR_STOP=1 < scripts/deletion-fixture.sql
-          docker compose restart -t 2 app
-          docker compose --profile test run --rm --no-deps test python /app/scripts/deletion-recovery.py
-      - name: Capture diagnostic latency
-        run: |
-          python3 scripts/benchmark.py
-          docker stats --no-stream --format '{{json .}}' > artifacts/docker-stats.jsonl
+          mkdir -p artifacts
           docker version > artifacts/docker-version.txt
-          docker compose images > artifacts/images.txt
-      - name: Verify fail closed
-        run: |
-          docker compose stop openfga
-          python3 scripts/failclosed.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: diagnostic-latency
-          path: artifacts/
+          name: integration-nextest-results
+          path: |
+            artifacts/
+            target/nextest/ci/junit.xml
           if-no-files-found: ignore
-      - name: Clean up
-        if: always()
-        run: docker compose down -v
   ci-gate:
     if: always()
     needs: [rust, integration, shell, formal, browser-demo]
