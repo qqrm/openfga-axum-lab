@@ -24,22 +24,29 @@ docker compose --profile test run --rm test
 `docker compose down` сохраняет тома, а `docker compose down -v` удаляет
 все данные стенда.
 
-## Проверки через GitHub
+## Работа через веб-интерфейс GitHub
 
-Откройте [Actions → CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml),
-выберите **Run workflow** и нужную ветку. Из терминала это тот же запуск:
+1. Откройте [веб-редактор](https://github.dev/qqrm/openfga-axum-lab),
+   создайте ветку, внесите изменения и откройте pull request.
+2. В **Checks** у pull request смотрите результаты. Для запуска вручную
+   откройте нужный workflow из таблицы, нажмите **Run workflow** и выберите
+   ветку. Кнопка доступна пользователям с правом записи в репозиторий.
+3. После слияния откройте **Browser preview**, выберите ветку `main` и
+   запустите публикацию. Ссылка появится в итогах запуска.
 
-```sh
-gh workflow run ci.yml --repo qqrm/openfga-axum-lab --ref main
-gh run list --repo qqrm/openfga-axum-lab --workflow ci.yml
-```
+| Workflow | Что запускает |
+| --- | --- |
+| [CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml) | Rust, Kani, тесты авторизации и восстановления на реальном стенде, сборку WASM-демо |
+| [Workflow Security](https://github.com/qqrm/openfga-axum-lab/actions/workflows/workflow-security.yml) | Проверки конфигурации GitHub Actions |
+| [CodeQL](https://github.com/qqrm/openfga-axum-lab/actions/workflows/codeql.yml) | Статический анализ кода |
+| [Secret scan](https://github.com/qqrm/openfga-axum-lab/actions/workflows/secrets.yml) | Сканирование Git-истории на секреты |
+| [Manual performance calibration](https://github.com/qqrm/openfga-axum-lab/actions/workflows/performance.yml) | A/A-замер и выгрузку сырых результатов |
+| [Browser preview](https://github.com/qqrm/openfga-axum-lab/actions/workflows/pages.yml) | Сборку, проверку и публикацию демонстрации на Pages |
 
 CI собирает полный Compose-стенд и проверяет права, отказ OpenFGA и
 восстановление. Nextest отдельно проверяет инвалидацию кэша на двух
 экземплярах Axum с PostgreSQL и OpenFGA в отдельном Compose-проекте.
 Проверки работают с вымышленными данными и не требуют личных секретов.
-Изменения можно подготовить в веб-редакторе GitHub в отдельной ветке:
-для PR запускаются CI, проверка workflow, CodeQL и сканирование секретов.
 
 Проверки кэша локально с Docker и `cargo-nextest`:
 
