@@ -1,23 +1,14 @@
-# Test overlay: a second real API process and a controllable OpenFGA proxy.
+# Only the test databases are published, on ephemeral loopback ports.
 services:
-  app:
-    image: petlab-cache-test-app
-  app2:
-    extends:
-      file: compose.yaml
-      service: app
-    build: !reset null
-    image: petlab-cache-test-app
-    pull_policy: never
-    ports: !reset []
+  postgres:
     environment:
-      FGA_URL: http://authz-test-proxy:8080
-    depends_on:
-      authz-test-proxy:
-        condition: service_started
-  authz-test-proxy:
-    image: python:3.13-slim-bookworm
-    volumes:
-      - ./scripts:/app/scripts:ro
-    command: python /app/scripts/authz-test-proxy.py
-    networks: [lab]
+      POSTGRES_PASSWORD: ${CACHE_TEST_PASSWORD:?set by the Rust test}
+    ports:
+      - "127.0.0.1::5432"
+  fga-migrate:
+    environment: &cache-test-database
+      OPENFGA_DATASTORE_URI: postgres://petlab:${CACHE_TEST_PASSWORD:?set by the Rust test}@postgres:5432/openfga?sslmode=disable
+  openfga:
+    environment: *cache-test-database
+    ports:
+      - "127.0.0.1::8080"
