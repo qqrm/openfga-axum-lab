@@ -3,10 +3,21 @@ services:
     environment:
       AUTHZ_CACHE_ENABLED: "true"
   app-uncached:
-    extends:
-      file: compose.yaml
-      service: app
+    build: .
     environment:
+      DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
+      FGA_URL: http://openfga:8080
+      FGA_CONFIG: /data/config.json
+      DEMO_SEED: "true"
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
       AUTHZ_CACHE_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - fga-config:/data:ro
+    networks: [lab]
     ports:
       - "127.0.0.1:3001:3000"
