@@ -1,44 +1,84 @@
-name: Manual authz cache A/B
-on: workflow_dispatch
+name: Authorization cache experiment
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/authz-cache-ab]
+    paths:
+      - .github/workflows/cache-ab.yml
+      - scripts/cache-ab.py
+      - compose.cache-ab.yaml
 permissions:
   contents: read
 jobs:
   cache-ab:
+    name: Independent runner ${{ matrix.replica }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [1, 2, 3]
+    env:
+      COMPOSE_FILE: compose.yaml:compose.cache-ab.yaml
+      BENCH_REPLICA: ${{ matrix.replica }}
+      AB_BLOCKS: '8'
+      AB_SAMPLES: '2000'
+      AA_SAMPLES: '1000'
+      AB_WARMUP: '200'
+      AB_WORKERS: '4'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Start controlled stack
-        run: docker compose -f compose.yaml -f compose.cache-ab.yaml up -d --build app app-uncached
-      - name: Verify integration scenarios
-        run: docker compose --profile test run --rm test
-      - name: Record environment and image digests
+      - name: Validate harness and build one shared image
         run: |
+          python3 -m py_compile scripts/cache-ab.py
           mkdir -p artifacts
-          docker compose -f compose.yaml -f compose.cache-ab.yaml config > artifacts/compose-resolved.yaml
-          docker compose -f compose.yaml -f compose.cache-ab.yaml images > artifacts/images.txt
-          docker image inspect $(docker compose -f compose.yaml -f compose.cache-ab.yaml images -q) > artifacts/image-inspect.json
+          docker compose build app
+      - name: Verify application scenarios
+        run: |
+          docker compose up -d --no-build app
+          docker compose --profile test run --rm test
+      - name: Reset to a fresh measurement dataset
+        run: |
+          docker compose down -v
+          docker compose up -d --no-build app app-uncached
+          docker compose exec -T postgres psql -U petlab -d postgres -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_stat_statements'
+      - name: Record environment and verify identical binaries
+        run: |
+          docker compose config > artifacts/compose-resolved.yaml
+          docker compose images > artifacts/images.txt
+          mapfile -t images < <(docker compose images -q | sort -u)
+          docker image inspect "${images[@]}" > artifacts/image-inspect.json
+          docker compose exec -T app sha256sum /usr/local/bin/app > artifacts/binary-on.sha256
+          docker compose exec -T app-uncached sha256sum /usr/local/bin/app > artifacts/binary-off.sha256
+          cmp artifacts/binary-on.sha256 artifacts/binary-off.sha256
           docker version > artifacts/docker-version.txt
+          docker compose version > artifacts/compose-version.txt
+          python3 --version > artifacts/python-version.txt
           uname -a > artifacts/uname.txt
           lscpu > artifacts/lscpu.txt
-          sha256sum Cargo.lock fga/model.json fga/legacy.json db/init.sql > artifacts/input-hashes.txt
-      - name: Measure randomized A/B
-        run: python3 scripts/cache-ab.py
-      - name: Capture resource and database diagnostics
+          cat /proc/meminfo > artifacts/meminfo.txt
+          git rev-parse HEAD > artifacts/commit.txt
+          sha256sum Cargo.lock Dockerfile fga/model.json fga/legacy.json migrations/*.sql scripts/cache-ab.py > artifacts/input-hashes.txt
+      - name: Measure paired A/A and A/B with correctness gates
+        run: |
+          export AB_SEED=$((2606 + BENCH_REPLICA))
+          python3 -u scripts/cache-ab.py | tee artifacts/benchmark.log
+      - name: Capture diagnostics
         if: always()
         run: |
           mkdir -p artifacts
           docker stats --no-stream --format '{{json .}}' > artifacts/docker-stats.jsonl || true
-          docker compose -f compose.yaml -f compose.cache-ab.yaml logs --no-color > artifacts/compose.log 2>&1 || true
+          docker compose logs --no-color > artifacts/compose.log 2>&1 || true
+          docker compose exec -T postgres psql -U petlab -d postgres -XAt -c "SELECT row_to_json(s) FROM pg_stat_statements s" > artifacts/pg-stat-statements.jsonl || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: authz-cache-ab
+          name: authz-cache-experiment-${{ matrix.replica }}
           path: artifacts/
           retention-days: 30
-          if-no-files-found: warn
-      - name: Clean up
+          if-no-files-found: error
+      - name: Clean up isolated lab
         if: always()
-        run: docker compose -f compose.yaml -f compose.cache-ab.yaml down -v
+        run: docker compose down -v
