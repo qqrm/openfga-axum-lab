@@ -191,5 +191,7 @@ async fn revocation_invalidates_warm_allows_across_replicas() -> TestResult {
     scenario.check(&restarted, StatusCode::FORBIDDEN).await?;
     assert_eq!(scenario.metric(&restarted, "bypass_pending").await?, 1);
     println!("After the lost response both replicas bypassed their cache, including after restart");
+    restarted.stop().await?;
+    first.stop().await?;
     Ok(())
 }

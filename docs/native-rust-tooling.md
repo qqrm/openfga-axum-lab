@@ -2,7 +2,8 @@
 
 This increment implements the documentation/browser/toolchain portion of
 [#11](https://github.com/qqrm/openfga-axum-lab/issues/11). It does not complete
-the domain-type, dispatch, allocation, coverage or sanitizer work.
+the domain-type, dispatch, allocation or sanitizer work. The separate
+[native coverage increment](native-coverage.md) measures the real Axum children.
 
 ## Toolchain and update policy
 
@@ -87,15 +88,16 @@ existing JS interface; the size-oriented settings are expressed in Cargo's
 `wasm` profile rather than a hand-written rustc invocation.
 
 CI uploads browser JUnit and HTML as `browser-cargo-results`. It retains the
-normal `rust`, `integration`, `shell`, `formal`, `browser-demo` dependency list
-of `ci-gate` and the `workflow_dispatch` entry point. A/A remains separately
+normal `rust`, `integration`, `shell`, `formal`, `browser-demo` requirements
+of `ci-gate`, adds native `coverage`, and keeps the `workflow_dispatch` entry
+point. A/A remains separately
 manual. Neither Pages publication nor release publication is run by this PR.
 
 ## Scope boundaries
 
 No authorization decisions, wire/storage formats, cache consistency protocol,
 cryptography, SQL behavior or runtime abstraction have been changed here.
-Coverage of native Axum child processes, property/mutation tests, applicable
-sanitizers, semantic newtypes, dispatch/allocation changes and custom harness
+Property/mutation tests, applicable sanitizers, semantic newtypes,
+dispatch/allocation changes and custom harness
 simplification still require separate implementation and execution evidence.
 No performance improvement is asserted by adding Cargo or documentation checks.

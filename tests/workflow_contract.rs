@@ -43,7 +43,7 @@ fn manual_ci_keeps_all_real_stack_suites_enabled() {
             "missing CI suite: {suite}"
         );
     }
-    assert!(ci.contains("needs: [rust, integration, shell, formal, browser-demo]"));
+    assert!(ci.contains("needs: [rust, integration, shell, formal, browser-demo, coverage]"));
     assert!(!ci.contains("continue-on-error:"));
     let performance = include_str!("../.github/workflows/performance.yml");
     assert!(performance.contains("on: workflow_dispatch"));
