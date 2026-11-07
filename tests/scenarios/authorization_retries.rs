@@ -4,12 +4,9 @@
 
 use crate::{
     api::{Api, expect},
-    stack::{self, App, Stack, TestResult, client},
+    proxy::Proxy,
+    stack::{App, Stack, TestResult, client},
 };
-#[path = "../cache_support/proxy.rs"]
-mod proxy;
-
-use proxy::Proxy;
 use reqwest::{Client, Method as M, StatusCode as S};
 use serde_json::{Value, json};
 use std::time::Duration;

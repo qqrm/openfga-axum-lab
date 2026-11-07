@@ -2,6 +2,8 @@
 pub mod api;
 #[path = "scenarios/authorization_retries.rs"]
 mod authorization_retries;
+#[path = "cache_support/proxy.rs"]
+mod proxy;
 #[path = "support/stack.rs"]
 pub mod stack;
 
