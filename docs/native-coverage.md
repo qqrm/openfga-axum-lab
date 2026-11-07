@@ -25,7 +25,7 @@ cargo llvm-cov report --show-missing-lines
 ```
 
 The first run executes ordinary native tests; the second explicitly runs the
-seven ignored system scenarios and the two-replica cache/fault scenario against
+ignored system scenarios and the two-replica cache/fault scenario against
 real PostgreSQL and OpenFGA. Instrumentation also applies to the ordinary
 `CARGO_BIN_EXE_openfga-axum-lab` and `CARGO_BIN_EXE_lab-tool` executables built by
 Cargo, not just to test harnesses. `--no-report` accumulates both runs after an
@@ -50,6 +50,10 @@ in-flight requests before returning normally. Successful native test paths
 explicitly stop and reap each child, including restarted processes and both
 replicas. A failed exit or shutdown timeout fails the test; forceful cleanup is
 only a fallback. `kill_on_drop` still handles failed/abandoned scenarios.
+
+Recovery failure scenarios instead require a normal nonzero startup exit, the
+expected error, and no readiness announcement. They also reap the child and
+verify its profile before repairing the fault and replaying recovery.
 
 When LLVM coverage is enabled, each Axum child receives a unique profile name
 containing a UUID, `%p` (PID) and `%m` (instrumented module). It stays beside the
