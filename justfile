@@ -62,3 +62,10 @@ k8s-port-forward:
 
 k8s-stop:
     kubectl delete namespace openfga-axum-lab --ignore-not-found
+
+# Playwright browser E2E
+e2e-install:
+    cd e2e && npm install && npx playwright install chromium
+
+e2e:
+    cd e2e && npm test
