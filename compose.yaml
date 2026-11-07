@@ -52,7 +52,7 @@ services:
     image: openfga-axum-lab:local
     environment:
       DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
-      FGA_URL: http://openfga:8080
+      FGA_URL: http://openfga:8081
       FGA_CONFIG: /data/config.json
       DEMO_SEED: "true"
       DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}

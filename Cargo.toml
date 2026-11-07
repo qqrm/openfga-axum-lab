@@ -22,6 +22,7 @@ prometheus = { version = "0.14", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+openfga-client = "0.6"
 thiserror = "2"
 derive_more = { version = "2", features = ["deref", "display"] }
 sha2 = "0.11"

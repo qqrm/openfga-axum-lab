@@ -43,14 +43,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let auth: Arc<dyn Authorizer> = match std::env::var("AUTHZ_MODE").as_deref() {
         Ok("deny") => Arc::new(DenyAll),
-        Ok("openfga") | Err(std::env::VarError::NotPresent) => Arc::new(OpenFga {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()?,
-            url: std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into()),
-            store: val("store_id")?,
-            model: val("model_id")?,
-        }),
+        Ok("openfga") | Err(std::env::VarError::NotPresent) => {
+            let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8081".into());
+            let store = val("store_id")?;
+            let model = val("model_id")?;
+            let service_client = openfga_client::client::OpenFgaServiceClient::connect(url).await?;
+            let client = openfga_client::client::OpenFgaClient::new(service_client, &store, &model);
+            Arc::new(OpenFga { client })
+        }
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
     let metrics = metrics::Metrics::new()?;

@@ -55,3 +55,7 @@ just k8s-start
 just k8s-port-forward
 just k8s-stop
 `
+
+## OpenFGA transport
+
+Backend uses the native gRPC interface (port 8081) via openfga-client; HTTP (port 8080) is used only for bootstrap.
