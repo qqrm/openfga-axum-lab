@@ -54,6 +54,8 @@ jobs:
         run: >-
           cargo nextest run --locked --offline --manifest-path browser-demo/Cargo.toml
           --config-file browser-demo/.config/nextest.toml --profile ci --success-output immediate
+      - name: Require the browser JUnit report
+        run: test -s browser-demo/target/nextest/ci/junit.xml
       - name: Build browser API docs and execute examples
         env:
           RUSTDOCFLAGS: -D warnings
@@ -67,9 +69,9 @@ jobs:
         with:
           name: browser-cargo-results
           path: |
-            target/browser-demo/nextest/ci/junit.xml
+            browser-demo/target/nextest/ci/junit.xml
             target/browser-demo/doc/
-          if-no-files-found: ignore
+          if-no-files-found: error
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 30
