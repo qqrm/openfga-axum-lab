@@ -1,14 +1,21 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "scenarios/authorization_retries.rs"]
+mod authorization_retries;
 #[path = "support/stack.rs"]
 pub mod stack;
 
 use api::{Api, expect};
 use reqwest::{Method as M, StatusCode as S};
 use serde_json::{Value, json};
+use sqlx::postgres::PgPoolOptions;
 use stack::{Stack, TestResult, client};
-use std::{collections::BTreeSet, sync::Arc};
-use tokio::{sync::Barrier, task::JoinSet};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use tokio::{
+    sync::Barrier,
+    task::JoinSet,
+    time::{interval, timeout},
+};
 use uuid::Uuid;
 
 fn ids(value: &Value) -> BTreeSet<&str> {
@@ -213,6 +220,22 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
     let id = race["id"].as_str().ok_or("missing pet id")?;
     let path = format!("/pets/{id}");
     let relation = format!("{path}/relations/viewer/carol");
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(stack.database_url())
+        .await?;
+    let mut lock = pool.begin().await?;
+    sqlx::query("SET LOCAL lock_timeout = '5s'")
+        .execute(&mut *lock)
+        .await?;
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *lock)
+        .await?;
+    sqlx::query("SELECT id FROM pets WHERE id=$1 FOR UPDATE")
+        .bind(id)
+        .execute(&mut *lock)
+        .await?;
     let barrier = Arc::new(Barrier::new(8));
     let mut tasks: JoinSet<TestResult<(usize, S)>> = JoinSet::new();
     for index in 0..8 {
@@ -220,13 +243,51 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
             api.call(M::DELETE, &path, &bob)
         } else {
             api.call(M::PUT, &relation, &bob)
-        };
+        }
+        .timeout(Duration::from_secs(30));
         let barrier = barrier.clone();
         tasks.spawn(async move {
             barrier.wait().await;
             Ok((index, request.send().await?.status()))
         });
     }
+    // Admit every request before racing the lifecycle transactions. Otherwise
+    // concurrent grants can exhaust a middleware check's bounded revision
+    // retries, and a 503 tests admission churn instead of tuple cleanup.
+    timeout(Duration::from_secs(10), async {
+        let mut poll = interval(Duration::from_millis(20));
+        loop {
+            poll.tick().await;
+            // Later row-lock waiters can block behind earlier waiters rather
+            // than directly behind our transaction. Include that whole chain.
+            let waiting: i64 = sqlx::query_scalar(
+                "WITH RECURSIVE activity AS MATERIALIZED (
+                     SELECT pid,state,wait_event_type,query,pg_blocking_pids(pid) AS blockers
+                     FROM pg_stat_activity WHERE datname=current_database()
+                 ), blocked(pid) AS (
+                     SELECT $1::integer
+                     UNION
+                     SELECT a.pid FROM activity a JOIN blocked b ON b.pid=ANY(a.blockers)
+                 )
+                 SELECT count(*) FROM activity a JOIN blocked b USING(pid)
+                 WHERE a.pid<>$1 AND a.state='active' AND a.wait_event_type='Lock'
+                 AND a.query IN (
+                     'SELECT status,delete_actor FROM pets WHERE id=$1 FOR UPDATE',
+                     'SELECT status FROM pets WHERE id=$1 FOR UPDATE'
+                 )",
+            )
+            .bind(blocker)
+            .fetch_one(&pool)
+            .await?;
+            if waiting == 8 {
+                return Ok::<(), sqlx::Error>(());
+            }
+        }
+    })
+    .await
+    .map_err(|error| format!("eight lifecycle handlers did not reach their row lock: {error}"))??;
+    println!("all eight admitted lifecycle requests wait for PostgreSQL backend {blocker}");
+    lock.commit().await?;
     let mut completed = 0;
     while let Some(result) = tasks.join_next().await {
         let (index, status) = result??;
@@ -239,6 +300,7 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
     }
     assert_eq!(completed, 8);
     stack.assert_no_tuples(&client, id).await?;
+    pool.close().await;
     app.stop().await?;
     Ok(())
 }
