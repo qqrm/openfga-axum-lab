@@ -70,7 +70,10 @@ async fn login_rate_limit_allows_twentieth_attempt_and_resets_expired_window() -
     .execute(&pool)
     .await?;
     let renewed = stack.login(&client, &app, "alice").await?;
-    assert!(renewed != alice, "new login reused an existing session token");
+    assert!(
+        renewed != alice,
+        "new login reused an existing session token"
+    );
     expect(api.call(M::GET, "/pets/fox", &renewed), S::OK).await?;
     let (count, fresh): (i32, bool) = sqlx::query_as(
         "SELECT attempts, window_start BETWEEN now()-interval '1 minute' AND now() \
