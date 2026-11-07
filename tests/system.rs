@@ -1,5 +1,7 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "scenarios/database_failures.rs"]
+mod database_failures;
 #[path = "support/stack.rs"]
 pub mod stack;
 

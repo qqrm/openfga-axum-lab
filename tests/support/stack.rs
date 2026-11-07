@@ -149,6 +149,10 @@ impl Stack {
         Ok(serde_json::from_slice(&std::fs::read(self.config_path())?)?)
     }
 
+    pub fn database_url(&self) -> &str {
+        &self.database
+    }
+
     pub fn bootstrap_command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_lab-tool"));
         command
