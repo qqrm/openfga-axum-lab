@@ -237,3 +237,31 @@ pub(crate) async fn recover_pending(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Authorizer, DenyAll, Tuple};
+
+    #[tokio::test]
+    async fn deny_all_never_grants_or_mutates_authorization() {
+        let auth: &dyn Authorizer = &DenyAll;
+        assert!(auth.ensure_available().await.is_err());
+        for (user, relation, object) in [
+            ("alice", "can_create", "shelter:central"),
+            ("carol", "can_view", "pet:fox"),
+            ("carol", "can_edit", "pet:fox"),
+            ("carol", "can_manage", "pet:fox"),
+        ] {
+            assert!(!auth.check(user, relation, object).await.unwrap());
+        }
+        let tuples = [Tuple {
+            user: "user:dave".into(),
+            relation: "viewer".into(),
+            object: "pet:fox".into(),
+        }];
+        for add in [true, false] {
+            assert!(auth.write(&tuples, add).await.is_err());
+        }
+        assert!(auth.delete_object("pet:fox").await.is_err());
+    }
+}

@@ -10,6 +10,7 @@ use tokio::{
 use uuid::Uuid;
 
 pub type TestResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
+type CoverageProfile = Option<(PathBuf, String)>;
 
 pub fn client() -> TestResult<Client> {
     Ok(Client::builder()
@@ -145,6 +146,10 @@ impl Stack {
         self.config_dir.path().join("config.json")
     }
 
+    pub fn database_url(&self) -> &str {
+        &self.database
+    }
+
     pub fn config(&self) -> TestResult<Value> {
         Ok(serde_json::from_slice(&std::fs::read(self.config_path())?)?)
     }
@@ -179,7 +184,7 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
+    fn app_command(&self, fga_url: &str, mode: &str) -> (Command, CoverageProfile) {
         let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
         command
             .env("DATABASE_URL", &self.database)
@@ -189,7 +194,7 @@ impl Stack {
             )
             .env("FGA_URL", fga_url)
             .env("FGA_CONFIG", self.config_path())
-            .env("AUTHZ_MODE", "openfga")
+            .env("AUTHZ_MODE", mode)
             .env("DEMO_SEED", "true")
             .env("DEMO_PASSWORD", &self.password)
             .env("LISTEN_ADDR", "127.0.0.1:0")
@@ -204,6 +209,15 @@ impl Stack {
             command.env("LLVM_PROFILE_FILE", &path);
             (path, prefix)
         });
+        (command, coverage_profile)
+    }
+
+    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
+        self.app_with_mode(fga_url, "openfga").await
+    }
+
+    pub async fn app_with_mode(&self, fga_url: &str, mode: &str) -> TestResult<App> {
+        let (mut command, coverage_profile) = self.app_command(fga_url, mode);
         let mut child = command.spawn()?;
         let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let address = timeout(Duration::from_secs(60), async {
@@ -327,7 +341,7 @@ impl Stack {
 pub struct App {
     pub url: String,
     child: Child,
-    coverage_profile: Option<(PathBuf, String)>,
+    coverage_profile: CoverageProfile,
 }
 
 impl App {
