@@ -124,6 +124,7 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     .await?;
     expect(api.call(M::DELETE, "/session", &dave), S::NO_CONTENT).await?;
     expect(api.call(M::GET, "/pets", &dave), S::UNAUTHORIZED).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -238,6 +239,7 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
     }
     assert_eq!(completed, 8);
     stack.assert_no_tuples(&client, id).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -271,6 +273,7 @@ async fn data_relations_and_sessions_survive_full_restart() -> TestResult {
     assert_eq!(pet["biography"], edit["biography"]);
     expect(api.call(M::DELETE, relation, &carol), S::NO_CONTENT).await?;
     expect(api.call(M::GET, "/pets/fox", &dave), S::FORBIDDEN).await?;
+    restarted.stop().await?;
     Ok(())
 }
 
@@ -292,6 +295,7 @@ async fn pending_creation_recovers_after_restart() -> TestResult {
     assert_eq!(pet["id"], "recovery-fixture");
     expect(api.call(M::DELETE, path, &carol), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, "recovery-fixture").await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -310,6 +314,7 @@ async fn pending_deletion_recovers_and_removes_all_tuples() -> TestResult {
     let api = Api::new(client.clone(), &app);
     expect(api.call(M::GET, "/pets/dog", &bob), S::NOT_FOUND).await?;
     stack.assert_no_tuples(&client, "dog").await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -330,6 +335,7 @@ async fn openfga_outage_fails_closed_even_with_warm_allows() -> TestResult {
     for path in ["/pets/fox", "/pets"] {
         expect(api.call(M::GET, path, &alice), S::SERVICE_UNAVAILABLE).await?;
     }
+    app.stop().await?;
     Ok(())
 }
 

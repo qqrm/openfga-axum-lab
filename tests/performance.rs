@@ -235,6 +235,7 @@ async fn diagnostic_latency() -> TestResult {
         "invalid measurement: inspect artifacts/benchmark.json"
     );
     println!("Recorded 800 measured requests and 100 warmups; no performance verdict.");
+    app.stop().await?;
     Ok(())
 }
 
@@ -344,6 +345,7 @@ async fn paired_aa_calibration() -> TestResult {
         "invalid measurement: inspect artifacts/paired-aa.json"
     );
     println!("Recorded six balanced A/A blocks; no regression verdict.");
+    app.stop().await?;
     Ok(())
 }
 
