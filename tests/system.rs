@@ -1,5 +1,7 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "scenarios/session_boundaries.rs"]
+mod session_boundaries;
 #[path = "support/stack.rs"]
 pub mod stack;
 
