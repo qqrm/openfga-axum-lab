@@ -72,6 +72,7 @@ coverage claim is made. Inspect zero-count regions in JSON/HTML against the
 source to identify untested authorization, recovery and error paths. Rustdoc
 warnings and the four executable domain doctests are independently required by
 the existing `rust` job (the browser job also executes its two examples).
+
 ## Tool documentation
 
 - [cargo-llvm-cov 0.9.1 usage and scope](https://github.com/taiki-e/cargo-llvm-cov/blob/v0.9.1/README.md)

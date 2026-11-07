@@ -332,7 +332,10 @@ pub struct App {
 
 impl App {
     pub async fn stop(mut self) -> TestResult {
-        let pid = self.child.id().ok_or("Axum child has already been reaped")?;
+        let pid = self
+            .child
+            .id()
+            .ok_or("Axum child has already been reaped")?;
         let stopped = timeout(Duration::from_secs(15), async {
             if let Some(status) = self.child.try_wait()? {
                 return Err(format!("Axum child {pid} exited before shutdown: {status}").into());
@@ -377,7 +380,9 @@ impl App {
                 if name.starts_with(&prefix) && name.ends_with(".profraw") {
                     let metadata = entry.metadata()?;
                     if !metadata.is_file() || metadata.len() == 0 {
-                        return Err(format!("empty Axum profile: {}", entry.path().display()).into());
+                        return Err(
+                            format!("empty Axum profile: {}", entry.path().display()).into()
+                        );
                     }
                     println!(
                         "Axum child {pid} exited successfully; profile {} ({} bytes)",
