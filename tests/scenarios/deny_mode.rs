@@ -12,15 +12,19 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 
 async fn pet_rows(db: &PgPool) -> TestResult<Vec<String>> {
-    Ok(sqlx::query_scalar("SELECT row_to_json(pets)::text FROM pets ORDER BY id")
-        .fetch_all(db)
-        .await?)
+    Ok(
+        sqlx::query_scalar("SELECT row_to_json(pets)::text FROM pets ORDER BY id")
+            .fetch_all(db)
+            .await?,
+    )
 }
 
 async fn cache_revision(db: &PgPool) -> TestResult<(i64, i64)> {
-    Ok(sqlx::query_as("SELECT generation,pending FROM authz_cache_state WHERE singleton")
-        .fetch_one(db)
-        .await?)
+    Ok(
+        sqlx::query_as("SELECT generation,pending FROM authz_cache_state WHERE singleton")
+            .fetch_one(db)
+            .await?,
+    )
 }
 
 async fn tuple_keys(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
@@ -35,7 +39,10 @@ async fn tuple_keys(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
         .json()
         .await?;
     assert!(
-        response["continuation_token"].as_str().unwrap_or("").is_empty(),
+        response["continuation_token"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty(),
         "small fixture snapshot must include every tuple"
     );
     let mut tuples: Vec<_> = response["tuples"]
@@ -93,7 +100,10 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
         .await?;
     let before_rows = pet_rows(&db).await?;
     let before_revision = cache_revision(&db).await?;
-    assert_eq!(before_revision.1, 0, "fixture must start without pending fences");
+    assert_eq!(
+        before_revision.1, 0,
+        "fixture must start without pending fences"
+    );
     let before_tuples = tuple_keys(&client, &stack).await?;
     assert!(!before_tuples.is_empty());
     stack.stop_fga().await?;
@@ -159,7 +169,11 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
     expect(api.call(M::DELETE, &deleted, &carol), S::NOT_FOUND).await?;
     expect(api.call(M::DELETE, "/session", &fresh), S::NO_CONTENT).await?;
     expect(api.call(M::GET, "/pets", &fresh), S::UNAUTHORIZED).await?;
-    assert_eq!(pet_rows(&db).await?, before_rows, "deny mode changed pet data");
+    assert_eq!(
+        pet_rows(&db).await?,
+        before_rows,
+        "deny mode changed pet data"
+    );
     assert_eq!(
         cache_revision(&db).await?,
         before_revision,
@@ -177,11 +191,7 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
     for token in [&alice, &bob, &carol, &dave] {
         expect(api.call(M::GET, "/pets/fox", token), S::OK).await?;
     }
-    expect(
-        api.call(M::GET, "/pets/recovery-fixture", &carol),
-        S::OK,
-    )
-    .await?;
+    expect(api.call(M::GET, "/pets/recovery-fixture", &carol), S::OK).await?;
     expect(api.call(M::GET, "/pets/dog", &bob), S::NOT_FOUND).await?;
     stack.assert_no_tuples(&client, "dog").await?;
     expect(
