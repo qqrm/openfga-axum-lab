@@ -6,15 +6,23 @@ use openfga_axum_lab::domain::{self, Event, Lifecycle};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum Error {
+    #[error("invalid request")]
     Invalid,
+    #[error("not found")]
     NotFound,
+    #[error("conflict")]
     Conflict,
+    #[error("gone")]
     Gone,
+    #[error("service unavailable")]
     Unavailable,
+    #[error("forbidden")]
     Forbidden,
+    #[error("unauthenticated")]
     Unauthenticated,
+    #[error("too many requests")]
     Throttled,
 }
 type Result<T> = std::result::Result<T, Error>;

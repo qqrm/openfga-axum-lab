@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("authorization backend unavailable")]
 pub(crate) struct AuthError;
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Tuple {
@@ -26,7 +27,7 @@ pub(crate) struct App {
     pub(crate) dummy_password_hash: Arc<str>,
     pub(crate) metrics: crate::metrics::Metrics,
 }
-#[derive(Clone)]
+#[derive(Clone, derive_more::Deref)]
 pub(crate) struct Identity(pub(crate) String);
 #[derive(Serialize)]
 pub(crate) struct Pet {
