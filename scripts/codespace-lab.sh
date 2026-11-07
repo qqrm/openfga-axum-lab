@@ -9,6 +9,11 @@ export APP_PORT=3000
 project=petlab-codespaces
 compose=(docker compose -p "$project" --env-file "$LAB_STATE_DIR/environment.env" -f compose.release.yaml)
 
+verify() {
+  # Use the running application's lab-tool, not an old image from the first env file.
+  "${compose[@]}" exec -T -e SMOKE_ALLOW_MUTATIONS=true app lab-tool acceptance
+}
+
 case "${1:-start}" in
   start)
     umask 077
@@ -32,8 +37,14 @@ case "${1:-start}" in
       fresh=true
     fi
     test -f "$LAB_STATE_DIR/environment.env"
+    if test "$fresh" = false; then
+      # A restart can rerun one-shot migrations. Quiesce this lab first;
+      # remove only its completed job containers, never its persistent volumes.
+      "${compose[@]}" stop -t 5 app openfga
+      "${compose[@]}" rm -f fga-migrate bootstrap
+    fi
     "${compose[@]}" up -d --wait --wait-timeout 120 app
-    if test "$fresh" = true; then "${compose[@]}" run --rm --no-deps acceptance; fi
+    if test "$fresh" = true; then verify; fi
     curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/readyz
     printf '\nReal lab ready: open private port 3000 in the Ports panel.\n'
     printf 'Demo users: alice, bob, carol, dave. Read the password in your own terminal:\ncat .lab/codespaces/secrets/demo-password\n'
@@ -47,7 +58,7 @@ case "${1:-start}" in
     fi
     ;;
   verify)
-    "${compose[@]}" run --rm --no-deps acceptance
+    verify
     ;;
   status)
     "${compose[@]}" ps

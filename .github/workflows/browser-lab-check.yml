@@ -4,6 +4,12 @@ on:
   push:
     branches: [main, feature/goal-10-delivery]
   workflow_dispatch:
+    inputs:
+      verify_tunnel:
+        description: 'Explicitly run a one-minute protected tunnel negative test (no email is sent)'
+        required: true
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
@@ -22,10 +28,14 @@ jobs:
           "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh verify
           mkdir -p artifacts
           "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" curl --fail --silent --max-time 5 http://127.0.0.1:3000/version > artifacts/devcontainer-version.json
-      - name: Check restart preserves the demo password and data
+      - name: Check restart preserves existing credentials and authorization data
         run: |
           "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh start
           "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh verify
+          "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh stop
+          "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh start
+          "$RUNNER_TEMP/devcontainer-cli/node_modules/.bin/devcontainer" exec --workspace-folder "$GITHUB_WORKSPACE" bash scripts/codespace-lab.sh verify
+          jq -n '{real_stack:true,authorization_acceptance:true,warm_restart:true,stop_start:true,codespaces_platform_login_verified:false}' > artifacts/devcontainer-verification.json
       - name: Remove only the test-owned devcontainer
         if: always()
         run: |
@@ -35,12 +45,12 @@ jobs:
         if: always()
         with:
           name: browser-lab-evidence
-          path: artifacts/devcontainer-version.json
+          path: artifacts/devcontainer-*.json
           retention-days: 14
   protected-tunnel:
-    # Short authoring proof on this owned branch only; never receives user secrets.
-    # PR jobs cannot open a tunnel. No mailbox receives a PIN in this negative test.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/goal-10-delivery'
+    # Explicit manual verification only; PR and push jobs never open tunnels.
+    # No repository secrets are used and no PIN is sent to this reserved mailbox.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.verify_tunnel
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
