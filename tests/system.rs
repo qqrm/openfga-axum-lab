@@ -2,6 +2,8 @@
 pub mod api;
 #[path = "support/stack.rs"]
 pub mod stack;
+#[path = "scenarios/deny_mode.rs"]
+mod deny_mode;
 
 use api::{Api, expect};
 use reqwest::{Method as M, StatusCode as S};
