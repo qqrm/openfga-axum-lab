@@ -15,6 +15,11 @@ release announcements and official Docker image definition were checked on
 - <https://github.com/nextest-rs/nextest/releases/tag/cargo-nextest-0.9.151>
 - <https://github.com/docker-library/official-images/blob/master/library/rust>
 
+The installer is SHA-pinned to `taiki-e/install-action` **2.90.2**, which supports
+the selected nextest release; checksum verification remains enabled and source
+build fallback remains disabled. The previous pinned installer refused this
+version rather than silently installing a different one.
+
 Rustfmt and Clippy come from that Rust toolchain. Kani keeps its existing
 pinned release and its own supported compiler; it is not a stable-Rust lane.
 Other existing pinned audit/security tools are not upgraded by this increment.
@@ -57,12 +62,17 @@ Therefore root-only Cargo commands do not claim to check it: the mandatory
 host, lints the WASM target, builds its docs, executes two ABI examples, builds
 WASM through Cargo and runs the existing JavaScript/WASM checks.
 
+Its nextest profile lives in `browser-demo/.config/nextest.toml`. It retains
+bounded test duration, zero retries and JUnit, without importing the server
+workspace's Docker binary filters. The root nextest configuration and its
+strict filter validation remain unchanged.
+
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo fmt --manifest-path browser-demo/Cargo.toml --all -- --check
 cargo clippy --locked --offline --manifest-path browser-demo/Cargo.toml --all-targets -- -D warnings
 cargo clippy --locked --offline --manifest-path browser-demo/Cargo.toml --target wasm32-unknown-unknown --lib -- -D warnings
-cargo nextest run --locked --offline --manifest-path browser-demo/Cargo.toml --config-file .config/nextest.toml --profile ci
+cargo nextest run --locked --offline --manifest-path browser-demo/Cargo.toml --config-file browser-demo/.config/nextest.toml --profile ci
 RUSTDOCFLAGS='-D warnings' cargo doc --locked --offline --manifest-path browser-demo/Cargo.toml --no-deps
 RUSTDOCFLAGS='-D warnings' cargo test --locked --offline --manifest-path browser-demo/Cargo.toml --doc
 bash scripts/build-browser-demo.sh

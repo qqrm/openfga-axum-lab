@@ -53,7 +53,7 @@ jobs:
       - name: Test the scalar ABI and shared domain using nextest
         run: >-
           cargo nextest run --locked --offline --manifest-path browser-demo/Cargo.toml
-          --config-file .config/nextest.toml --profile ci --success-output immediate
+          --config-file browser-demo/.config/nextest.toml --profile ci --success-output immediate
       - name: Build browser API docs and execute examples
         env:
           RUSTDOCFLAGS: -D warnings
