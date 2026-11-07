@@ -100,8 +100,10 @@ async fn fox_tuples(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     let response: TuplePage = client
         .post(format!("{}/stores/{store}/read", stack.fga_url))
-        .json(&json!({"tuple_key": {"object": "pet:fox"}, "page_size": 100,
-            "consistency": "HIGHER_CONSISTENCY"}))
+        .json(
+            &json!({"tuple_key": {"object": "pet:fox"}, "page_size": 100,
+            "consistency": "HIGHER_CONSISTENCY"}),
+        )
         .send()
         .await?
         .error_for_status()?
@@ -111,11 +113,19 @@ async fn fox_tuples(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
         response.continuation_token.is_empty(),
         "fixture tuple snapshot must contain every page"
     );
-    let mut tuples: Vec<_> = response
-        .tuples
-        .iter()
-        .map(|tuple| tuple["key"].clone())
-        .collect();
+    let mut tuples = Vec::with_capacity(response.tuples.len());
+    for tuple in response.tuples {
+        let mut key = tuple["key"].clone();
+        let fields = key.as_object_mut().ok_or("missing tuple key object")?;
+        // The protobuf JSON response may include an absent message as null.
+        // Preserve every other key field and reject conditional fixture tuples.
+        let condition = fields.remove("condition");
+        assert!(
+            condition.as_ref().is_none_or(Value::is_null),
+            "fixture requires an unconditional tuple: condition={condition:?}, key={key}"
+        );
+        tuples.push(key);
+    }
     tuples.sort_unstable_by_key(Value::to_string);
     Ok(tuples)
 }
@@ -126,15 +136,17 @@ async fn owner_allowed(client: &Client, stack: &Stack, permission: &str) -> Test
     let response: Value = client
         .post(format!("{}/stores/{store}/check", stack.fga_url))
         .json(&json!({"authorization_model_id": config["model_id"],
-            "consistency": "HIGHER_CONSISTENCY", "tuple_key": {
-                "user": "user:carol", "relation": permission, "object": "pet:fox"
-            }}))
+        "consistency": "HIGHER_CONSISTENCY", "tuple_key": {
+            "user": "user:carol", "relation": permission, "object": "pet:fox"
+        }}))
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
-    response["allowed"].as_bool().ok_or("missing decision".into())
+    response["allowed"]
+        .as_bool()
+        .ok_or("missing decision".into())
 }
 
 fn owner_tuple() -> Value {
@@ -190,7 +202,10 @@ async fn exercise_revocation(mutation: Mutation) -> TestResult {
     assert!(owner_allowed(&client, &stack, mutation.permission()).await?);
     let original_row = fox_row(&pool).await?;
     let original_tuples = fox_tuples(&client, &stack).await?;
-    assert!(original_tuples.contains(&owner_tuple()));
+    assert!(
+        original_tuples.contains(&owner_tuple()),
+        "missing Carol owner in real OpenFGA tuples: {original_tuples:#?}"
+    );
 
     let mut lock = pool.begin().await?;
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
@@ -202,7 +217,10 @@ async fn exercise_revocation(mutation: Mutation) -> TestResult {
     let request = mutation.request(&api, &carol);
     let pending = tokio::spawn(async move { expect(request, S::FORBIDDEN).await });
     wait_for_handler(&pool, blocker, mutation.handler_query()).await?;
-    assert!(!pending.is_finished(), "request must still wait for the lock");
+    assert!(
+        !pending.is_finished(),
+        "request must still wait for the lock"
+    );
     println!("{mutation:?}: HTTP guard passed; handler waits for PostgreSQL backend {blocker}");
 
     set_owner(&client, &stack, &pool, false).await?;
