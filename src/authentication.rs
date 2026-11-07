@@ -4,6 +4,7 @@ use argon2::{Argon2, PasswordVerifier, password_hash::PasswordHash};
 use openfga_axum_lab::domain;
 
 impl App {
+    #[tracing::instrument(skip(self, token), name = "auth.authenticate")]
     pub(crate) async fn authenticate(&self, token: &str) -> Result<Option<String>, Error> {
         if token.is_empty() || token.len() > 256 {
             return Ok(None);
@@ -16,6 +17,7 @@ impl App {
         .await
         .map_err(|_| Error::Unavailable)
     }
+    #[tracing::instrument(skip(self, username, password), name = "auth.login")]
     pub(crate) async fn login(&self, username: &str, password: String) -> Result<String, Error> {
         if !domain::valid_id(username) || password.is_empty() || password.len() > 1024 {
             return Err(Error::Unauthenticated);
@@ -66,6 +68,7 @@ impl App {
         tracing::info!("login succeeded");
         Ok(token)
     }
+    #[tracing::instrument(skip(self, token), name = "auth.logout")]
     pub(crate) async fn logout(&self, token: &str) -> Result<(), Error> {
         if token.is_empty() || token.len() > 256 {
             return Err(Error::Unauthenticated);

@@ -62,6 +62,7 @@ struct ReadResponse {
 }
 #[async_trait]
 impl Authorizer for OpenFga {
+    #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
         let health = self
             .client
@@ -80,6 +81,7 @@ impl Authorizer for OpenFga {
             Err(AuthError)
         }
     }
+    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         let response = self
             .client
@@ -98,6 +100,7 @@ impl Authorizer for OpenFga {
             .map_err(|_| AuthError)?;
         Ok(response.allowed)
     }
+    #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         let mut data = json!({"authorization_model_id":self.model});
         data[if add { "writes" } else { "deletes" }] = if add {
@@ -115,6 +118,7 @@ impl Authorizer for OpenFga {
             .map_err(|_| AuthError)?;
         Ok(())
     }
+    #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
     async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
         // Re-read the first page after every deletion: continuation tokens do
         // not give a stable snapshot while the underlying tuples are removed.

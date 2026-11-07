@@ -161,3 +161,38 @@ Rust-тест `diagnostic_latency` фиксирует сырые задержк�
 [Варианты запуска в браузере](docs/browser-feasibility.md) рассматриваются
 отдельно. Compose-стенд, эмуляция контейнеров и статическая демонстрация имеют
 разные гарантии; пока полноценный браузерный стек не подтверждён.
+
+## Just-команды
+
+Установите [just](https://github.com/casey/just), затем:
+
+```sh
+just build
+just check
+just start
+just logs
+just test
+just stop
+```
+
+Английская версия: [README.en.md](README.en.md).
+
+## Локальный Kubernetes
+
+Манифесты в . Ограниченные ресурсы заданы в .
+
+```sh
+just k8s-start
+just k8s-port-forward
+just k8s-stop
+```
+
+## Локальный Kubernetes
+
+Манифесты в k8s/. Ограниченные ресурсы заданы в requests/limits.
+
+`
+just k8s-start
+just k8s-port-forward
+just k8s-stop
+`

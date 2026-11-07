@@ -10,7 +10,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-fn bearer(headers: &HeaderMap) -> Option<&str> {
+mod auth;
+pub(crate) use auth::guard;
+
+pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -40,49 +43,6 @@ async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
     };
     match app.logout(token).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => error_response(error),
-    }
-}
-async fn guard(State(app): State<App>, mut request: Request, next: Next) -> Response {
-    let Some(token) = bearer(request.headers()) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let who = match app.authenticate(token).await {
-        Ok(Some(user)) => user,
-        Ok(None) => return StatusCode::UNAUTHORIZED.into_response(),
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-    };
-    let path = request
-        .extensions()
-        .get::<MatchedPath>()
-        .map(MatchedPath::as_str)
-        .unwrap_or("");
-    let relation = match (request.method(), path) {
-        (&Method::GET, "/pets") => {
-            request.extensions_mut().insert(Identity(who));
-            return next.run(request).await;
-        }
-        (&Method::POST, "/pets") => "can_create",
-        (&Method::GET, "/pets/{id}") => "can_view",
-        (&Method::PATCH, "/pets/{id}") => "can_edit",
-        (&Method::DELETE, "/pets/{id}") => "can_manage",
-        (&Method::PUT | &Method::DELETE, "/pets/{id}/relations/{relation}/{subject}") => {
-            "can_manage"
-        }
-        _ => return StatusCode::FORBIDDEN.into_response(),
-    };
-    let decision = if relation == "can_create" {
-        app.authorize_shelter_creation(&who).await
-    } else {
-        let id = request.uri().path().split('/').nth(2).unwrap_or("");
-        let retry = request.method() == Method::DELETE && path == "/pets/{id}";
-        app.authorize_pet(&who, id, relation, retry).await
-    };
-    match decision {
-        Ok(()) => {
-            request.extensions_mut().insert(Identity(who));
-            next.run(request).await
-        }
         Err(error) => error_response(error),
     }
 }
@@ -176,7 +136,7 @@ pub(crate) fn router(app: App) -> Router {
         .route_layer(middleware::from_fn_with_state(app.clone(), guard))
         .route(
             "/",
-            get(|| async { Html(include_str!("../assets/index.html")) }),
+            get(|| async { Html(include_str!("../../assets/index.html")) }),
         )
         .route(
             "/assets/app.js",
@@ -186,7 +146,7 @@ pub(crate) fn router(app: App) -> Router {
                         axum::http::header::CONTENT_TYPE,
                         "text/javascript; charset=utf-8",
                     )],
-                    include_str!("../assets/app.js"),
+                    include_str!("../../assets/app.js"),
                 )
             }),
         )
@@ -195,7 +155,7 @@ pub(crate) fn router(app: App) -> Router {
             get(|| async {
                 (
                     [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
-                    include_str!("../assets/app.css"),
+                    include_str!("../../assets/app.css"),
                 )
             }),
         )

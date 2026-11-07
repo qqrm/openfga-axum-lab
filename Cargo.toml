@@ -2,11 +2,13 @@
 name = "openfga-axum-lab"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.99"
 default-run = "openfga-axum-lab"
 
 [[bin]]
 name = "lab-tool"
 path = "tools/main.rs"
+
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }

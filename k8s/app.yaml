@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: openfga-axum-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      initContainers:
+        - name: bootstrap
+          image: python:3.13-slim-bookworm
+          command: ["python", "/app/scripts/bootstrap.py"]
+          env:
+            - name: FGA_URL
+              value: http://openfga:8080
+          volumeMounts:
+            - name: fga
+              mountPath: /app/fga
+            - name: scripts
+              mountPath: /app/scripts
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      containers:
+        - name: app
+          image: openfga-axum-lab:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
+            - name: FGA_URL
+              value: http://openfga:8080
+            - name: FGA_CONFIG
+              value: /data/config.json
+            - name: DEMO_SEED
+              value: "true"
+            - name: DEMO_PASSWORD
+              value: local-demo-password
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: fga
+          configMap:
+            name: fga-model
+        - name: scripts
+          configMap:
+            name: fga-scripts
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: openfga-axum-lab
+spec:
+  selector:
+    app: app
+  ports:
+    - port: 3000
+      targetPort: 3000

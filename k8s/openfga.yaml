@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+  namespace: openfga-axum-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfga
+  template:
+    metadata:
+      labels:
+        app: openfga
+    spec:
+      containers:
+        - name: openfga
+          image: openfga/openfga:v1.10.3
+          command: ["openfga", "run"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+  namespace: openfga-axum-lab
+spec:
+  selector:
+    app: openfga
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openfga-migrate
+  namespace: openfga-axum-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: openfga/openfga:v1.10.3
+          command: ["openfga", "migrate"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      restartPolicy: Never
+  backoffLimit: 3
