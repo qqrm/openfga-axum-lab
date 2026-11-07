@@ -39,7 +39,11 @@ async fn login_input_limits_and_unusable_credentials_fail_closed() -> TestResult
         json!({"username": "carol", "password": ""}),
         json!({"username": "carol", "password": "p".repeat(1025)}),
     ] {
-        expect(api.request(M::POST, "/session").json(&input), S::UNAUTHORIZED).await?;
+        expect(
+            api.request(M::POST, "/session").json(&input),
+            S::UNAUTHORIZED,
+        )
+        .await?;
     }
     for input in [
         json!({"username": "carol", "password": "synthetic-password", "admin": true}),
@@ -170,15 +174,24 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         ),
         (
             "nonexistent token",
-            Some(HeaderValue::from_str(&format!("Bearer {}", "0".repeat(64)))?),
+            Some(HeaderValue::from_str(&format!(
+                "Bearer {}",
+                "0".repeat(64)
+            ))?),
         ),
         (
             "maximum-length nonexistent token",
-            Some(HeaderValue::from_str(&format!("Bearer {}", "0".repeat(256)))?),
+            Some(HeaderValue::from_str(&format!(
+                "Bearer {}",
+                "0".repeat(256)
+            ))?),
         ),
         (
             "oversized token",
-            Some(HeaderValue::from_str(&format!("Bearer {}", "0".repeat(257)))?),
+            Some(HeaderValue::from_str(&format!(
+                "Bearer {}",
+                "0".repeat(257)
+            ))?),
         ),
     ] {
         for (method, path) in [(M::GET, "/pets/fox"), (M::DELETE, "/session")] {
@@ -198,13 +211,12 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
     expect(api.call(M::GET, "/pets/fox", &live), S::OK).await?;
 
     // Use PostgreSQL's own clock, not sleeps or a wall-clock race with expiry.
-    let changed = sqlx::query(
-        "UPDATE sessions SET expires_at=now()-interval '1 second' WHERE token_hash=$1",
-    )
-    .bind(Sha256::digest(expired.as_bytes()).to_vec())
-    .execute(&db)
-    .await?
-    .rows_affected();
+    let changed =
+        sqlx::query("UPDATE sessions SET expires_at=now()-interval '1 second' WHERE token_hash=$1")
+            .bind(Sha256::digest(expired.as_bytes()).to_vec())
+            .execute(&db)
+            .await?
+            .rows_affected();
     assert_eq!(changed, 1);
     expect(api.call(M::GET, "/pets/fox", &expired), S::UNAUTHORIZED).await?;
     expect(api.call(M::DELETE, "/session", &expired), S::UNAUTHORIZED).await?;

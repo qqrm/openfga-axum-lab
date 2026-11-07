@@ -109,7 +109,10 @@ mod tests {
         let oversized = "x".repeat(257);
         for token in ["", oversized.as_str()] {
             assert!(matches!(app.authenticate(token).await, Ok(None)));
-            assert!(matches!(app.logout(token).await, Err(Error::Unauthenticated)));
+            assert!(matches!(
+                app.logout(token).await,
+                Err(Error::Unauthenticated)
+            ));
         }
         // The inclusive length limit reaches the unavailable pool, so this
         // test cannot pass merely because every token was rejected locally.
@@ -118,6 +121,9 @@ mod tests {
             app.authenticate(&at_limit).await,
             Err(Error::Unavailable)
         ));
-        assert!(matches!(app.logout(&at_limit).await, Err(Error::Unavailable)));
+        assert!(matches!(
+            app.logout(&at_limit).await,
+            Err(Error::Unavailable)
+        ));
     }
 }

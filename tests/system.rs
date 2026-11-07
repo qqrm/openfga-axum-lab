@@ -1,9 +1,9 @@
 #[path = "support/api.rs"]
 pub mod api;
-#[path = "support/stack.rs"]
-pub mod stack;
 #[path = "scenarios/session_boundaries.rs"]
 mod session_boundaries;
+#[path = "support/stack.rs"]
+pub mod stack;
 
 use api::{Api, expect};
 use reqwest::{Method as M, StatusCode as S};
