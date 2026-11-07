@@ -1,5 +1,7 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "scenarios/login_throttling.rs"]
+mod login_throttling;
 #[path = "support/stack.rs"]
 pub mod stack;
 
