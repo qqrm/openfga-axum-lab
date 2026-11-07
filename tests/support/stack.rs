@@ -145,6 +145,10 @@ impl Stack {
         self.config_dir.path().join("config.json")
     }
 
+    pub fn database_url(&self) -> &str {
+        &self.database
+    }
+
     pub fn config(&self) -> TestResult<Value> {
         Ok(serde_json::from_slice(&std::fs::read(self.config_path())?)?)
     }
