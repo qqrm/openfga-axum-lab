@@ -106,7 +106,11 @@ async fn session_database_errors_fail_closed_and_recover() -> TestResult {
         S::SERVICE_UNAVAILABLE,
     )
     .await?;
-    assert_eq!(session_count(&db).await?, 1, "failed logout deleted a session");
+    assert_eq!(
+        session_count(&db).await?,
+        1,
+        "failed logout deleted a session"
+    );
     expect(api.call(M::GET, PET, &alice), S::OK).await?;
     sqlx::raw_sql("DROP TRIGGER reject_logout ON sessions; DROP FUNCTION reject_test_write()")
         .execute(&db)
@@ -158,7 +162,9 @@ async fn fga_allows_dave(stack: &Stack, client: &Client) -> TestResult<bool> {
         .error_for_status()?
         .json()
         .await?;
-    result["allowed"].as_bool().ok_or("missing FGA decision".into())
+    result["allowed"]
+        .as_bool()
+        .ok_or("missing FGA decision".into())
 }
 
 #[tokio::test]
@@ -196,7 +202,11 @@ async fn coordinator_database_errors_preserve_fences_and_recover() -> TestResult
         expect(api.call(M::GET, "/pets", &carol), S::SERVICE_UNAVAILABLE).await?;
     }
     let healthy_login = stack.login(&client, &first, "alice").await?;
-    expect(api.call(M::DELETE, "/session", &healthy_login), S::NO_CONTENT).await?;
+    expect(
+        api.call(M::DELETE, "/session", &healthy_login),
+        S::NO_CONTENT,
+    )
+    .await?;
     sqlx::query("INSERT INTO authz_cache_state(generation, pending) VALUES ($1, $2)")
         .bind(initial.0)
         .bind(initial.1)
@@ -217,7 +227,11 @@ async fn coordinator_database_errors_preserve_fences_and_recover() -> TestResult
     .await?;
     assert!(!fga_allows_dave(&stack, &client).await?);
     expect(api.call(M::PUT, RELATION, &carol), S::SERVICE_UNAVAILABLE).await?;
-    assert_eq!(revision(&db).await?, initial, "failed begin persisted a fence");
+    assert_eq!(
+        revision(&db).await?,
+        initial,
+        "failed begin persisted a fence"
+    );
     // Ask real OpenFGA directly: a cached deny could hide an accidental grant.
     assert!(!fga_allows_dave(&stack, &client).await?);
     expect(api.call(M::GET, PET, &dave), S::FORBIDDEN).await?;
@@ -243,7 +257,11 @@ async fn coordinator_database_errors_preserve_fences_and_recover() -> TestResult
         expect(api.call(M::GET, PET, &dave), S::OK).await?;
         assert_eq!(cache_event(&client, app, "hit_allow").await?, before + 1);
     }
-    expect(api.call(M::DELETE, RELATION, &carol), S::SERVICE_UNAVAILABLE).await?;
+    expect(
+        api.call(M::DELETE, RELATION, &carol),
+        S::SERVICE_UNAVAILABLE,
+    )
+    .await?;
     assert!(!fga_allows_dave(&stack, &client).await?);
     let fenced = (granted.0 + 1, 1);
     assert_eq!(revision(&db).await?, fenced);
@@ -251,7 +269,10 @@ async fn coordinator_database_errors_preserve_fences_and_recover() -> TestResult
         let before = cache_event(&client, app, "bypass_pending").await?;
         let api = Api::new(client.clone(), app);
         expect(api.call(M::GET, PET, &dave), S::FORBIDDEN).await?;
-        assert_eq!(cache_event(&client, app, "bypass_pending").await?, before + 1);
+        assert_eq!(
+            cache_event(&client, app, "bypass_pending").await?,
+            before + 1
+        );
     }
 
     // Repair restores writes, but cannot erase the earlier unresolved fence.
@@ -270,7 +291,10 @@ async fn coordinator_database_errors_preserve_fences_and_recover() -> TestResult
     expect(api.call(M::DELETE, RELATION, &carol), S::NO_CONTENT).await?;
     expect(second_api.call(M::GET, PET, &dave), S::FORBIDDEN).await?;
     assert_eq!(revision(&db).await?, (fenced.0 + 6, 1));
-    assert_eq!(cache_event(&client, &second, "bypass_pending").await?, before + 2);
+    assert_eq!(
+        cache_event(&client, &second, "bypass_pending").await?,
+        before + 2
+    );
     assert!(!fga_allows_dave(&stack, &client).await?);
 
     second.stop().await?;

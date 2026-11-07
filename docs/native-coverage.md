@@ -25,7 +25,7 @@ cargo llvm-cov report --show-missing-lines
 ```
 
 The first run executes ordinary native tests; the second explicitly runs the
-seven ignored system scenarios and the two-replica cache/fault scenario against
+ignored system scenarios and the two-replica cache/fault scenario against
 real PostgreSQL and OpenFGA. Instrumentation also applies to the ordinary
 `CARGO_BIN_EXE_openfga-axum-lab` and `CARGO_BIN_EXE_lab-tool` executables built by
 Cargo, not just to test harnesses. `--no-report` accumulates both runs after an
