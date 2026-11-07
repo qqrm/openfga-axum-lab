@@ -8,6 +8,8 @@ mod database_failures;
 mod deny_mode;
 #[path = "scenarios/login_throttling.rs"]
 mod login_throttling;
+#[path = "cache_support/proxy.rs"]
+mod proxy;
 #[path = "scenarios/recovery_failures.rs"]
 mod recovery_failures;
 #[path = "scenarios/session_boundaries.rs"]
