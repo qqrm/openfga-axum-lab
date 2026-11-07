@@ -2,6 +2,8 @@
 pub mod api;
 #[path = "support/stack.rs"]
 pub mod stack;
+#[path = "scenarios/transaction_authorization.rs"]
+mod transaction_authorization;
 
 use api::{Api, expect};
 use reqwest::{Method as M, StatusCode as S};
