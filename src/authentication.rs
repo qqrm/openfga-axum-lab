@@ -83,3 +83,47 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{infrastructure::DenyAll, metrics::Metrics};
+    use sqlx::postgres::PgPoolOptions;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn invalid_token_lengths_are_rejected_without_database_access() {
+        // HTTP filters these inputs before calling the use cases. A closed
+        // lazy pool proves their own guards do not rely on that outer filter.
+        let db = PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .expect("valid lazy database URL");
+        db.close().await;
+        let app = App {
+            db,
+            auth: Arc::new(DenyAll),
+            login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
+            dummy_password_hash: "unused".into(),
+            metrics: Metrics::new().expect("isolated metrics registry"),
+        };
+        let oversized = "x".repeat(257);
+        for token in ["", oversized.as_str()] {
+            assert!(matches!(app.authenticate(token).await, Ok(None)));
+            assert!(matches!(
+                app.logout(token).await,
+                Err(Error::Unauthenticated)
+            ));
+        }
+        // The inclusive length limit reaches the unavailable pool, so this
+        // test cannot pass merely because every token was rejected locally.
+        let at_limit = "x".repeat(256);
+        assert!(matches!(
+            app.authenticate(&at_limit).await,
+            Err(Error::Unavailable)
+        ));
+        assert!(matches!(
+            app.logout(&at_limit).await,
+            Err(Error::Unavailable)
+        ));
+    }
+}

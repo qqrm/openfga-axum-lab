@@ -1,7 +1,19 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "scenarios/database_failures.rs"]
+mod database_failures;
+#[path = "scenarios/deny_mode.rs"]
+mod deny_mode;
+#[path = "scenarios/login_throttling.rs"]
+mod login_throttling;
+#[path = "scenarios/recovery_failures.rs"]
+mod recovery_failures;
+#[path = "scenarios/session_boundaries.rs"]
+mod session_boundaries;
 #[path = "support/stack.rs"]
 pub mod stack;
+#[path = "scenarios/transaction_authorization.rs"]
+mod transaction_authorization;
 
 use api::{Api, expect};
 use reqwest::{Method as M, StatusCode as S};
