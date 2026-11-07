@@ -9,3 +9,4 @@ __pycache__/
 /staging/
 /stable/
 /local/
+/.lab/

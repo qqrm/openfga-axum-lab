@@ -1,22 +1,49 @@
 # Лапки — Rust/Axum и объектная авторизация OpenFGA
 
-Небольшой инженерный стенд: приют, роли и разрешения на отдельные объекты,
-PostgreSQL, OpenFGA, отзыв доступа между репликами и восстановление после отказов.
-Данные вымышлены. Это лабораторная демонстрация, не готовая публичная IAM-система.
+Инженерная лаборатория: роли и доступ к отдельным объектам, настоящий
+PostgreSQL/OpenFGA, отзыв прав между репликами и восстановление после отказов.
+Все данные вымышлены. Это не публичная production IAM-система.
 
-## Что можно открыть и запустить
+**[Открыть личную настоящую лабораторию в Codespaces](https://codespaces.new/qqrm/openfga-axum-lab?quickstart=1)** ·
+**[Запустить временный стенд через Actions](https://github.com/qqrm/openfga-axum-lab/actions/workflows/live-lab.yml)** ·
+[Посмотреть статическое демо](https://qqrm.github.io/openfga-axum-lab/)
 
-| Вариант | Что работает | Состояние |
-| --- | --- | --- |
-| [Браузерное демо](https://qqrm.github.io/openfga-axum-lab/) | WASM-ядро; данные и права имитируются | Отдельная статическая публикация, не backend |
-| Локальный Compose | Настоящие Axum, PostgreSQL и OpenFGA | Запуск ниже; проверяется в CI |
-| Контейнерная поставка | Тот же стек из готового образа без сборки Rust | Подготовлены image-only Compose и release workflow; опубликованный релиз не заявляется до его появления в Releases |
-| Staging / stable | Независимые постоянные backend-окружения | Хост и HTTPS-адреса ещё не настроены; одноразовые CI-стенды ими не считаются |
+## Посмотреть и потестировать в браузере
 
-## Быстрый запуск из исходников
+**Codespaces — для посетителя репозитория.** Нужен GitHub-аккаунт с доступной
+квотой Codespaces; использование сверх квоты может оплачиваться. После создания
+окружения `postStartCommand` собирает и запускает реальные Axum, PostgreSQL и
+OpenFGA, проверяет готовность и первичный сценарий авторизации. Откройте порт
+**3000** в панели **Ports**. Он приватный, а PostgreSQL/OpenFGA не пробрасываются.
+В своём терминале выполните `cat .lab/codespaces/secrets/demo-password` и войдите
+как `alice`, `bob`, `carol` или `dave`. Не публикуйте пароль. Данные сохраняются
+при остановке/возобновлении; удаление Codespace удаляет его среду.
 
-Нужны Git, Docker Engine и Docker Compose v2. Команды ниже — для Linux/WSL2.
-Rust на хосте для этого запуска не нужен:
+**Actions — для ручной проверки владельцем.** Один раз задайте repository secrets
+`LIVE_LAB_ALLOWED_EMAIL` (один точный email) и `LIVE_LAB_PASSWORD` (16–128 символов).
+Откройте **Live laboratory → Run workflow → main**, выберите 15, 30 или 60 минут.
+После сборки и проверки в логе шага **Start and open the protected lab** появится
+HTTPS-ссылка и время окончания. Войдите через email-код, затем используйте
+demo-пользователя и свой `LIVE_LAB_PASSWORD`. Доступ работает, пока выполняется
+**Keep the session available**. **Cancel workflow** закрывает сессию раньше.
+Ссылка также сохраняется в summary и артефакте `live-lab-link-*`; старые ссылки
+после завершения не работают. Summary может появиться только после окончания
+job — во время сессии используйте ссылку из лога завершённого стартового шага.
+
+До слияния PR #12 эти конфигурации находятся в `feature/goal-10-delivery`:
+для Codespaces выберите эту ветку; ручной Actions workflow станет доступен
+с `main` после слияния. Наличие конфигурации не означает созданного личного
+Codespace или уже работающей сессии. Подробности и границы проверок:
+[живая лаборатория](docs/live-lab.md).
+
+**Pages — только имитация интерфейса и данных с WASM-ядром.** Настоящие
+PostgreSQL и OpenFGA там не запускаются. Постоянные удалённые staging/stable
+пока не настроены; для просмотра лабы они не обязательны.
+
+## Локальный запуск
+
+Нужны Git, Docker Engine и Docker Compose v2. Rust на хосте не нужен.
+Команды для Linux/WSL2:
 
 ```sh
 git clone https://github.com/qqrm/openfga-axum-lab.git
@@ -24,34 +51,32 @@ cd openfga-axum-lab
 docker compose up -d --build app
 ```
 
-Откройте `http://localhost:3000`. Войдите как `alice`, `bob`, `carol` или
-`dave`; пароль локального исходного стенда — `local-demo-password`.
-`alice` — администратор, `bob` — сотрудник, `carol` — владелец лисы Mika,
-`dave` изначально видит кота Pixel, но не лису.
+Откройте `http://localhost:3000`. Локальный исходный стенд использует пароль
+`local-demo-password`: `alice` — администратор, `bob` — сотрудник,
+`carol` — владелец лисы Mika, `dave` изначально видит кота Pixel, но не лису.
+Это не пароль личного Codespace или защищённой Actions-сессии.
 
-Compose создаёт две базы в одном PostgreSQL. `lab-tool bootstrap` публикует
-модель и исходные отношения OpenFGA; повторный запуск сохраняет store/model,
-а не молча заменяет их. `APP_PORT=3001 docker compose up -d app` меняет порт.
-`DEMO_PASSWORD` задаёт только первоначальный пароль: существующие аккаунты
-после инициализации этой переменной не обновляются.
+Compose создаёт две базы в PostgreSQL; Rust `lab-tool bootstrap` инициализирует
+модель/отношения OpenFGA. Повторный запуск сохраняет store/model.
+`APP_PORT=3001 docker compose up -d app` меняет порт. `DEMO_PASSWORD` задаёт
+только первоначальный пароль: существующие аккаунты переменная не изменяет.
 
 ## Проверить основную задачу
 
-Готовая Rust-команда проверяет последовательность HTTP-статусов
-**403 → 204 → 200 → 204 → 403**: `dave` получает отказ на лису,
-`carol` выдаёт доступ, чтение проходит, доступ отзывается, чтение запрещено.
-Она возвращает исходные права и отзывает созданные тестовые сессии.
-Запускайте на выделенном демонстрационном стенде, а не на чужих данных:
+На свежем изолированном демонстрационном стенде:
 
 ```sh
 docker compose exec -e SMOKE_ALLOW_MUTATIONS=true app lab-tool acceptance
 ```
 
-Успех — JSON с `accepted: true`, ожидаемыми статусами и версией приложения.
-Уже выданный `dave` доступ считается неожиданным состоянием: команда не
-стирает его перед проверкой. Любая ошибка даёт ненулевой exit code.
+Ожидается JSON с `accepted: true` и последовательностью
+**403 → 204 → 200 → 204 → 403**: `dave` не читает лису, `carol` выдаёт доступ,
+чтение проходит, доступ отзывается, чтение снова запрещено. Команда изменяет
+тестовые права и возвращает их в исходное состояние; не запускайте её параллельно
+с ручным редактированием этих же прав. Предварительно выданный доступ — ошибка,
+а не повод молча его стереть. В Codespaces: `bash scripts/codespace-lab.sh verify`.
 
-Диагностика:
+Диагностика локального Compose:
 
 ```sh
 docker compose ps
@@ -61,94 +86,66 @@ curl --fail http://localhost:3000/readyz
 curl --fail http://localhost:3000/version
 ```
 
-`/healthz` — процесс жив. `/readyz` — доступны PostgreSQL, OpenFGA и конкретные
-store/model; при отказе зависимости вернётся 503. `/version` показывает версию
-пакета и встроенный source SHA; у непомеченной локальной сборки SHA — `unknown`.
-Не используйте liveness как доказательство готовности авторизации.
-
+`/healthz` проверяет процесс; `/readyz` — PostgreSQL, OpenFGA и конкретные
+store/model; `/version` — пакет и встроенный source SHA. Не используйте
+liveness как доказательство готовности авторизации.
 `docker compose down` сохраняет данные. **Только для полного сброса своего
-локального стенда** используйте `docker compose down -v`: это удаляет все его
-тома. Не выполняйте эту команду на staging/stable.
+локального стенда:** `docker compose down -v` удаляет все его тома.
 
-## Запуск готовой поставки без Rust
+## Поставка и тесты
 
-Порядок скачивания проверенного bundle, проверки SHA-256, генерации разных
-секретов и запуска `compose.release.yaml`: [доставка и окружения](docs/delivery.md).
-Образ выбирается по digest, не по `latest`. В поставке есть приложение,
-`lab-tool`, миграции и модель; в bundle — Compose и инициализация PostgreSQL.
-Неполный нативный архив больше не является основным форматом выпуска.
+Запуск готового версионированного образа без сборки Rust, подготовка независимых
+окружений, release/deploy workflows и ограничения отката:
+[поставка](docs/delivery.md). Образ выбирается по digest, не по `latest`.
+Опубликованный GHCR-образ и релиз не заявляются до их фактической публикации.
 
-## Тесты и результаты
-
-Для разработки нужны Rust из `rust-toolchain.toml`, Docker/Compose и nextest:
+Для разработки нужны Rust, Docker/Compose и nextest:
 
 ```sh
 cargo install cargo-nextest --locked
 cargo nextest run --locked --profile ci
-# Все обычные сценарии, включая Docker (без отдельной A/A-калибровки):
 cargo nextest run --locked --release --profile ci --run-ignored all \
   -E 'not test(paired_aa_calibration) and not binary(delivery)' --success-output immediate
 ```
 
-Проверка image-only поставки на двух одноразовых стендах:
+В Codespace установлен Rust 1.98; для фиксированной версии используйте
+`cargo +1.98.0`. Nextest устанавливается приведённой командой, не скрытым
+скачиванием при каждом запуске лабы.
 
-```sh
-docker build --build-arg APP_REVISION="$(git rev-parse HEAD)" -t petlab-candidate:local .
-export DELIVERY_IMAGE="$(docker image inspect petlab-candidate:local --format '{{.Id}}')"
-cargo nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
-```
-
-Тест проверяет разные секреты, stores, тома и сети, отказ чужой сессии,
-выдачу/отзыв разрешений, перезапуск, согласованное восстановление двух БД,
-отказ OpenFGA и удаление store. Его `down -v` ограничен случайными test-owned
-Compose projects, не обычным локальным стендом.
-
-В GitHub Actions выберите workflow → **Run workflow** → ветку; права записи
-нужны только для ручного запуска. PR запускает проверки автоматически.
-
-| Workflow | Назначение и результат |
+| Workflow | Проверки и результаты |
 | --- | --- |
-| [CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml) | fmt, Clippy, nextest, реальные интеграции, Kani и зависимости; JUnit в артефактах |
-| [Delivery verification](https://github.com/qqrm/openfga-axum-lab/actions/workflows/delivery.yml) | Реальный собранный контейнер на двух одноразовых стендах; `delivery-evidence.json` |
+| [CI](https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml) | fmt, Clippy, nextest, реальные интеграции, Kani, зависимости; JUnit в артефактах |
+| [Delivery verification](https://github.com/qqrm/openfga-axum-lab/actions/workflows/delivery.yml) | Контейнер на двух одноразовых стендах, изоляция, dump/restore; `delivery-evidence.json` |
+| [Browser lab verification](https://github.com/qqrm/openfga-axum-lab/actions/workflows/browser-lab-check.yml) | Настоящий devcontainer, Docker-in-Docker и повторный запуск; это не проверка входа в GitHub Codespaces |
+| [Live laboratory](https://github.com/qqrm/openfga-axum-lab/actions/workflows/live-lab.yml) | Только ручной ограниченный сеанс, закрытый email-кодом |
 | [Workflow Security](https://github.com/qqrm/openfga-axum-lab/actions/workflows/workflow-security.yml) | actionlint, zizmor и тесты политики |
-| [Secret scan](https://github.com/qqrm/openfga-axum-lab/actions/workflows/secrets.yml) / [CodeQL](https://github.com/qqrm/openfga-axum-lab/actions/workflows/codeql.yml) | Проверки исходников и секретов |
-| [Manual performance calibration](https://github.com/qqrm/openfga-axum-lab/actions/workflows/performance.yml) | Отдельная A/A-калибровка; сырые данные и ограничения в [протоколе](docs/performance.md) |
-| [Browser preview](https://github.com/qqrm/openfga-axum-lab/actions/workflows/pages.yml) | Ручная публикация статического демо, не backend deployment |
+| [Secret scan](https://github.com/qqrm/openfga-axum-lab/actions/workflows/secrets.yml) / [CodeQL](https://github.com/qqrm/openfga-axum-lab/actions/workflows/codeql.yml) | Исходники и секреты |
+| [Manual performance calibration](https://github.com/qqrm/openfga-axum-lab/actions/workflows/performance.yml) | Отдельная A/A-калибровка, [протокол](docs/performance.md) |
 
-Criterion A/A–A/B и результаты его выполненного эксперимента находятся в
-[отдельном PR #8](https://github.com/qqrm/openfga-axum-lab/pull/8), пока он не
-принят. Не путайте Criterion mean, индивидуальные HTTP p50/p95/p99 и максимальную
-ёмкость сервиса. Независимый Goal #10 не меняет методику этих измерений.
+Criterion A/A–A/B пока находится в [PR #8](https://github.com/qqrm/openfga-axum-lab/pull/8).
+Не путайте Criterion mean, индивидуальные HTTP p50/p95/p99 и ёмкость сервиса.
+Бенчмарки и chaos-тесты никогда не запускаются на открытой ручной лаборатории.
 
-## Что где проверяется
-
-| Условие | Реализация | Проверка |
+| Требование стенда | Реализация | Проверка |
 | --- | --- | --- |
-| Реальная объектная авторизация | `http.rs`, `use_cases.rs`, OpenFGA model | `system`, `lab-tool acceptance` |
-| Отзыв между репликами / неизвестный результат записи | `cached_authorizer.rs` | `cache_replicas` |
-| Идемпотентность и восстановление | pending/deleting lifecycle, PostgreSQL | `system`, Kani только для ограниченного доменного ядра |
-| Запуск исходного Compose | Dockerfile + Rust bootstrap | `compose_deployment` |
-| Готовая поставка и изоляция окружений | `compose.release.yaml`, `tools/delivery.rs` | `delivery` |
-| Не выпускать непроверенный SHA / другой digest | `tools/delivery_policy.rs` | Unit-тесты политики, проверки release/deploy workflows |
+| Объектная авторизация | HTTP/use cases + FGA model | `system`, `lab-tool acceptance` |
+| Отзыв между репликами | `cached_authorizer.rs` | `cache_replicas` |
+| Восстановление и идемпотентность | lifecycle + PostgreSQL | `system`, Kani для ограниченного ядра |
+| Установка и изоляция | image-only Compose | `compose_deployment`, `delivery` |
+| Проверенный выпуск | Rust delivery policy | unit-тесты и release workflows |
+| Закрытая временная лаборатория | private Codespaces port, email tunnel | `live_lab` negative controls, devcontainer smoke |
 
-Это матрица согласованных целей стенда, не реконструкция отсутствующего
-исходного задания заказчика. Подробности: [архитектура](docs/architecture.md),
-[проверки и границы доказательств](docs/verification.md), [INTENT](INTENT.md).
+Это согласованные цели стенда, не реконструкция отсутствующего исходного
+задания заказчика. [Архитектура](docs/architecture.md),
+[проверки и их границы](docs/verification.md), [INTENT](INTENT.md).
 
-## API и ограничения
+`POST/DELETE /session` создаёт/отзывает bearer-сессию. API:
+`GET/POST /pets`, `GET/PATCH/DELETE /pets/{id}`,
+`PUT/DELETE /pets/{id}/relations/{viewer|caregiver}/{user}`.
+Создание требует `Idempotency-Key`; конфликт содержимого — 409.
+OpenFGA errors закрывают доступ с 503, а не становятся allow. `/metrics` — Prometheus.
 
-`POST /session` выдаёт ограниченный по времени bearer-токен; `DELETE /session`
-его отзывает. Основные операции: `GET/POST /pets`, `GET/PATCH/DELETE /pets/{id}`,
-`PUT/DELETE /pets/{id}/relations/{viewer|caregiver}/{user}`. Создание требует
-`Idempotency-Key`; повтор с другим содержимым даёт 409. `/metrics` — Prometheus.
-OpenFGA errors закрывают доступ, а не превращаются в allow.
-
-Локальные demo-аккаунты, внутренние соединения без TLS и единый служебный
-DB-пользователь — границы лаборатории. Не выставляйте исходный Compose в
-интернет. Постоянные стенды требуют собственных секретов, ограниченного
-доступа, TLS, backup и проверенного восстановления. Новые файловые секреты не
-делают локальный Docker Engine безопасным от его администраторов.
-
-Рабочий процесс: **feature → PR → проверки → main → staging → подтверждённый
-release → stable**. Постоянная `dev` и Kubernetes для этого не нужны.
-Benchmarks/chaos используют отдельные одноразовые стенды.
+Не выставляйте исходный Compose в интернет. Постоянный публичный сервис требует
+собственных секретов, TLS, ограничения доступа и backup. Actions-лаборатория —
+не круглосуточный хостинг, не автоматически продлевается и не хранит данные
+между сеансами. Изменения идут через рабочую ветку и PR, без прямых push в main.

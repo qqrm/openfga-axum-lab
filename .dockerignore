@@ -12,5 +12,6 @@ dist
 staging
 stable
 local
+.lab
 **/environment.env
 **/secrets
