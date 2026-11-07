@@ -274,14 +274,16 @@ impl Stack {
         let output = String::from_utf8_lossy(&output);
         let errors = String::from_utf8_lossy(&errors);
         if status.success() || status.code().is_none() {
-            return Err(format!("expected normal nonzero Axum exit, got {status}: {errors}").into());
+            return Err(
+                format!("expected normal nonzero Axum exit, got {status}: {errors}").into(),
+            );
         }
         if output.lines().any(|line| line.starts_with("Listening on ")) {
             return Err("Axum advertised readiness despite failed recovery".into());
         }
         if !errors.contains(expected_error) {
             return Err(
-                format!("expected {expected_error:?} in Axum startup error: {errors}").into()
+                format!("expected {expected_error:?} in Axum startup error: {errors}").into(),
             );
         }
         assert_child_profile(&coverage_profile, pid)?;

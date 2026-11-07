@@ -1,6 +1,6 @@
 use super::{
     api::{Api, expect},
-    stack::{Stack, TestResult, client},
+    stack::{self, Stack, TestResult, client},
 };
 #[path = "../cache_support/proxy.rs"]
 mod proxy;
@@ -55,10 +55,20 @@ async fn assert_creation_tuples(stack: &Stack, client: &Client) -> TestResult {
         .error_for_status()?
         .json()
         .await?;
-    let tuples = page["tuples"].as_array().ok_or("missing tuples")?;
+    let tuples: Vec<_> = page["tuples"]
+        .as_array()
+        .ok_or("missing tuples")?
+        .iter()
+        .map(|tuple| {
+            let mut key = tuple["key"].clone();
+            assert!(key["condition"].is_null(), "fixture must be unconditional");
+            key.as_object_mut().expect("tuple key").remove("condition");
+            key
+        })
+        .collect();
     assert_eq!(tuples.len(), 2, "creation must have exactly its two tuples");
     for (user, relation) in [("user:carol", "owner"), ("shelter:central", "shelter")] {
-        assert!(tuples.iter().any(|tuple| tuple["key"]
+        assert!(tuples.iter().any(|tuple| *tuple
             == json!({"user": user, "relation": relation, "object": "pet:recovery-fixture"})));
     }
     assert!(
@@ -297,9 +307,7 @@ async fn missing_recovery_table_prevents_readiness_without_losing_pending_rows()
     stack
         .sql("ALTER TABLE pets RENAME TO unavailable_pets")
         .await?;
-    stack
-        .assert_startup_fails(&stack.fga_url, "42P01")
-        .await?;
+    stack.assert_startup_fails(&stack.fga_url, "42P01").await?;
     stack
         .sql("ALTER TABLE unavailable_pets RENAME TO pets")
         .await?;
