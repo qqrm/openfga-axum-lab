@@ -1,5 +1,7 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "cache_support/proxy.rs"]
+mod proxy;
 #[path = "scenarios/recovery_failures.rs"]
 mod recovery_failures;
 #[path = "support/stack.rs"]

@@ -1,11 +1,8 @@
 use super::{
     api::{Api, expect},
-    stack::{self, Stack, TestResult, client},
+    proxy::Proxy,
+    stack::{Stack, TestResult, client},
 };
-#[path = "../cache_support/proxy.rs"]
-mod proxy;
-
-use proxy::Proxy;
 use reqwest::{Client, Method as M, StatusCode as S};
 use serde_json::{Value, json};
 use sqlx::{PgPool, postgres::PgPoolOptions};
