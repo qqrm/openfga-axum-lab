@@ -16,10 +16,12 @@ use tokio::{
 };
 
 async fn attempts(pool: &PgPool, username: &str) -> TestResult<i32> {
-    Ok(sqlx::query_scalar("SELECT attempts FROM login_attempts WHERE subject=$1")
-        .bind(username)
-        .fetch_one(pool)
-        .await?)
+    Ok(
+        sqlx::query_scalar("SELECT attempts FROM login_attempts WHERE subject=$1")
+            .bind(username)
+            .fetch_one(pool)
+            .await?,
+    )
 }
 
 #[tokio::test]
@@ -68,7 +70,7 @@ async fn login_rate_limit_allows_twentieth_attempt_and_resets_expired_window() -
     .execute(&pool)
     .await?;
     let renewed = stack.login(&client, &app, "alice").await?;
-    assert_ne!(renewed, alice);
+    assert!(renewed != alice, "new login reused an existing session token");
     expect(api.call(M::GET, "/pets/fox", &renewed), S::OK).await?;
     let (count, fresh): (i32, bool) = sqlx::query_as(
         "SELECT attempts, window_start BETWEEN now()-interval '1 minute' AND now() \
@@ -160,11 +162,15 @@ async fn login_concurrency_limit_rejects_fifth_request_and_releases_all_permits(
         for username in ["alice", "bob", "carol", "dave"] {
             assert_eq!(attempts(&pool, username).await?, round);
         }
-        let probe_attempts: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM login_attempts WHERE subject='throttle-probe'")
-                .fetch_one(&pool)
-                .await?;
-        assert_eq!(probe_attempts, 0, "overload must not consume a subject's quota");
+        let probe_attempts: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM login_attempts WHERE subject='throttle-probe'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            probe_attempts, 0,
+            "overload must not consume a subject's quota"
+        );
         let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions")
             .fetch_one(&pool)
             .await?;
