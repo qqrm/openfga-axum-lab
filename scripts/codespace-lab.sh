@@ -19,7 +19,8 @@ case "${1:-start}" in
       if test "$attempt" = 60; then echo 'Docker-in-Docker did not become ready' >&2; exit 1; fi
       sleep 2
     done
-    revision=$(git rev-parse HEAD)
+    # Trust only this explicit mounted workspace, not every directory on the host.
+    revision=$(git -c "safe.directory=$root" rev-parse HEAD)
     docker build --build-arg "APP_REVISION=$revision" -t petlab-codespaces:local .
     export LAB_IMAGE
     LAB_IMAGE=$(docker image inspect petlab-codespaces:local --format '{{.Id}}')

@@ -87,7 +87,9 @@ start_session() {
   export LIVE_LAB_STATE
   printf 'LIVE_LAB_STATE=%s\n' "$LIVE_LAB_STATE" >> "$GITHUB_ENV"
   printf 'petlab-live-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$LIVE_LAB_STATE/project"
-  trap 'rc=$?; if test "$rc" -ne 0; then stop_session || true; fi' EXIT
+  trap 'if test "$?" -ne 0; then stop_session || true; fi' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   load_state
   local tag image origin url='' pid expiry
   tag="petlab-live:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -137,12 +139,12 @@ start_session() {
     printf '## Temporary real laboratory\n\n[Open the protected lab](%s)\n\n' "$url"
     printf 'Expires: **%s UTC**. Valid only while **Keep the session available** is running.\n\n' "$(date -u -d "@$expiry" +'%Y-%m-%d %H:%M:%S')"
     printf 'Enter the configured mailbox and email PIN, then log in as alice/bob/carol/dave with your LIVE_LAB_PASSWORD. Credentials are not published.\n\n'
-    printf 'Source: `%s`. Real Axum + PostgreSQL + OpenFGA; local authorization acceptance passed; unauthenticated request redirected to email login.\n' "$GITHUB_SHA"
+    printf 'Source: %s. Real Axum + PostgreSQL + OpenFGA; local authorization acceptance passed; unauthenticated request redirected to email login.\n' "$GITHUB_SHA"
   } >> "$GITHUB_STEP_SUMMARY"
   mkdir -p artifacts
   jq -n --arg url "$url" --arg sha "$GITHUB_SHA" --arg image "$image" --argjson expires "$expiry" \
     '{source:$sha,image:$image,url:$url,expires_unix:$expires,local_authorization_verified:true,unauthenticated_email_gate_verified:true,authenticated_browser_login_verified:false}' > artifacts/live-lab.json
-  trap - EXIT
+  trap - EXIT INT TERM
 }
 
 wait_session() {

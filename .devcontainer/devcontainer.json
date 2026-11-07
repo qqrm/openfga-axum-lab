@@ -2,7 +2,7 @@
   "name": "OpenFGA + Axum: real private laboratory",
   "build": { "dockerfile": "Dockerfile" },
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4.1.3": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "remoteUser": "root",
