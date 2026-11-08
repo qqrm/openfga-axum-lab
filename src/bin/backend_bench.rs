@@ -46,7 +46,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Warm up.
     for _ in 0..100 {
-        if !auth.check("alice", "can_view", "pet:cat").await? {
+        if !auth
+            .check(
+                "alice",
+                "can_get_metadata",
+                "lakekeeper_table:analytics/latency",
+            )
+            .await?
+        {
             return Err("warmup authorization denied; benchmark is invalid".into());
         }
     }
@@ -55,7 +62,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     for _ in 0..iters {
         let t = Instant::now();
-        let allowed = auth.check("alice", "can_view", "pet:cat").await?;
+        let allowed = auth
+            .check(
+                "alice",
+                "can_get_metadata",
+                "lakekeeper_table:analytics/latency",
+            )
+            .await?;
         samples.push(t.elapsed().as_secs_f64() * 1000.0);
         if !allowed {
             return Err("measured authorization denied; benchmark is invalid".into());

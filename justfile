@@ -39,8 +39,8 @@ logs:
 # Интеграционные тесты с PostgreSQL и OpenFGA (требуют Docker и cargo-nextest)
 test:
     cargo nextest run --locked --release --profile ci \
-        --no-default-features --features "${FGA_TRANSPORT:-grpc}" \
-        --test system --test cache_replicas --test compose_deployment --test performance \
+        --no-default-features --features "${FGA_TRANSPORT:-http}" \
+        --test system --test cache_replicas --test authorization_migration --test compose_deployment --test performance \
         --run-ignored only -E 'not test(paired_aa_calibration)' --success-output immediate
 
 # Проверка кэша на двух репликах (требует Docker и cargo-nextest)
@@ -49,7 +49,7 @@ cache-test:
 # Kubernetes (локально, minikube/kind)
 k8s-config:
     kubectl create namespace openfga-axum-lab --dry-run=client -o yaml | kubectl apply -f -
-    kubectl -n openfga-axum-lab create configmap fga-model --from-file=fga/model.json --from-file=fga/legacy.json --dry-run=client -o yaml | kubectl apply -f -
+    kubectl -n openfga-axum-lab create configmap fga-model --from-file=fga/model.json --dry-run=client -o yaml | kubectl apply -f -
 
 k8s-start:
     just k8s-config
@@ -67,7 +67,7 @@ k8s-stop:
 
 # Playwright browser E2E
 e2e-install:
-    cd e2e && npm install && npx playwright install chromium
+    cd e2e && npm ci --ignore-scripts && npx --no-install playwright install chromium
 
 e2e:
     cd e2e && npm test

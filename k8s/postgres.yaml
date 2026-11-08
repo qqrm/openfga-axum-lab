@@ -27,11 +27,11 @@ spec:
           image: postgres:17-bookworm
           env:
             - name: POSTGRES_USER
-              value: petlab
+              value: authzlab
             - name: POSTGRES_PASSWORD
-              value: petlab-local-only
+              value: authzlab-local-only
             - name: POSTGRES_DB
-              value: petlab
+              value: authzlab
           ports:
             - containerPort: 5432
           volumeMounts:

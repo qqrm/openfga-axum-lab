@@ -131,7 +131,7 @@ fn fga_tuple(object: &str) -> FgaTuple {
     FgaTuple {
         key: Some(TupleKey {
             user: "user:alice".to_owned(),
-            relation: "owner".to_owned(),
+            relation: "ownership".to_owned(),
             object: object.to_owned(),
             condition: None,
         }),
@@ -144,14 +144,30 @@ async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
     let stub = Stub::start(Vec::new(), false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     auth.ensure_available().await?;
-    assert!(auth.check("alice", "can_view", "pet:cat").await?);
+    assert!(
+        auth.check(
+            "alice",
+            "can_read_data",
+            "lakekeeper_table:analytics/example"
+        )
+        .await?
+    );
     let tuples = [Tuple {
         user: "user:alice".to_owned(),
-        relation: "owner".to_owned(),
-        object: "pet:cat".to_owned(),
+        relation: "ownership".to_owned(),
+        object: "lakekeeper_table:analytics/example".to_owned(),
     }];
     auth.write(&tuples, true).await?;
     auth.write(&tuples, false).await?;
+    auth.apply(
+        &[Tuple {
+            user: "user:bob".into(),
+            ..tuples[0].clone()
+        }],
+        &tuples,
+    )
+    .await?;
+    auth.apply(&[], &[]).await?;
 
     let health = stub.requests::<GetStoreRequest>("GetStore").await?;
     assert_eq!(health.len(), 1);
@@ -166,11 +182,21 @@ async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
     assert_eq!(checks[0].authorization_model_id, "model");
     assert_eq!(checks[0].tuple_key.as_ref().unwrap().user, "user:alice");
     let writes = stub.requests::<WriteRequest>("Write").await?;
-    assert_eq!(writes.len(), 2);
+    assert_eq!(writes.len(), 3, "mixed changes require one atomic Write");
     assert_eq!(writes[0].writes.as_ref().unwrap().on_duplicate, "ignore");
     assert!(writes[0].deletes.is_none());
     assert_eq!(writes[1].deletes.as_ref().unwrap().on_missing, "ignore");
     assert!(writes[1].writes.is_none());
+    let replacement = &writes[2];
+    let granted = replacement.writes.as_ref().unwrap();
+    let revoked = replacement.deletes.as_ref().unwrap();
+    assert_eq!(granted.on_duplicate, "ignore");
+    assert_eq!(revoked.on_missing, "ignore");
+    assert_eq!(granted.tuple_keys.len(), 1);
+    assert_eq!(revoked.tuple_keys.len(), 1);
+    assert_eq!(granted.tuple_keys[0].user, "user:bob");
+    assert_eq!(revoked.tuple_keys[0].user, "user:alice");
+    assert_eq!(granted.tuple_keys[0].object, revoked.tuple_keys[0].object);
     for write in writes {
         assert_eq!(write.store_id, "store");
         assert_eq!(write.authorization_model_id, "model");
@@ -182,44 +208,58 @@ async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
 async fn deletion_restarts_first_page_after_each_write() -> TestResult {
     let pages = vec![
         ReadResponse {
-            tuples: vec![fga_tuple("pet:cat")],
+            tuples: vec![fga_tuple("lakekeeper_table:analytics/example")],
             continuation_token: "cursor-before-deletion".to_owned(),
         },
         ReadResponse::default(),
     ];
     let stub = Stub::start(pages, false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-    auth.delete_object("pet:cat").await?;
+    auth.delete_object("lakekeeper_table:analytics/example")
+        .await?;
     let reads = stub.requests::<ReadRequest>("Read").await?;
     assert_eq!(reads.len(), 2);
     for read in reads {
         assert_eq!(read.consistency(), ConsistencyPreference::HigherConsistency);
         assert_eq!(read.page_size, Some(100));
         assert!(read.continuation_token.is_empty());
-        assert_eq!(read.tuple_key.as_ref().unwrap().object, "pet:cat");
+        assert_eq!(
+            read.tuple_key.as_ref().unwrap().object,
+            "lakekeeper_table:analytics/example"
+        );
     }
     let writes = stub.requests::<WriteRequest>("Write").await?;
     assert_eq!(writes.len(), 1);
     let deletes = writes[0].deletes.as_ref().unwrap();
     assert_eq!(deletes.on_missing, "ignore");
     assert_eq!(deletes.tuple_keys.len(), 1);
-    assert_eq!(deletes.tuple_keys[0].object, "pet:cat");
+    assert_eq!(
+        deletes.tuple_keys[0].object,
+        "lakekeeper_table:analytics/example"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn deletion_rejects_malformed_or_unrelated_tuples_before_writing() -> TestResult {
-    for invalid in [FgaTuple::default(), fga_tuple("pet:unrelated")] {
+    for invalid in [
+        FgaTuple::default(),
+        fga_tuple("lakekeeper_table:analytics/unrelated"),
+    ] {
         let stub = Stub::start(
             vec![ReadResponse {
-                tuples: vec![fga_tuple("pet:cat"), invalid],
+                tuples: vec![fga_tuple("lakekeeper_table:analytics/example"), invalid],
                 ..Default::default()
             }],
             false,
         )
         .await?;
         let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-        assert!(auth.delete_object("pet:cat").await.is_err());
+        assert!(
+            auth.delete_object("lakekeeper_table:analytics/example")
+                .await
+                .is_err()
+        );
         assert!(stub.requests::<WriteRequest>("Write").await?.is_empty());
     }
     Ok(())
@@ -231,7 +271,11 @@ async fn grpc_timeout_covers_stalled_response_trailers() -> TestResult {
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     let response = tokio::time::timeout(
         Duration::from_secs(3),
-        auth.check("alice", "can_view", "pet:cat"),
+        auth.check(
+            "alice",
+            "can_read_data",
+            "lakekeeper_table:analytics/example",
+        ),
     )
     .await
     .expect("adapter must bound the full response, not only the headers");

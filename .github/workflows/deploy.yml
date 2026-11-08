@@ -19,7 +19,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: petlab-deploy-${{ inputs.environment }}
+  group: authzlab-deploy-${{ inputs.environment }}
   cancel-in-progress: false
 jobs:
   preflight:
@@ -32,7 +32,7 @@ jobs:
     outputs:
       manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
     env:
-      ENABLED: ${{ vars.PETLAB_REMOTE_DEPLOY_ENABLED }}
+      ENABLED: ${{ vars.AUTHZLAB_REMOTE_DEPLOY_ENABLED }}
       CONFIRMED: ${{ inputs.compatibility_confirmed }}
       RELEASE_TAG: ${{ inputs.tag }}
       TARGET: ${{ inputs.environment }}
@@ -72,10 +72,10 @@ jobs:
   deploy:
     needs: preflight
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64, petlab-deploy]
+    runs-on: [self-hosted, linux, x64, authzlab-deploy]
     environment:
       name: ${{ inputs.environment }}
-      url: ${{ vars.PETLAB_URL }}
+      url: ${{ vars.AUTHZLAB_URL }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -83,7 +83,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag }}
       TARGET: ${{ inputs.environment }}
-      LAB_URL: ${{ vars.PETLAB_URL }}
+      LAB_URL: ${{ vars.AUTHZLAB_URL }}
       VERIFIED_MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -92,14 +92,14 @@ jobs:
           persist-credentials: false
       - name: Retrieve verified distribution
         run: |
-          registry_config=$(mktemp -d "$RUNNER_TEMP/petlab-registry.XXXXXX")
+          registry_config=$(mktemp -d "$RUNNER_TEMP/authzlab-registry.XXXXXX")
           export DOCKER_CONFIG="$registry_config"
           echo "DOCKER_CONFIG=$registry_config" >> "$GITHUB_ENV"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]
           case "$TARGET" in staging|stable) ;; *) exit 1;; esac
-          [[ "$LAB_URL" == https://* ]] || { echo 'Set the approved HTTPS endpoint in PETLAB_URL'; exit 1; }
-          mkdir -p "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
-          cd "$RUNNER_TEMP/petlab-$GITHUB_RUN_ID"
+          [[ "$LAB_URL" == https://* ]] || { echo 'Set the approved HTTPS endpoint in AUTHZLAB_URL'; exit 1; }
+          mkdir -p "$RUNNER_TEMP/authzlab-$GITHUB_RUN_ID"
+          cd "$RUNNER_TEMP/authzlab-$GITHUB_RUN_ID"
           gh release download "$RELEASE_TAG" --pattern "delivery-$RELEASE_TAG.tar.gz" --pattern manifest.json --pattern SHA256SUMS
           test "$(sha256sum manifest.json | cut -d ' ' -f1)" = "$VERIFIED_MANIFEST"
           sha256sum --check SHA256SUMS
@@ -108,14 +108,14 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker pull "$image"
           docker run --rm --entrypoint /usr/local/bin/lab-tool -v "$PWD:/candidate:ro" "$image" delivery-policy manifest /candidate/manifest.json "$RELEASE_TAG"
-          root="/srv/petlab/$TARGET"
+          root="/srv/authzlab/$TARGET"
           test -f "$root/state/environment.env" || { echo 'Provision the private per-environment state directory first'; exit 1; }
           mkdir -p "$root/releases/$RELEASE_TAG"
           tar -xzf "delivery-$RELEASE_TAG.tar.gz" --no-same-owner --no-same-permissions -C "$root/releases/$RELEASE_TAG"
           test "$(sha256sum "$root/releases/$RELEASE_TAG/manifest.json" | cut -d ' ' -f1)" = "$VERIFIED_MANIFEST"
       - name: Deploy exact digest and verify real authorization
         run: |
-          root="/srv/petlab/$TARGET"
+          root="/srv/authzlab/$TARGET"
           cd "$root/releases/$RELEASE_TAG"
           export LAB_IMAGE
           export POSTGRES_IMAGE
@@ -125,7 +125,7 @@ jobs:
           POSTGRES_IMAGE=$(jq -r .postgres_image manifest.json)
           OPENFGA_IMAGE=$(jq -r .openfga_image manifest.json)
           if test "$TARGET" = staging; then export APP_PORT=3001; else export APP_PORT=3000; fi
-          compose=(docker compose -p "petlab-$TARGET" --env-file "$root/state/environment.env" -f compose.release.yaml)
+          compose=(docker compose -p "authzlab-$TARGET" --env-file "$root/state/environment.env" -f compose.release.yaml)
           "${compose[@]}" pull
           "${compose[@]}" up -d --wait --wait-timeout 120 app
           "${compose[@]}" run --rm --no-deps acceptance > "$RUNNER_TEMP/acceptance-$GITHUB_RUN_ID.json"

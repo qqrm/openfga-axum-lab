@@ -43,7 +43,7 @@ async fn bounded<T, E>(request: impl Future<Output = Result<T, E>>) -> Result<T,
 impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
-        // Cache hits must still prove that the real authorization store responds.
+        // Operational health must prove that the configured store responds.
         bounded(self.client.client().get_store(GetStoreRequest {
             store_id: self.client.store_id().to_owned(),
         }))
@@ -77,8 +77,17 @@ impl Authorizer for OpenFgaGrpc {
 
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        let writes = add.then(|| {
-            tuples
+        if add {
+            self.apply(tuples, &[]).await
+        } else {
+            self.apply(&[], tuples).await
+        }
+    }
+
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.apply")]
+    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        let writes = (!writes.is_empty()).then(|| {
+            writes
                 .iter()
                 .map(|tuple| TupleKey {
                     user: tuple.user.clone(),
@@ -88,8 +97,8 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
-        let deletes = (!add).then(|| {
-            tuples
+        let deletes = (!deletes.is_empty()).then(|| {
+            deletes
                 .iter()
                 .map(|tuple| TupleKeyWithoutCondition {
                     user: tuple.user.clone(),
@@ -98,6 +107,8 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
+        // write_with_options sends one unary Write and rejects an oversized
+        // transaction; it never chunks a replacement into separate requests.
         bounded(
             self.client
                 .write_with_options(writes, deletes, WriteOptions::new_idempotent()),

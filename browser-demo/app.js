@@ -1,29 +1,47 @@
 "use strict";
-const pets = [
-  {id:"cat",name:"Pixel",species:"Кот",icon:"🐱",owner:"alice",viewers:["dave"],description:"Любит долгий сон и мурчит громче всех."},
-  {id:"dog",name:"Rex",species:"Собака",icon:"🐶",owner:"bob",viewers:[],description:"Обожает прогулки и новых друзей."},
-  {id:"fox",name:"Mika",species:"Лиса",icon:"🦊",owner:"carol",viewers:[],description:"Любопытная лиса с любовью к тишине."}
-];
-async function start() {
-  const response = await fetch("domain.wasm");
-  if (!response.ok) throw new Error("Не удалось загрузить доменную модель.");
-  const {instance} = await WebAssembly.instantiate(await response.arrayBuffer());
-  if(instance.exports.next_state(1,1)!==2 || instance.exports.is_visible(2)!==0) throw new Error("Проверка модели не прошла.");
-  function draw() {
-    const user=document.getElementById("user").value, cards=document.getElementById("cards");
-    cards.replaceChildren();
-    for (const pet of pets) {
-      // Deliberate fixture simulation, not an OpenFGA decision.
-      if (!instance.exports.is_visible(1) || !(user==="alice" || user==="bob" || user===pet.owner || pet.viewers.includes(user))) continue;
-      const card=document.createElement("article"); card.className="card";
-      const portrait=document.createElement("div"); portrait.className="portrait"; portrait.textContent=pet.icon;
-      const content=document.createElement("div"); content.className="content";
-      const name=document.createElement("h3"); name.textContent=pet.name;
-      const description=document.createElement("p"); description.textContent=pet.description;
-      const species=document.createElement("span"); species.className="chip"; species.textContent=pet.species;
-      content.append(name,description,species); card.append(portrait,content); cards.append(card);
-    }
-  }
-  document.getElementById("user").addEventListener("change",draw); draw();
+const $ = id => document.getElementById(id);
+function expression(value) {
+  if (value.this) return "direct assignment";
+  if (value.computedUserset) return value.computedUserset.relation;
+  if (value.tupleToUserset) return `${value.tupleToUserset.computedUserset.relation} from ${value.tupleToUserset.tupleset.relation}`;
+  if (value.union) return value.union.child.map(expression).join("\nOR ");
+  if (value.intersection) return value.intersection.child.map(v => `(${expression(v)})`).join("\nAND ");
+  if (value.difference) return `(${expression(value.difference.base)})\nBUT NOT (${expression(value.difference.subtract)})`;
+  throw new Error("Unrecognized model expression");
 }
-start().catch(error=>{document.getElementById("error").textContent=error.message});
+async function json(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Cannot load ${path}: HTTP ${response.status}`);
+  return response.json();
+}
+async function start() {
+  const [model, provenance] = await Promise.all([json("model.json"), json("provenance.json")]);
+  $("provenance").textContent = `${provenance.project} v${provenance.version} · ${provenance.commit.slice(0, 8)} · ${provenance.license}`;
+  if (provenance.source_url.startsWith("https://github.com/lakekeeper/lakekeeper/")) $("upstream").href = provenance.source_url;
+  for (const type of model.type_definitions) {
+    const option = document.createElement("option"); option.value = type.type; option.textContent = type.type; $("model-type").append(option);
+  }
+  $("model-type").value = "lakekeeper_table";
+  function showRelation() {
+    const type = model.type_definitions.find(type => type.type === $("model-type").value);
+    const name = $("model-relation").value, relation = type.relations?.[name];
+    $("relation-expression").textContent = relation ? `${name} =\n${expression(relation)}` : "No relations on this type.";
+    const subjects = type.metadata?.relations?.[name]?.directly_related_user_types || [];
+    $("direct-types").textContent = subjects.length ? "Assignable subjects: " + subjects.map(subject => subject.type + (subject.relation ? "#" + subject.relation : subject.wildcard ? ":*" : "")).join(", ") : "Computed actions are checked, not directly assigned.";
+  }
+  function showType() {
+    const type = model.type_definitions.find(type => type.type === $("model-type").value);
+    const names = Object.keys(type.relations || {}).sort();
+    $("model-relation").replaceChildren(...names.map(name => { const option = document.createElement("option"); option.value = name; option.textContent = name; return option; }));
+    if (names.includes("can_read_data")) $("model-relation").value = "can_read_data";
+    $("relation-count").textContent = `${names.length} relations · ${model.type_definitions.length} types in the original model`;
+    showRelation();
+  }
+  $("model-type").addEventListener("change", showType); $("model-relation").addEventListener("change", showRelation); showType();
+  const response = await fetch("domain.wasm");
+  if (!response.ok) throw new Error("Cannot load Rust lifecycle kernel");
+  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer());
+  if (instance.exports.next_state(1, 1) !== 2 || instance.exports.is_visible(2) !== 0) throw new Error("Lifecycle invariant failed");
+  $("lifecycle").textContent = "Compiled Rust check passed: deleting objects are hidden; a deleted object cannot be provisioned again. This checks lifecycle rules, not OpenFGA permissions.";
+}
+start().catch(error => { $("error").textContent = error.message; });

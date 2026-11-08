@@ -10,6 +10,7 @@ pub extern "C" fn is_visible(state: u32) -> u32 {
         1 => domain::Lifecycle::Active,
         2 => domain::Lifecycle::Deleting,
         3 => domain::Lifecycle::Deleted,
+        4 => domain::Lifecycle::Updating,
         _ => return 0,
     };
     u32::from(domain::is_visible(state))
@@ -22,12 +23,15 @@ pub extern "C" fn next_state(state: u32, event: u32) -> i32 {
         1 => domain::Lifecycle::Active,
         2 => domain::Lifecycle::Deleting,
         3 => domain::Lifecycle::Deleted,
+        4 => domain::Lifecycle::Updating,
         _ => return -1,
     };
     let event = match event {
         0 => domain::Event::Provisioned,
         1 => domain::Event::BeginDeletion,
         2 => domain::Event::TuplesRemoved,
+        3 => domain::Event::BeginUpdate,
+        4 => domain::Event::Updated,
         _ => return -1,
     };
     match domain::transition(state, event) {
@@ -35,6 +39,7 @@ pub extern "C" fn next_state(state: u32, event: u32) -> i32 {
         Some(domain::Lifecycle::Active) => 1,
         Some(domain::Lifecycle::Deleting) => 2,
         Some(domain::Lifecycle::Deleted) => 3,
+        Some(domain::Lifecycle::Updating) => 4,
         None => -1,
     }
 }

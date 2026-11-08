@@ -1,88 +1,41 @@
 const { test, expect } = require("@playwright/test");
+const { base, login, token, headers, ids } = require("./helpers");
 
-const PASSWORD = process.env.DEMO_PASSWORD;
-if (!PASSWORD) {
-  throw new Error("Set DEMO_PASSWORD to the password used by the running lab before running Playwright.");
-}
-
-async function token(request, username) {
-  const response = await request.post("/session", {
-    data: { username, password: PASSWORD },
+test("identity change clears privileged data and rejects an in-flight old response", async ({ page }) => {
+  await login(page, "alice");
+  await expect.poll(() => ids(page)).toEqual(["errors", "latency", "requests"]);
+  let captured;
+  const intercepted = new Promise(resolve => { captured = resolve; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route(`**${base}?*`, async route => {
+    const response = await route.fetch(); // real Axum response, held only to exercise the browser race
+    captured(); await gate; await route.fulfill({ response });
   });
-  return (await response.json()).token;
-}
-
-async function cleanRelation(request, carolToken) {
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-}
-
-async function signIn(page, username) {
-  await page.selectOption("#who", username);
-  await page.fill("#password", PASSWORD);
-  await page.click("#sign-in");
-}
-
-async function petNames(page) {
-  await page.waitForTimeout(200);
-  return page.locator("#pets .card h2").allTextContents();
-}
-
-test("revoked access disappears from UI within cache TTL", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-  await request.put("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  const started = Date.now();
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).not.toContain("Mika");
-  const elapsed = Date.now() - started;
-  console.log("revocation observed in", elapsed, "ms");
-  expect(elapsed).toBeLessThan(3000);
+  await page.locator("#refresh").click();
+  await intercepted;
+  await page.locator("#who").selectOption("dave");
+  await expect(page.locator("#workspace")).toBeHidden();
+  await expect(page.locator("#create-namespace option, #new-namespace option, #role-id option")).toHaveCount(0);
+  await expect(page.locator("#object-details")).toBeEmpty();
+  release();
+  await expect(page.locator("#error")).toContainText("discarded an earlier response");
+  await expect(page.locator("#tables tr")).toHaveCount(0);
+  await page.unroute(`**${base}?*`);
+  await login(page, "dave");
+  await expect.poll(() => ids(page)).toEqual(["latency"]);
 });
 
-test("cached allow does not survive revoke after reload", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-  await request.put("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  // Warm the cache with a second load.
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).not.toContain("Mika");
-});
-
-test("reader cannot see a pet after permission is removed", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toEqual(["Pixel"]);
+test("untrusted metadata renders as text and cannot execute script", async ({ page, request }) => {
+  const alice = await token(request, "alice");
+  const name = '<img src=x onerror="window.metadataExecuted=true">';
+  const created = await request.post(base, { headers: { ...headers(alice), "Idempotency-Key": crypto.randomUUID() }, data: { namespace_id: "metrics", name, description: "<script>window.metadataExecuted=true</script>" } });
+  expect(created.status()).toBe(201);
+  const id = (await created.json()).id;
+  try {
+    await login(page, "alice");
+    await expect(page.locator("#tables")).toContainText(name);
+    expect(await page.evaluate(() => window.metadataExecuted)).toBeUndefined();
+    await expect(page.locator("#tables img, #tables script")).toHaveCount(0);
+  } finally { expect((await request.delete(`${base}/${id}`, { headers: headers(alice) })).status()).toBe(204); }
 });

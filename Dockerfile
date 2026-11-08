@@ -8,7 +8,8 @@ COPY tools ./tools
 COPY assets ./assets
 COPY db ./db
 COPY migrations ./migrations
-ARG FGA_TRANSPORT=grpc
+COPY fga ./fga
+ARG FGA_TRANSPORT=http
 RUN cargo build --locked --release --bins --no-default-features --features "$FGA_TRANSPORT"
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*

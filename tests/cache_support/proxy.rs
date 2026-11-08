@@ -69,6 +69,8 @@ struct Upstream {
     #[cfg(feature = "grpc")]
     client: Http2Client<HttpConnector, Body>,
     gate: Arc<Mutex<Option<Gate>>>,
+    #[cfg(not(feature = "grpc"))]
+    rejection: Arc<Mutex<Option<(&'static str, StatusCode)>>>,
 }
 
 pub struct Proxy {
@@ -91,6 +93,8 @@ impl Proxy {
             url,
             client,
             gate: Arc::new(Mutex::new(None)),
+            #[cfg(not(feature = "grpc"))]
+            rejection: Arc::new(Mutex::new(None)),
         };
         #[cfg(not(feature = "grpc"))]
         let router = Router::new()
@@ -111,6 +115,18 @@ impl Proxy {
             upstream,
             task,
         })
+    }
+
+    // This module is also included by system.rs, which does not use this fault.
+    #[cfg(not(feature = "grpc"))]
+    #[allow(dead_code)]
+    pub async fn reject_once(&self, operation: &'static str, status: StatusCode) {
+        let mut rejection = self.upstream.rejection.lock().await;
+        assert!(
+            rejection.is_none(),
+            "Previous proxy rejection was not consumed"
+        );
+        *rejection = Some((operation, status));
     }
 
     pub async fn pause(&self, operation: &'static str, fail: bool) -> Pause {
@@ -176,6 +192,22 @@ async fn forward(
     method: Method,
     body: Bytes,
 ) -> Result<Response, StatusCode> {
+    let operation = uri.path().rsplit('/').next().unwrap_or_default();
+    let rejection = {
+        let mut rejection = upstream.rejection.lock().await;
+        if rejection
+            .as_ref()
+            .is_some_and(|(target, _)| *target == operation)
+        {
+            rejection.take().map(|(_, status)| status)
+        } else {
+            None
+        }
+    };
+    if let Some(status) = rejection {
+        // Reject before forwarding: this fault must leave the real tuple intact.
+        return Ok((status, [(header::CONTENT_TYPE, "application/json")], "{}").into_response());
+    }
     let response = upstream
         .client
         .request(method, format!("{}{}", upstream.url, uri.path()))
@@ -304,8 +336,8 @@ mod tests {
             store_id: "test-store".into(),
             tuple_key: Some(CheckRequestTupleKey {
                 user: "user:dave".into(),
-                relation: "can_view".into(),
-                object: "pet:fox".into(),
+                relation: "can_get_metadata".into(),
+                object: "lakekeeper_table:analytics/requests".into(),
             }),
             ..Default::default()
         }
