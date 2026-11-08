@@ -13,7 +13,7 @@ path = "tools/main.rs"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
 [features]
-default = ["grpc"]
+default = ["http"]
 grpc = ["dep:openfga-client"]
 http = []
 
