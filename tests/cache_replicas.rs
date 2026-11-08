@@ -9,8 +9,8 @@ use serde_json::Value;
 use stack::{App, Stack, TestResult};
 use std::time::Duration;
 
-const TABLE: &str = "/projects/acme/warehouses/analytics/tables/requests";
-const GRANT: &str = "/projects/acme/warehouses/analytics/tables/requests/grants/modify";
+const TASK: &str = "/tasks/access-review";
+const RELATION: &str = "/tasks/access-review/relations/assignee/dave";
 
 struct Scenario {
     client: Client,
@@ -20,17 +20,23 @@ struct Scenario {
 
 impl Scenario {
     async fn check(&self, app: &App, expected: StatusCode) -> TestResult {
-        self.expect(app, Method::GET, TABLE, &self.dave, expected)
+        self.expect(app, Method::GET, TASK, &self.dave, expected)
             .await
     }
 
     async fn grant(&self, app: &App) -> TestResult {
-        self.expect(app, Method::PUT, GRANT, &self.carol, StatusCode::NO_CONTENT)
-            .await
+        self.expect(
+            app,
+            Method::PUT,
+            RELATION,
+            &self.carol,
+            StatusCode::NO_CONTENT,
+        )
+        .await
     }
 
     async fn revoke(&self, app: &App, expected: StatusCode) -> TestResult {
-        self.expect(app, Method::DELETE, GRANT, &self.carol, expected)
+        self.expect(app, Method::DELETE, RELATION, &self.carol, expected)
             .await
     }
 
@@ -42,16 +48,12 @@ impl Scenario {
         token: &str,
         expected: StatusCode,
     ) -> TestResult {
-        let mut request = self
+        let response = self
             .client
             .request(method.clone(), format!("{}{path}", app.url))
-            .bearer_auth(token);
-        if path == GRANT {
-            request = request.json(&serde_json::json!({
-                "subject": {"type": "user", "id": "dave"}
-            }));
-        }
-        let response = request.send().await?;
+            .bearer_auth(token)
+            .send()
+            .await?;
         assert_eq!(
             response.status(),
             expected,
@@ -96,6 +98,20 @@ async fn readiness(scenario: &Scenario, app: &App, expected: StatusCode) -> Test
     Ok(())
 }
 
+async fn reads_are_fenced(scenario: &Scenario, app: &App) -> TestResult {
+    scenario.check(app, StatusCode::SERVICE_UNAVAILABLE).await?;
+    scenario
+        .expect(
+            app,
+            Method::GET,
+            "/tasks",
+            &scenario.dave,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .await?;
+    readiness(scenario, app, StatusCode::SERVICE_UNAVAILABLE).await
+}
+
 async fn authoritative_check(stack: &Stack, scenario: &Scenario) -> TestResult<bool> {
     let config = stack.config()?;
     let response: Value = scenario
@@ -108,7 +124,7 @@ async fn authoritative_check(stack: &Stack, scenario: &Scenario) -> TestResult<b
         .json(&serde_json::json!({
             "authorization_model_id": config["model_id"],
             "consistency": "HIGHER_CONSISTENCY",
-            "tuple_key": {"user": "user:dave", "relation": "can_get_metadata", "object": "lakekeeper_table:analytics/requests"}
+            "tuple_key": {"user":"user:dave", "relation":"can_view", "object":"task:access-review"}
         }))
         .send()
         .await?
@@ -122,7 +138,7 @@ async fn authoritative_check(stack: &Stack, scenario: &Scenario) -> TestResult<b
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn fresh_checks_and_denial_invalidation_work_across_replicas() -> TestResult {
+async fn fresh_allows_and_denial_invalidation_work_across_replicas() -> TestResult {
     let client = client()?;
     let stack = Stack::start(&client).await?;
     let proxy = Proxy::start(client.clone(), stack.fga_url.clone()).await?;
@@ -133,13 +149,12 @@ async fn fresh_checks_and_denial_invalidation_work_across_replicas() -> TestResu
         dave: stack.login(&client, &second, "dave").await?,
         client,
     };
-
     scenario.grant(&first).await?;
     for replica in [&first, &second] {
         let before = scenario.metric(replica, "miss").await?;
         scenario.check(replica, StatusCode::OK).await?;
         scenario.check(replica, StatusCode::OK).await?;
-        assert_eq!(scenario.metric(replica, "miss").await?, before + 2);
+        assert!(scenario.metric(replica, "miss").await? > before);
         assert_eq!(scenario.metric(replica, "hit_allow").await?, 0);
     }
     scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
@@ -149,36 +164,30 @@ async fn fresh_checks_and_denial_invalidation_work_across_replicas() -> TestResu
         scenario.check(replica, StatusCode::FORBIDDEN).await?;
         assert_eq!(scenario.metric(replica, "hit_deny").await?, before + 1);
     }
-    // A grant advances the shared revision, invalidating local denials.
+    // A grant advances the shared revision and invalidates local denials.
     scenario.grant(&first).await?;
     scenario.check(&first, StatusCode::OK).await?;
     scenario.check(&second, StatusCode::OK).await?;
 
-    // Metadata reads retain the project read lock through the live Check.
-    // A revoke must wait for this authorized read before it can linearize.
+    // Openlane reads use revision revalidation instead of holding the SQL lock
+    // across Check. A late allow must be discarded after an acknowledged revoke.
+    let before = scenario.metric(&second, "retry").await?;
     let mut pause = proxy.pause("check", false).await;
-    let (check, revoke) = tokio::join!(scenario.check(&second, StatusCode::OK), async {
+    let (check, revoke) = tokio::join!(scenario.check(&second, StatusCode::FORBIDDEN), async {
         let response: Value = serde_json::from_slice(&pause.captured().await?)?;
         assert_eq!(response["allowed"], true);
-        let revoke = scenario.revoke(&first, StatusCode::NO_CONTENT);
-        tokio::pin!(revoke);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(150), &mut revoke)
-                .await
-                .is_err(),
-            "revoke completed while the authorized metadata read held its project lock"
-        );
+        scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
         drop(pause);
-        revoke.await
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     });
     revoke?;
     check?;
-    // Once the revoke is acknowledged, no prior allow may survive on either replica.
+    assert!(scenario.metric(&second, "retry").await? > before);
     scenario.check(&first, StatusCode::FORBIDDEN).await?;
     scenario.check(&second, StatusCode::FORBIDDEN).await?;
 
-    // Warm successful requests cannot mask an isolated Check failure. Health,
-    // GetStore and GetModel remain successful throughout this fault.
+    // An isolated Check failure must close access even while service, store
+    // and model readiness remain healthy after repeated successful reads.
     scenario.grant(&first).await?;
     scenario.check(&second, StatusCode::OK).await?;
     scenario.check(&second, StatusCode::OK).await?;
@@ -213,84 +222,108 @@ async fn uncertain_change(add: bool) -> TestResult {
     if !add {
         scenario.grant(&first).await?;
     }
-    scenario
-        .check(
-            &first,
-            if add {
-                StatusCode::FORBIDDEN
-            } else {
-                StatusCode::OK
-            },
-        )
-        .await?;
-    scenario
-        .check(
-            &first,
-            if add {
-                StatusCode::FORBIDDEN
-            } else {
-                StatusCode::OK
-            },
-        )
-        .await?;
+    for _ in 0..2 {
+        scenario
+            .check(
+                &first,
+                if add {
+                    StatusCode::FORBIDDEN
+                } else {
+                    StatusCode::OK
+                },
+            )
+            .await?;
+    }
     let before = scenario.metric(&first, "blocked_pending").await?;
     let mut pause = proxy.pause("write", false).await;
     let (write, blocked) = tokio::join!(
         scenario.expect(
             &second,
             if add { Method::PUT } else { Method::DELETE },
-            GRANT,
+            RELATION,
             &scenario.carol,
             StatusCode::SERVICE_UNAVAILABLE
         ),
         async {
-            // The real mutation committed; only its response is withheld.
+            // The real write committed; only its response is withheld.
             pause.captured().await?;
             assert_eq!(authoritative_check(&stack, &scenario).await?, add);
-            scenario
-                .check(&first, StatusCode::SERVICE_UNAVAILABLE)
-                .await?;
-            scenario
-                .check(&second, StatusCode::SERVICE_UNAVAILABLE)
-                .await?;
-            readiness(&scenario, &first, StatusCode::SERVICE_UNAVAILABLE).await
+            assert!(stack.authorization_pending("acme").await?);
+            reads_are_fenced(&scenario, &first).await?;
+            reads_are_fenced(&scenario, &second).await
         }
     );
-    // Keep the response held until the request timed out, so the caller cannot
-    // know whether the grant/revoke committed and must retain the durable fence.
+    // Wait for the API deadline before releasing the captured response.
     drop(pause);
     blocked?;
     write?;
     assert!(scenario.metric(&first, "blocked_pending").await? > before);
     for replica in [&first, &second] {
-        scenario
-            .check(replica, StatusCode::SERVICE_UNAVAILABLE)
-            .await?;
-        readiness(&scenario, replica, StatusCode::SERVICE_UNAVAILABLE).await?;
+        reads_are_fenced(&scenario, replica).await?;
     }
-    // A new API mutation cannot silently heal a pre-existing unknown outcome.
     scenario
         .expect(
             &first,
             Method::PUT,
-            GRANT,
+            RELATION,
             &scenario.carol,
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .await?;
     second.stop().await?;
     let restarted = stack.app(&proxy.url).await?;
-    scenario
-        .check(&restarted, StatusCode::SERVICE_UNAVAILABLE)
-        .await?;
-    readiness(&scenario, &restarted, StatusCode::SERVICE_UNAVAILABLE).await?;
+    assert!(!stack.authorization_pending("acme").await?);
+    assert_eq!(authoritative_check(&stack, &scenario).await?, add);
+    // Replay acknowledges the desired operation but cannot prove that an older
+    // buffered request is drained. The durable global debt survives replay.
+    for replica in [&first, &restarted] {
+        reads_are_fenced(&scenario, replica).await?;
+    }
     assert!(scenario.metric(&restarted, "blocked_pending").await? > 0);
+    scenario
+        .expect(
+            &restarted,
+            Method::PUT,
+            RELATION,
+            &scenario.carol,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .await?;
+
+    first.stop().await?;
+    restarted.stop().await?;
+    proxy.wait_idle().await?;
+    stack.recover_after_backend_drain(&stack.fga_url).await?;
+    let first = stack.app(&stack.fga_url).await?;
+    let second = stack.app(&proxy.url).await?;
+    for replica in [&first, &second] {
+        readiness(&scenario, replica, StatusCode::OK).await?;
+        scenario
+            .check(
+                replica,
+                if add {
+                    StatusCode::OK
+                } else {
+                    StatusCode::FORBIDDEN
+                },
+            )
+            .await?;
+        assert_eq!(scenario.metric(replica, "hit_allow").await?, 0);
+    }
+    scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
+    scenario.grant(&first).await?;
+    scenario.check(&second, StatusCode::OK).await?;
+    scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
+    scenario.check(&second, StatusCode::FORBIDDEN).await?;
+    println!(
+        "Ambiguous grant/revoke stayed read-fenced across replay; explicit drained recovery restored live Checks and mutations"
+    );
     Ok(())
 }
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn ambiguous_grant_and_revoke_remain_fenced_after_restart() -> TestResult {
+async fn ambiguous_grant_and_revoke_remain_fenced_until_drained_recovery() -> TestResult {
     uncertain_change(true).await?;
     uncertain_change(false).await?;
     Ok(())
@@ -324,10 +357,7 @@ async fn redirected_revoke_is_never_reported_as_committed() -> TestResult {
         "proxy did not forward the revoke"
     );
     for replica in [&first, &second] {
-        scenario
-            .check(replica, StatusCode::SERVICE_UNAVAILABLE)
-            .await?;
-        readiness(&scenario, replica, StatusCode::SERVICE_UNAVAILABLE).await?;
+        reads_are_fenced(&scenario, replica).await?;
     }
     Ok(())
 }

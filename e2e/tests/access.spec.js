@@ -1,91 +1,137 @@
 const { test, expect } = require("@playwright/test");
-const { base, login, token, headers, ids, refresh, grant } = require("./helpers");
+const { randomUUID } = require("node:crypto");
+const { login, api, createTask, removeTask, refresh, selectTask, mutate, setTaskRelation, expectIds, expectTaskEditable } = require("../support/lab");
 
-test("public model provenance and session-bound filtered catalog", async ({ page }) => {
-  for (const [user, expected] of [["alice", ["errors", "latency", "requests"]], ["bob", ["errors", "latency", "requests"]], ["carol", ["requests"]], ["dave", ["latency"]], ["eve", ["requests"]]]) {
-    await login(page, user);
-    await expect.poll(() => ids(page)).toEqual(expected.sort());
-    await expect(page.locator("#model-name")).toContainText("Lakekeeper model v4.15");
-    await expect(page.locator("#scope option")).toContainText(user === "eve" ? "Other" : "Acme");
-  }
-  await page.locator("#sign-out").click();
+// These tests use the real application's HTTP routes and its configured
+// PostgreSQL/OpenFGA backend. No network routes or authorization are mocked.
+for (const [username, ids] of [
+  ["alice", ["access-review", "vendor-review", "incident-response"]],
+  ["carol", ["access-review", "incident-response"]],
+  ["dave", ["vendor-review"]],
+  ["erin", ["other-review"]],
+]) {
+  test(username + " sees only authorized seeded tasks", async ({ page }) => {
+    await login(page, username);
+    await expectIds(page, ids);
+  });
+}
+
+test("assignee can edit but cannot delete or grant rights", async ({ page, request }) => {
+  const token = await login(page, "carol");
+  await selectTask(page, "incident-response");
+  await expectTaskEditable(page, true);
+  await expect(page.locator("#delete-task")).toBeHidden();
+  await expect(page.locator("#task-access")).toBeHidden();
+  await api(request, "DELETE", "/tasks/incident-response", token, undefined, 403);
+  await api(request, "PUT", "/tasks/incident-response/relations/editor/dave", token, undefined, 403);
+  await api(request, "PUT", "/organizations/acme/members/dave", token, { role: "admin" }, 403);
+  await api(request, "GET", "/organizations/other/members", token, undefined, 403);
+});
+
+test("external task viewer sees no editing controls", async ({ page, request }) => {
+  const token = await login(page, "dave");
+  await selectTask(page, "vendor-review");
+  await expectTaskEditable(page, false);
+  await expect(page.locator("#delete-task")).toBeHidden();
+  await expect(page.locator("#task-access")).toBeHidden();
+  await api(request, "GET", "/tasks/access-review", token, undefined, 403);
+});
+
+test("invalid password gives an explicit login error", async ({ page }) => {
+  await page.goto("/");
+  await page.fill("#password", "invalid-password-for-negative-control");
+  await page.click("#sign-in");
+  await expect(page.locator("#error")).toContainText("Не удалось войти");
   await expect(page.locator("#workspace")).toBeHidden();
-  await expect(page.locator("#tables tr")).toHaveCount(0);
 });
 
-test("real grant and revoke update the browser; reader cannot escalate", async ({ page, request }) => {
-  const carol = await token(request, "carol"), dave = await token(request, "dave");
-  expect((await grant(request, carol, "DELETE")).status()).toBe(204);
-  await login(page, "dave");
-  await expect.poll(() => ids(page)).toEqual(["latency"]);
-  expect((await grant(request, dave, "PUT", "dave", "manage_grants")).status()).toBe(403);
-  try {
-    expect((await grant(request, carol, "PUT")).status()).toBe(204);
-    await refresh(page, ["latency", "requests"]);
-    await page.locator("#object-id").fill("requests");
-    await page.locator("#action").selectOption("can_read_data");
-    await page.locator("#check-form button").click();
-    await expect(page.locator("#decision")).toHaveText("ALLOW · can_read_data");
-    expect((await grant(request, carol, "DELETE")).status()).toBe(204);
-    await refresh(page, ["latency"]);
-    await page.locator("#check-form button").click();
-    await expect(page.locator("#decision")).toHaveText("DENY · can_read_data");
-  } finally { expect((await grant(request, carol, "DELETE")).status()).toBe(204); }
+test("switching accounts immediately clears the previous task and session", async ({ page, request }) => {
+  const token = await login(page, "alice");
+  await selectTask(page, "access-review");
+  const revoked = page.waitForResponse((response) => new URL(response.url()).pathname === "/session" && response.request().method() === "DELETE");
+  await page.selectOption("#who", "dave");
+  expect((await revoked).status()).toBe(204);
+  await expect(page.locator("#workspace")).toBeHidden();
+  await expect(page.locator("#tasks")).toBeEmpty();
+  await expect(page.locator("#edit-description")).toHaveValue("");
+  await api(request, "GET", "/tasks", token, undefined, 401);
 });
 
-test("ownership transfer is authorized and removes the former owner's access", async ({ page, request }) => {
-  const alice = await token(request, "alice"), carol = await token(request, "carol"), dave = await token(request, "dave");
-  await login(page, "carol");
-  await page.locator("#object-id").fill("requests");
-  await page.locator("#new-owner").fill("dave");
+test("create, edit, reload and delete a task through the actual UI", async ({ page, request }) => {
+  const token = await login(page, "bob");
+  let id;
   try {
-    await page.locator("#owner-form button").click();
-    await expect(page.locator("#results")).toContainText(`${base}/requests/owner → 204`);
-    await expect.poll(() => ids(page)).toEqual([]);
-    expect((await request.get(`${base}/requests`, { headers: headers(carol) })).status()).toBe(403);
-    const actual = await request.get(`${base}/requests`, { headers: headers(dave) });
-    expect(actual.status()).toBe(200); expect((await actual.json()).owner_id).toBe("dave");
-    await login(page, "dave");
-    await page.locator("#object-id").fill("requests");
-    await page.locator("#action").selectOption("can_change_ownership");
-    await page.locator("#check-form button").click();
-    await expect(page.locator("#decision")).toHaveText("ALLOW · can_change_ownership");
+    await page.click("#new-task");
+    await page.selectOption("#create-organization", "acme");
+    await page.fill("#create-title", "E2E review " + randomUUID().slice(0, 8));
+    await page.fill("#create-description", '<img src="x" onerror="window.untrustedTaskExecuted=true">');
+    const [created] = await Promise.all([
+      page.waitForResponse((response) => new URL(response.url()).pathname === "/tasks" && response.request().method() === "POST"),
+      page.click("#create-submit"),
+    ]);
+    expect(created.status()).toBe(201);
+    id = (await created.json()).id;
+    await expect(page.locator("#task-context")).toContainText(id);
+    await expect(page.locator("#task-context")).toContainText("assigner: bob");
+    await expect(page.locator("#workspace")).toHaveJSProperty("inert", false);
+    expect(await page.evaluate(() => window.untrustedTaskExecuted)).toBeUndefined();
+    await page.fill("#edit-description", "Evidence verified in the browser.");
+    await page.selectOption("#edit-status", "done");
+    await mutate(page, () => page.click("#save-task"), "PATCH", "/tasks/" + id);
+    await refresh(page);
+    await expect(page.locator("#edit-description")).toHaveValue("Evidence verified in the browser.");
+    await expect(page.locator("#edit-status")).toHaveValue("done");
+    const persisted = await api(request, "GET", "/tasks/" + id, token, undefined, 200);
+    expect((await persisted.json()).status).toBe("done");
+    page.once("dialog", (dialog) => dialog.accept());
+    await mutate(page, () => page.click("#delete-task"), "DELETE", "/tasks/" + id);
+    await expect(page.locator('[data-task-id="' + id + '"]')).toHaveCount(0);
+    await api(request, "GET", "/tasks/" + id, token, undefined, 404);
   } finally {
-    expect((await request.put(`${base}/requests/owner`, { headers: headers(alice), data: { owner_id: "carol" } })).status()).toBe(204);
+    await removeTask(request, token, id);
   }
 });
 
-test("role assignment and removal affect nested inherited access", async ({ page, request }) => {
-  const alice = await token(request, "alice");
-  const path = "/projects/acme/roles/analysts/assignees/dave";
-  await login(page, "alice");
-  await page.locator("#role-id").selectOption("analysts");
-  await page.locator("#role-user").fill("dave");
+test("grant, block, unblock and revoke task access with independent paths", async ({ page, context, request }) => {
+  const managerToken = await login(page, "bob");
+  const reader = await context.newPage();
+  const readerToken = await login(reader, "dave");
+  let id;
   try {
-    await page.locator('#role-form button[value="grant"]').click();
-    await expect(page.locator("#results")).toContainText(`${path} → 204`);
-    await login(page, "dave");
-    await expect.poll(() => ids(page)).toEqual(["errors", "latency", "requests"]);
-    expect((await request.delete(path, { headers: headers(alice) })).status()).toBe(204);
-    await refresh(page, ["latency"]);
-  } finally { expect((await request.delete(path, { headers: headers(alice) })).status()).toBe(204); }
-});
-
-test("cross-project substitutions and unprivileged moves fail without changing metadata", async ({ page, request }) => {
-  const alice = await token(request, "alice"), carol = await token(request, "carol"), eve = await token(request, "eve");
-  expect((await request.get("/projects/other/warehouses/external/tables/requests", { headers: headers(alice) })).status()).toBe(404);
-  expect((await request.get(`${base}/requests`, { headers: headers(eve) })).status()).toBe(404);
-  expect((await request.put(`${base}/requests/owner`, { headers: headers(carol), data: { owner_id: "eve" } })).status()).toBe(404);
-  expect((await request.put(`${base}/requests/namespace`, { headers: headers(carol), data: { namespace_id: "restricted" } })).status()).toBe(403);
-  const unchanged = await request.get(`${base}/requests`, { headers: headers(carol) });
-  expect((await unchanged.json()).namespace_id).toBe("metrics");
-  await login(page, "alice");
-  await page.locator("#object-id").fill("requests");
-  await page.locator("#new-namespace").selectOption("restricted");
-  try {
-    await page.locator("#move-form button").click();
-    await expect(page.locator("#results")).toContainText(`${base}/requests/namespace → 204`);
-    const moved = await request.get(`${base}/requests`, { headers: headers(alice) });
-    expect((await moved.json()).namespace_id).toBe("restricted");
-  } finally { expect((await request.put(`${base}/requests/namespace`, { headers: headers(alice), data: { namespace_id: "metrics" } })).status()).toBe(204); }
+    id = await createTask(request, managerToken);
+    await refresh(page);
+    await selectTask(page, id);
+    await setTaskRelation(page, id, "viewer", "dave", true);
+    await refresh(reader);
+    await selectTask(reader, id);
+    await expectTaskEditable(reader, false);
+    await setTaskRelation(page, id, "blocked", "dave", true);
+    await refresh(reader);
+    await expect(reader.locator('[data-task-id="' + id + '"]')).toHaveCount(0);
+    await api(request, "GET", "/tasks/" + id, readerToken, undefined, 403);
+    await api(request, "PATCH", "/tasks/" + id, readerToken, { title: "Denied", description: "", status: "todo" }, 403);
+    await setTaskRelation(page, id, "blocked", "dave", false);
+    await refresh(reader);
+    await selectTask(reader, id);
+    await setTaskRelation(page, id, "assignee", "dave", true);
+    await refresh(reader);
+    await expectTaskEditable(reader, true);
+    await expect(reader.locator("#delete-task")).toBeHidden();
+    await expect(reader.locator("#task-access")).toBeHidden();
+    await api(request, "PUT", "/tasks/" + id + "/relations/viewer/erin", readerToken, undefined, 403);
+    await api(request, "DELETE", "/tasks/" + id, readerToken, undefined, 403);
+    await reader.fill("#edit-description", "Completed by the assignee.");
+    await mutate(reader, () => reader.click("#save-task"), "PATCH", "/tasks/" + id);
+    await setTaskRelation(page, id, "viewer", "dave", false);
+    await refresh(reader);
+    await expect(reader.locator('[data-task-id="' + id + '"]')).toHaveCount(1);
+    await setTaskRelation(page, id, "assignee", "dave", false);
+    await refresh(reader);
+    await expect(reader.locator('[data-task-id="' + id + '"]')).toHaveCount(0);
+    await expect(reader.locator("#task-detail")).toBeHidden();
+    await api(request, "GET", "/tasks/" + id, readerToken, undefined, 403);
+  } finally {
+    await removeTask(request, managerToken, id);
+    await reader.close();
+  }
 });

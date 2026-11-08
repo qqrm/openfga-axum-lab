@@ -9,13 +9,13 @@ use std::{sync::Arc, time::Duration};
 pub(crate) struct Readiness {
     db: PgPool,
     backend: Arc<dyn Authorizer>,
-    target: AuthorizationTarget,
+    target: Option<AuthorizationTarget>,
 }
 impl Readiness {
     pub(crate) fn new(
         db: PgPool,
         backend: Arc<dyn Authorizer>,
-        target: AuthorizationTarget,
+        target: Option<AuthorizationTarget>,
     ) -> Self {
         Self {
             db,
@@ -25,13 +25,19 @@ impl Readiness {
     }
 }
 async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
+    let Some(target) = state.target.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"ready":false})),
+        );
+    };
     let result = tokio::time::timeout(Duration::from_secs(3), async {
         let (db, fga) = tokio::join!(
             crate::authorization_migration::ensure_active(
                 &state.db,
-                &state.target.store,
-                &state.target.model,
-                &state.target.model_sha256
+                &target.store,
+                &target.model,
+                &target.model_sha256
             ),
             state.backend.ensure_ready()
         );

@@ -111,6 +111,27 @@ impl Authorizer for CachedAuthorizer {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "authz_cache.list_objects")]
+    async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
+        for _ in 0..3 {
+            let before = self.unfenced_revision().await?;
+            let objects = self.inner.list_objects(user, relation, object_type).await?;
+            // Even an empty enumeration must not cross a pending write or an
+            // acknowledged grant/revoke. App-level organization revisions and
+            // per-object Checks still guard SQL scope and task lifecycle.
+            if before == self.unfenced_revision().await? {
+                return Ok(objects);
+            }
+            self.events.with_label_values(&["retry"]).inc();
+        }
+        Err(AuthError)
+    }
+
     #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "authz_cache.check")]
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         for _ in 0..3 {
@@ -129,6 +150,12 @@ impl Authorizer for CachedAuthorizer {
             } else {
                 self.inner.check(user, relation, object).await?
             };
+            if allowed {
+                // OpenFGA can still answer Check after a soft-deleted store.
+                // An allow also requires a live configured store; a health
+                // probe alone or a prior successful Check cannot replace it.
+                self.inner.ensure_available().await?;
+            }
             // This read is the decision's linearization point. A late denial
             // fill can only populate the old generation's key. Pending writes
             // block immediately, including writes with an ambiguous outcome.
@@ -152,12 +179,19 @@ impl Authorizer for CachedAuthorizer {
 
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "authz_cache.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        self.mutate(self.inner.write(tuples, add)).await
+        if add {
+            self.change(tuples, &[]).await
+        } else {
+            self.change(&[], tuples).await
+        }
     }
 
-    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "authz_cache.apply")]
-    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
-        self.mutate(self.inner.apply(writes, deletes)).await
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "authz_cache.change")]
+    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        if writes.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
+        self.mutate(self.inner.change(writes, deletes)).await
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "authz_cache.delete_object")]

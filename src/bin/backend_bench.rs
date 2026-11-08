@@ -1,4 +1,4 @@
-//! Raw OpenFGA diagnostics; these measurements do not exercise catalog authorization.
+//! Raw OpenFGA diagnostics; these measurements do not exercise task API authorization.
 use openfga_axum_lab::application::Authorizer;
 #[cfg(feature = "grpc")]
 use openfga_axum_lab::infrastructure::OpenFgaGrpc;
@@ -122,10 +122,7 @@ async fn main() -> BenchResult {
     let workers = requested_conc.min(iters);
     let operation = match mode.as_str() {
         "check" => Operation::Check {
-            object: setting(
-                "BENCH_OBJECT",
-                "lakekeeper_table:analytics/requests".to_owned(),
-            )?,
+            object: setting("BENCH_OBJECT", "task:access-review".to_owned())?,
             expected: setting("BENCH_EXPECT_ALLOWED", true)?,
         },
         "list" => {
@@ -139,7 +136,7 @@ async fn main() -> BenchResult {
                 return Err("BENCH_EXPECTED_OBJECTS must not contain duplicates".into());
             }
             Operation::List {
-                object_type: setting("BENCH_TYPE", "lakekeeper_table".to_owned())?,
+                object_type: setting("BENCH_TYPE", "task".to_owned())?,
                 expected,
             }
         }
@@ -147,7 +144,7 @@ async fn main() -> BenchResult {
     };
     let workload = Arc::new(Workload {
         user: setting("BENCH_USER", "alice".to_owned())?,
-        relation: setting("BENCH_RELATION", "can_get_metadata".to_owned())?,
+        relation: setting("BENCH_RELATION", "can_view".to_owned())?,
         operation,
     });
     let url = env::var("FGA_URL")?;

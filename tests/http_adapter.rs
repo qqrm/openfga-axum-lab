@@ -135,6 +135,7 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
             "model" => json!({"authorization_model": {"id": "model"}}),
             "check" | "redirected" => json!({"allowed": true, "resolution": ""}),
             "write" | "read" => json!({}),
+            "list-objects" => json!({"objects":["task:access-review", "task:vendor-review"]}),
             _ => panic!("unexpected HTTP operation {}", uri.path()),
         })
     });
@@ -151,8 +152,8 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
 fn tuple(user: &str) -> Tuple {
     Tuple {
         user: format!("user:{user}"),
-        relation: "ownership".into(),
-        object: "lakekeeper_table:analytics/example".into(),
+        relation: "owner".into(),
+        object: "organization:acme".into(),
     }
 }
 
@@ -161,25 +162,20 @@ async fn http_preserves_model_consistency_and_atomic_idempotent_writes() -> Test
     let stub = Stub::start().await?;
     let auth = stub.auth()?;
     auth.ensure_ready().await?;
-    assert!(
-        auth.check(
-            "alice",
-            "can_read_data",
-            "lakekeeper_table:analytics/example"
-        )
-        .await?
-    );
+    assert!(auth.check("alice", "can_view", "organization:acme").await?);
     auth.write(&[tuple("alice")], true).await?;
     auth.write(&[tuple("alice")], false).await?;
-    auth.apply(&[tuple("bob")], &[tuple("alice")]).await?;
-    auth.apply(&[], &[]).await?;
+    auth.change(&[tuple("bob")], &[tuple("alice")]).await?;
+    auth.change(&[], &[]).await?;
+    auth.write(&[], true).await?;
+    auth.write(&[], false).await?;
     let checks = stub.requests("check").await;
     assert_eq!(checks.len(), 1);
     assert_eq!(
         checks[0],
         json!({
             "authorization_model_id": "model", "consistency": "HIGHER_CONSISTENCY",
-            "tuple_key": {"user": "user:alice", "relation": "can_read_data", "object": "lakekeeper_table:analytics/example"}
+            "tuple_key": {"user": "user:alice", "relation": "can_view", "object": "organization:acme"}
         })
     );
     let writes = stub.requests("write").await;
@@ -213,13 +209,9 @@ async fn http_never_accepts_unconfirmed_status_as_allow_or_write_success() -> Te
             response.location = Some("/redirected");
             stub.enqueue(operation, response).await;
             let failed = if operation == "check" {
-                auth.check(
-                    "alice",
-                    "can_read_data",
-                    "lakekeeper_table:analytics/example",
-                )
-                .await
-                .is_err()
+                auth.check("alice", "can_view", "organization:acme")
+                    .await
+                    .is_err()
             } else {
                 auth.write(&[tuple("alice")], false).await.is_err()
             };
@@ -227,6 +219,16 @@ async fn http_never_accepts_unconfirmed_status_as_allow_or_write_success() -> Te
         }
     }
     assert!(stub.requests("redirected").await.is_empty());
+    assert_eq!(
+        stub.requests("check").await.len(),
+        10,
+        "failed Checks must not be retried"
+    );
+    assert_eq!(
+        stub.requests("write").await.len(),
+        10,
+        "failed writes must not be retried"
+    );
     // A caller-supplied client following a redirect must not turn its final
     // 200 response into confirmation from the intended Check endpoint.
     let mut redirected = Reply::json(json!({"allowed": true}));
@@ -238,13 +240,9 @@ async fn http_never_accepts_unconfirmed_status_as_allow_or_write_success() -> Te
         ..auth
     };
     assert!(
-        auth.check(
-            "alice",
-            "can_read_data",
-            "lakekeeper_table:analytics/example"
-        )
-        .await
-        .is_err()
+        auth.check("alice", "can_view", "organization:acme")
+            .await
+            .is_err()
     );
     assert_eq!(stub.requests("redirected").await.len(), 1);
     Ok(())
@@ -270,13 +268,9 @@ async fn http_rejects_malformed_allow_and_write_envelopes() -> TestResult {
     ] {
         stub.enqueue("check", Reply::raw(body)).await;
         assert!(
-            auth.check(
-                "alice",
-                "can_read_data",
-                "lakekeeper_table:analytics/example"
-            )
-            .await
-            .is_err(),
+            auth.check("alice", "can_view", "organization:acme")
+                .await
+                .is_err(),
             "accepted {body}"
         );
     }
@@ -298,13 +292,9 @@ async fn http_rejects_malformed_allow_and_write_envelopes() -> TestResult {
         response.content_type = content_type;
         stub.enqueue("check", response).await;
         assert!(
-            auth.check(
-                "alice",
-                "can_read_data",
-                "lakekeeper_table:analytics/example"
-            )
-            .await
-            .is_err()
+            auth.check("alice", "can_view", "organization:acme")
+                .await
+                .is_err()
         );
     }
     let mut oversized = br#"{"allowed":true,"resolution":""#.to_vec();
@@ -312,33 +302,14 @@ async fn http_rejects_malformed_allow_and_write_envelopes() -> TestResult {
     oversized.extend_from_slice(br#""}"#);
     stub.enqueue("check", Reply::raw(oversized)).await;
     assert!(
-        auth.check(
-            "alice",
-            "can_read_data",
-            "lakekeeper_table:analytics/example"
-        )
-        .await
-        .is_err()
+        auth.check("alice", "can_view", "organization:acme")
+            .await
+            .is_err()
     );
     stub.enqueue("check", Reply::json(json!({"allowed": false})))
         .await;
-    assert!(
-        !auth
-            .check(
-                "alice",
-                "can_read_data",
-                "lakekeeper_table:analytics/example"
-            )
-            .await?
-    );
-    assert!(
-        auth.check(
-            "alice",
-            "can_read_data",
-            "lakekeeper_table:analytics/example"
-        )
-        .await?
-    );
+    assert!(!auth.check("alice", "can_view", "organization:acme").await?);
+    assert!(auth.check("alice", "can_view", "organization:acme").await?);
     Ok(())
 }
 
@@ -374,17 +345,13 @@ async fn http_delete_rejects_nonterminal_empty_pages_and_invalid_keys() -> TestR
         json!([]),
         json!({"tuples": [], "continuation_token": "more"}),
         json!({"continuation_token": "more"}),
-        json!({"tuples": [{"key": {"user": "user:alice", "relation": "ownership", "object": "lakekeeper_table:analytics/other"}}]}),
-        json!({"tuples": [{"key": {"user": "", "relation": "ownership", "object": "lakekeeper_table:analytics/example"}}]}),
-        json!({"tuples": [{"key": {"user": "user:alice", "relation": "", "object": "lakekeeper_table:analytics/example"}}]}),
+        json!({"tuples": [{"key": {"user": "user:alice", "relation": "owner", "object": "organization:other"}}]}),
+        json!({"tuples": [{"key": {"user": "", "relation": "owner", "object": "organization:acme"}}]}),
+        json!({"tuples": [{"key": {"user": "user:alice", "relation": "", "object": "organization:acme"}}]}),
         json!({"tuples": [{}]}),
     ] {
         stub.enqueue("read", Reply::json(page)).await;
-        assert!(
-            auth.delete_object("lakekeeper_table:analytics/example")
-                .await
-                .is_err()
-        );
+        assert!(auth.delete_object("organization:acme").await.is_err());
     }
     assert!(
         stub.requests("write").await.is_empty(),
@@ -399,21 +366,17 @@ async fn http_delete_drains_first_page_until_confirmed_empty() -> TestResult {
     let auth = stub.auth()?;
     for user in ["alice", "bob"] {
         stub.enqueue("read", Reply::json(json!({
-            "tuples": [{"key": {"user": format!("user:{user}"), "relation": "ownership", "object": "lakekeeper_table:analytics/example"}}],
+            "tuples": [{"key": {"user": format!("user:{user}"), "relation": "owner", "object": "organization:acme"}}],
             "continuation_token": "unstable-cursor"
         }))).await;
     }
     // Proto JSON may omit both empty fields. It still denotes a terminal page.
     stub.enqueue("read", Reply::json(json!({}))).await;
-    auth.delete_object("lakekeeper_table:analytics/example")
-        .await?;
+    auth.delete_object("organization:acme").await?;
     let reads = stub.requests("read").await;
     assert_eq!(reads.len(), 3);
     for read in reads {
-        assert_eq!(
-            read["tuple_key"]["object"],
-            "lakekeeper_table:analytics/example"
-        );
+        assert_eq!(read["tuple_key"]["object"], "organization:acme");
         assert_eq!(read["consistency"], "HIGHER_CONSISTENCY");
         assert!(read.get("continuation_token").is_none());
     }
@@ -422,8 +385,8 @@ async fn http_delete_drains_first_page_until_confirmed_empty() -> TestResult {
 }
 
 #[tokio::test]
-async fn http_deadline_covers_response_body_for_check_and_write() -> TestResult {
-    for operation in ["check", "write"] {
+async fn http_deadline_covers_the_complete_response_without_client_timeouts() -> TestResult {
+    for operation in ["check", "write", "list-objects"] {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", listener.local_addr()?);
         let (release, wait) = oneshot::channel::<()>();
@@ -443,13 +406,13 @@ async fn http_deadline_covers_response_body_for_check_and_write() -> TestResult 
         };
         let result = tokio::time::timeout(Duration::from_secs(5), async {
             if operation == "check" {
-                auth.check(
-                    "alice",
-                    "can_read_data",
-                    "lakekeeper_table:analytics/example",
-                )
-                .await
-                .map(|_| ())
+                auth.check("alice", "can_view", "organization:acme")
+                    .await
+                    .map(|_| ())
+            } else if operation == "list-objects" {
+                auth.list_objects("alice", "can_view", "task")
+                    .await
+                    .map(|_| ())
             } else {
                 auth.write(&[tuple("alice")], false).await
             }
@@ -459,5 +422,105 @@ async fn http_deadline_covers_response_body_for_check_and_write() -> TestResult 
         let _ = release.send(());
         server.await??;
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_objects_pins_model_and_strong_consistency() -> TestResult {
+    let stub = Stub::start().await?;
+    assert_eq!(
+        stub.auth()?
+            .list_objects("alice", "can_view", "task")
+            .await?,
+        ["task:access-review", "task:vendor-review"]
+    );
+    let requests = stub.requests("list-objects").await;
+    assert_eq!(
+        requests,
+        [json!({
+            "authorization_model_id": "model",
+            "consistency": "HIGHER_CONSISTENCY",
+            "user": "user:alice",
+            "relation": "can_view",
+            "type": "task"
+        })]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_objects_rejects_errors_and_malformed_envelopes() -> TestResult {
+    let stub = Stub::start().await?;
+    let auth = stub.auth()?;
+    for status in [202, 204, 302, 503] {
+        let mut reply = Reply::json(json!({"objects":["task:access-review"]}));
+        reply.status = StatusCode::from_u16(status)?;
+        stub.enqueue("list-objects", reply).await;
+        assert!(
+            auth.list_objects("alice", "can_view", "task")
+                .await
+                .is_err()
+        );
+    }
+    for body in [
+        "[]",
+        "null",
+        "{\"objects\":true}",
+        "{\"objects\":[null]}",
+        "{\"objects\":[],\"error\":\"unavailable\"}",
+    ] {
+        stub.enqueue("list-objects", Reply::raw(body)).await;
+        assert!(
+            auth.list_objects("alice", "can_view", "task")
+                .await
+                .is_err(),
+            "accepted {body}"
+        );
+    }
+    assert_eq!(
+        stub.requests("list-objects").await.len(),
+        9,
+        "failed lists must not be retried"
+    );
+    // Protobuf may omit an empty repeated field, but not its object envelope.
+    stub.enqueue("list-objects", Reply::json(json!({}))).await;
+    assert!(
+        auth.list_objects("alice", "can_view", "task")
+            .await?
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn healthy_server_with_missing_store_is_unavailable() -> TestResult {
+    let stub = Stub::start().await?;
+    let mut missing = Reply::json(json!({}));
+    missing.status = StatusCode::NOT_FOUND;
+    stub.enqueue("store", missing).await;
+    assert!(stub.auth()?.ensure_available().await.is_err());
+    let requests = stub.state.requests.lock().await;
+    let paths: Vec<_> = requests.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(paths, ["/healthz", "/stores/store"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn readiness_probes_health_store_and_model_once_per_attempt() -> TestResult {
+    let stub = Stub::start().await?;
+    let auth = stub.auth()?;
+    auth.ensure_ready().await?;
+    auth.ensure_ready().await?;
+    let requests = stub.state.requests.lock().await;
+    let paths: Vec<_> = requests.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/healthz",
+            "/stores/store",
+            "/stores/store/authorization-models/model"
+        ]
+        .repeat(2)
+    );
     Ok(())
 }

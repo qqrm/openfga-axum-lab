@@ -1,52 +1,47 @@
 use crate::application::{App, Identity};
-use crate::domain::UserId;
 use axum::{
-    extract::{FromRequestParts, MatchedPath, Path, Request, State},
-    http::{HeaderMap, Method, StatusCode},
+    extract::{MatchedPath, Request, State},
+    http::{Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 
-pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
-    super::bearer(headers)
+/// Authentication is shared; each domain use case authorizes its own object.
+/// Mutators do so under organization/task locks. Readers validate revisions.
+fn registered_domain_route(method: &Method, path: &str) -> bool {
+    matches!(
+        (method, path),
+        (&Method::GET | &Method::POST, "/tasks")
+            | (
+                &Method::GET | &Method::PATCH | &Method::DELETE,
+                "/tasks/{id}"
+            )
+            | (
+                &Method::PUT | &Method::DELETE,
+                "/tasks/{id}/relations/{relation}/{subject}"
+            )
+            | (
+                &Method::GET,
+                "/organizations" | "/organizations/{id}/members"
+            )
+            | (
+                &Method::PUT | &Method::DELETE,
+                "/organizations/{id}/members/{subject}"
+            )
+            | (&Method::PUT, "/organizations/{id}/owner")
+            | (
+                &Method::PUT | &Method::DELETE,
+                "/organizations/{id}/permissions/{relation}/{subject}"
+            )
+    )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Requirement {
-    Catalog,
-    List,
-    Create,
-    TableRead,
-    TableMutation,
-    TableCheck,
-    RoleMutation,
-    Deny,
-}
-
-pub(crate) fn requirement(method: &Method, path: &str) -> Requirement {
-    match (method, path) {
-        (&Method::GET, "/catalog") => Requirement::Catalog,
-        (&Method::GET, super::TABLES) => Requirement::List,
-        (&Method::POST, super::TABLES) => Requirement::Create,
-        (&Method::GET, super::TABLE) => Requirement::TableRead,
-        (&Method::PATCH | &Method::DELETE, super::TABLE)
-        | (&Method::PUT | &Method::DELETE, super::GRANTS)
-        | (&Method::PUT, super::OWNER | super::NAMESPACE) => Requirement::TableMutation,
-        (&Method::POST, super::CHECK) => Requirement::TableCheck,
-        (&Method::PUT | &Method::DELETE, super::ROLE_ASSIGNEE) => Requirement::RoleMutation,
-        _ => Requirement::Deny,
-    }
-}
-
-pub(crate) async fn guard(State(app): State<App>, request: Request, next: Next) -> Response {
-    let Some(token) = bearer(request.headers()) else {
+pub(crate) async fn guard(State(app): State<App>, mut request: Request, next: Next) -> Response {
+    let Some(token) = super::bearer(request.headers()) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    let actor = match app.authenticate(token).await {
-        Ok(Some(user)) => match UserId::try_from(user) {
-            Ok(user) => user,
-            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        },
+    let who = match app.authenticate(token).await {
+        Ok(Some(user)) => user,
         Ok(None) => return StatusCode::UNAUTHORIZED.into_response(),
         Err(_) => {
             tracing::warn!("authentication backend unavailable");
@@ -58,61 +53,61 @@ pub(crate) async fn guard(State(app): State<App>, request: Request, next: Next) 
         .get::<MatchedPath>()
         .map(MatchedPath::as_str)
         .unwrap_or("");
-    let requirement = requirement(request.method(), path);
-    if requirement == Requirement::Deny {
+    if !registered_domain_route(request.method(), path) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let (mut parts, body) = request.into_parts();
-    if requirement == Requirement::TableRead {
-        let Path(path) = match Path::<super::TablePath>::from_request_parts(&mut parts, &app).await
-        {
-            Ok(path) => path,
-            Err(error) => return error.into_response(),
-        };
-        // The middleware performs the real OpenFGA check and fetches metadata
-        // under the same project read lock. Mutations authorize inside their
-        // write transaction instead of trusting a stale middleware decision.
-        match app.get_table(&actor, &path.scope(), &path.id).await {
-            Ok(table) => {
-                parts.extensions.insert(table);
-            }
-            Err(error) => return super::error_response(error),
-        }
+    if let Some(target) = &app.authorization_target
+        && crate::authorization_migration::ensure_active(
+            &app.db,
+            &target.store,
+            &target.model,
+            &target.model_sha256,
+        )
+        .await
+        .is_err()
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    parts.extensions.insert(Identity(actor));
-    next.run(Request::from_parts(parts, body)).await
+    request.extensions_mut().insert(Identity(who));
+    next.run(request).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn unknown_methods_and_routes_are_denied() {
-        assert_eq!(
-            requirement(&Method::GET, super::super::TABLE),
-            Requirement::TableRead
-        );
-        assert_eq!(
-            requirement(&Method::POST, super::super::TABLES),
-            Requirement::Create
-        );
-        assert_eq!(
-            requirement(&Method::DELETE, super::super::GRANTS),
-            Requirement::TableMutation
-        );
-        assert_eq!(
-            requirement(&Method::PUT, super::super::ROLE_ASSIGNEE),
-            Requirement::RoleMutation
-        );
-        assert_eq!(
-            requirement(&Method::POST, super::super::TABLE),
-            Requirement::Deny
-        );
-        assert_eq!(requirement(&Method::GET, "/unmapped"), Requirement::Deny);
-        assert_eq!(
-            requirement(&Method::HEAD, super::super::TABLE),
-            Requirement::Deny
-        );
+    fn only_explicit_domain_routes_are_authenticated_for_dispatch() {
+        for (method, path) in [
+            (Method::GET, "/tasks"),
+            (Method::POST, "/tasks"),
+            (Method::GET, "/tasks/{id}"),
+            (Method::PATCH, "/tasks/{id}"),
+            (Method::DELETE, "/tasks/{id}"),
+            (Method::PUT, "/tasks/{id}/relations/{relation}/{subject}"),
+            (Method::DELETE, "/tasks/{id}/relations/{relation}/{subject}"),
+            (Method::GET, "/organizations"),
+            (Method::GET, "/organizations/{id}/members"),
+            (Method::PUT, "/organizations/{id}/owner"),
+            (Method::PUT, "/organizations/{id}/members/{subject}"),
+            (Method::DELETE, "/organizations/{id}/members/{subject}"),
+            (
+                Method::PUT,
+                "/organizations/{id}/permissions/{relation}/{subject}",
+            ),
+            (
+                Method::DELETE,
+                "/organizations/{id}/permissions/{relation}/{subject}",
+            ),
+        ] {
+            assert!(registered_domain_route(&method, path), "{method} {path}");
+        }
+        for (method, path) in [
+            (Method::PUT, "/tasks/{id}"),
+            (Method::POST, "/organizations"),
+            (Method::DELETE, "/organizations/{id}/owner"),
+            (Method::GET, "/unknown"),
+        ] {
+            assert!(!registered_domain_route(&method, path));
+        }
     }
 }

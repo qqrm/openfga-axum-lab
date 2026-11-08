@@ -28,27 +28,6 @@ impl OpenFgaGrpc {
             .set_consistency(ConsistencyPreference::HigherConsistency);
         Ok(Self { client })
     }
-
-    /// Raw backend enumeration for diagnostics, outside the catalog contract.
-    /// This does not enforce SQL scope, migration activation or mutation fences.
-    /// Catalog responses must continue to use their locked per-object Check.
-    pub async fn list_objects(
-        &self,
-        user: &str,
-        relation: &str,
-        object_type: &str,
-    ) -> Result<Vec<String>, AuthError> {
-        let response = bounded(self.client.list_objects(
-            object_type.to_owned(),
-            relation.to_owned(),
-            format!("user:{user}"),
-            None,
-            None,
-        ))
-        .await?
-        .into_inner();
-        Ok(response.objects)
-    }
 }
 
 // Bound the complete unary response, including its body and gRPC trailers.
@@ -64,25 +43,32 @@ async fn bounded<T, E>(request: impl Future<Output = Result<T, E>>) -> Result<T,
 impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
-        // Operational health must prove that the configured store responds.
-        bounded(self.client.client().get_store(GetStoreRequest {
+        let store = bounded(self.client.client().get_store(GetStoreRequest {
             store_id: self.client.store_id().to_owned(),
         }))
-        .await?;
+        .await?
+        .into_inner();
+        if store.id != self.client.store_id() {
+            return Err(AuthError);
+        }
         Ok(())
     }
 
     async fn ensure_ready(&self) -> Result<(), AuthError> {
         self.ensure_available().await?;
-        bounded(
-            self.client
-                .client()
-                .read_authorization_model(ReadAuthorizationModelRequest {
-                    store_id: self.client.store_id().to_owned(),
-                    id: self.client.authorization_model_id().to_owned(),
-                }),
-        )
-        .await?;
+        let model = bounded(self.client.client().read_authorization_model(
+            ReadAuthorizationModelRequest {
+                store_id: self.client.store_id().to_owned(),
+                id: self.client.authorization_model_id().to_owned(),
+            },
+        ))
+        .await?
+        .into_inner()
+        .authorization_model
+        .ok_or(AuthError)?;
+        if model.id != self.client.authorization_model_id() {
+            return Err(AuthError);
+        }
         Ok(())
     }
 
@@ -99,14 +85,17 @@ impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         if add {
-            self.apply(tuples, &[]).await
+            self.change(tuples, &[]).await
         } else {
-            self.apply(&[], tuples).await
+            self.change(&[], tuples).await
         }
     }
 
-    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.apply")]
-    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.change")]
+    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        if writes.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
         let writes = (!writes.is_empty()).then(|| {
             writes
                 .iter()
@@ -128,13 +117,35 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
-        // write_with_options sends one unary Write and rejects an oversized
-        // transaction; it never chunks a replacement into separate requests.
+        // OpenFGA applies both sides of one Write atomically. In particular,
+        // transferring ownership must never be split into two RPCs. Do not
+        // retry an ambiguous transport result; recovery owns reconciliation.
         bounded(
             self.client
                 .write_with_options(writes, deletes, WriteOptions::new_idempotent()),
         )
         .await
+    }
+
+    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
+    async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
+        // The SDK copies this client's pinned model and HigherConsistency
+        // setting into ListObjectsRequest, just as it does for Check.
+        let response = bounded(self.client.list_objects(
+            object_type.to_owned(),
+            relation.to_owned(),
+            format!("user:{user}"),
+            None,
+            None,
+        ))
+        .await?
+        .into_inner();
+        Ok(response.objects)
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
@@ -164,7 +175,7 @@ impl Authorizer for OpenFgaGrpc {
                 .into_iter()
                 .map(|tuple| {
                     let key = tuple.key.ok_or(AuthError)?;
-                    if key.object != object {
+                    if key.object != object || key.user.is_empty() || key.relation.is_empty() {
                         return Err(AuthError);
                     }
                     Ok(Tuple {

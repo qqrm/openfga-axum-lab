@@ -210,17 +210,17 @@ fn model_comparison_preserves_grants_and_subject_restrictions() -> ToolResult {
         .as_array()
         .unwrap()
         .iter()
-        .position(|definition| definition["type"] == "lakekeeper_table")
+        .position(|definition| definition["type"] == "task")
         .unwrap();
     let mut changed = wire.clone();
-    changed["type_definitions"][index]["relations"]["can_read_data"] = json!({"this":{}});
+    changed["type_definitions"][index]["relations"]["can_view"] = json!({"this":{}});
     assert_ne!(policy_model(&changed)?, policy_model(&expected)?);
     let mut changed = wire.clone();
-    changed["type_definitions"][index]["metadata"]["relations"]["ownership"]["directly_related_user_types"] =
+    changed["type_definitions"][index]["metadata"]["relations"]["assigner"]["directly_related_user_types"] =
         json!([{"type":"user","wildcard":{}}]);
     assert_ne!(policy_model(&changed)?, policy_model(&expected)?);
     let mut changed = wire;
-    changed["type_definitions"][index]["metadata"]["relations"]["ownership"]["directly_related_user_types"]
+    changed["type_definitions"][index]["metadata"]["relations"]["assigner"]["directly_related_user_types"]
         [0]["condition"] = json!("unexpected-condition");
     assert_ne!(policy_model(&changed)?, policy_model(&expected)?);
     Ok(())

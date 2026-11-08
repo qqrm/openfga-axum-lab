@@ -5,7 +5,7 @@ use argon2::{
 };
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 pub(crate) fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
@@ -33,10 +33,13 @@ impl Authorizer for DenyAll {
     async fn check(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthError> {
         Ok(false)
     }
+    async fn list_objects(&self, _: &str, _: &str, _: &str) -> Result<Vec<String>, AuthError> {
+        Ok(Vec::new())
+    }
     async fn write(&self, _: &[Tuple], _: bool) -> Result<(), AuthError> {
         Err(AuthError)
     }
-    async fn apply(&self, _: &[Tuple], _: &[Tuple]) -> Result<(), AuthError> {
+    async fn change(&self, _: &[Tuple], _: &[Tuple]) -> Result<(), AuthError> {
         Err(AuthError)
     }
     async fn delete_object(&self, _: &str) -> Result<(), AuthError> {
@@ -56,102 +59,147 @@ pub(crate) async fn seed(
     db: &PgPool,
     password: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut tx = db.begin().await?;
+    // Serialize competing demo starters. Do not lock the journal before source
+    // tables: migration and statement triggers acquire those locks first.
+    // A race with import is rejected by the source-freeze triggers.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('openlane-demo-seed', 0))")
+        .execute(&mut *tx)
+        .await?;
+    let migration: String =
+        sqlx::query_scalar("SELECT status FROM openlane_authorization_migration WHERE singleton")
+            .fetch_one(&mut *tx)
+            .await?;
+    let catalog_source: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog_projects) OR EXISTS(SELECT 1 FROM legacy_resource_grants) OR EXISTS(SELECT 1 FROM authorization_migration WHERE source_sha256 IS NOT NULL OR status <> 'pending')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if catalog_source {
+        return Err("Openlane demo setup requires an isolated source; existing Lakekeeper data or authorization binding needs an explicit cutover".into());
+    }
+    let existing_source: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations)")
+        .fetch_one(&mut *tx)
+        .await?;
+    if migration != "pending" || existing_source {
+        tx.rollback().await?;
+        return Ok(());
+    }
     for (id, name) in [
         ("alice", "Alice"),
         ("bob", "Bob"),
         ("carol", "Carol"),
         ("dave", "Dave"),
-        ("eve", "Eve"),
+        ("erin", "Erin"),
     ] {
         let hash = hash_password(password)?;
         sqlx::query("INSERT INTO users (id,display_name,password_hash) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash WHERE users.password_hash IS NULL")
-            .bind(id).bind(name).bind(hash).execute(db).await?;
+            .bind(id).bind(name).bind(hash).execute(&mut *tx).await?;
     }
-    crate::authorization_migration::seed(db).await?;
+    for (id, name, owner, members) in [
+        (
+            "acme",
+            "Acme Compliance",
+            "alice",
+            vec![("alice", "member"), ("bob", "admin"), ("carol", "member")],
+        ),
+        (
+            "other",
+            "Other Organization",
+            "erin",
+            vec![("erin", "member"), ("dave", "member")],
+        ),
+    ] {
+        let inserted = sqlx::query(
+            "INSERT INTO organizations (id,name,owner_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+        )
+        .bind(id)
+        .bind(name)
+        .bind(owner)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if inserted == 1 {
+            for (user, role) in members {
+                sqlx::query("INSERT INTO organization_members (organization_id,user_id,role) VALUES ($1,$2,$3)")
+                    .bind(id).bind(user).bind(role).execute(&mut *tx).await?;
+            }
+            if id == "acme" {
+                sqlx::query("INSERT INTO organization_permissions (organization_id,user_id,relation) VALUES ('acme','bob','can_view_task')")
+                    .execute(&mut *tx).await?;
+            }
+        }
+    }
+    for (id, org, title, description, assigner) in [
+        (
+            "access-review",
+            "acme",
+            "Quarterly access review",
+            "Collect evidence and review privileged accounts.",
+            "carol",
+        ),
+        (
+            "vendor-review",
+            "acme",
+            "Vendor security assessment",
+            "Review vendor controls and record outstanding evidence.",
+            "alice",
+        ),
+        (
+            "incident-response",
+            "acme",
+            "Incident response exercise",
+            "Exercise the response procedure and capture follow-up actions.",
+            "bob",
+        ),
+        (
+            "other-review",
+            "other",
+            "Independent organization review",
+            "This task demonstrates organization isolation.",
+            "erin",
+        ),
+    ] {
+        let fenced: bool = sqlx::query_scalar(
+            "SELECT authz_pending OR authz_uncertain FROM organizations WHERE id=$1 FOR UPDATE",
+        )
+        .bind(org)
+        .fetch_one(&mut *tx)
+        .await?;
+        if fenced {
+            continue;
+        }
+        let inserted = sqlx::query("INSERT INTO tasks (id,organization_id,title,description,task_status,assigner_id,status) VALUES ($1,$2,$3,$4,'todo',$5,'active') ON CONFLICT DO NOTHING")
+            .bind(id).bind(org).bind(title).bind(description).bind(assigner).execute(&mut *tx).await?.rows_affected();
+        if inserted == 1 {
+            let grant = match id {
+                "vendor-review" => Some(("dave", "viewer")),
+                "incident-response" => Some(("carol", "assignee")),
+                _ => None,
+            };
+            if let Some((user, relation)) = grant {
+                sqlx::query(
+                    "INSERT INTO task_relations (task_id,user_id,relation) VALUES ($1,$2,$3)",
+                )
+                .bind(id)
+                .bind(user)
+                .bind(relation)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+    }
+    tx.commit().await?;
     Ok(())
 }
 
 pub(crate) async fn recover_pending(
     db: &PgPool,
+    coordinator: &PgPool,
     auth: &dyn Authorizer,
+    after_backend_drain: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Startup calls this only after validating the bound migration gate. Every
-    // replay uses durable catalog state and the same project lock as requests.
-    // A failure leaves the resource hidden and aborts startup.
-    let rows = sqlx::query("SELECT project_id,warehouse_id,id FROM catalog_tables WHERE status IN ('pending','updating','deleting') ORDER BY project_id,warehouse_id,id")
-        .fetch_all(db).await?;
-    for row in rows {
-        let project: String = row.try_get("project_id")?;
-        let warehouse: String = row.try_get("warehouse_id")?;
-        let id: String = row.try_get("id")?;
-        let mut tx = db.begin().await?;
-        sqlx::query("SELECT id FROM catalog_projects WHERE id=$1 FOR UPDATE")
-            .bind(&project)
-            .fetch_one(&mut *tx)
-            .await?;
-        let row = sqlx::query("SELECT owner_id,namespace_id,status FROM catalog_tables WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 FOR UPDATE")
-            .bind(&project).bind(&warehouse).bind(&id).fetch_one(&mut *tx).await?;
-        let owner: String = row.try_get("owner_id")?;
-        let namespace: String = row.try_get("namespace_id")?;
-        let status: String = row.try_get("status")?;
-        let object = format!("lakekeeper_table:{warehouse}/{id}");
-        match status.as_str() {
-            "pending" => {
-                auth.write(
-                    &crate::use_cases::provisioning_tuples(&warehouse, &id, &namespace, &owner),
-                    true,
-                )
-                .await
-                .map_err(|_| "pending catalog provisioning failed")?;
-                sqlx::query("UPDATE catalog_tables SET status='active' WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 AND status='pending'")
-                    .bind(&project).bind(&warehouse).bind(&id).execute(&mut *tx).await?;
-            }
-            "updating" => {
-                let intent = sqlx::query("SELECT owner_id,namespace_id,writes::text,deletes::text FROM catalog_pending_updates WHERE project_id=$1 AND warehouse_id=$2 AND table_id=$3 FOR UPDATE")
-                    .bind(&project).bind(&warehouse).bind(&id).fetch_one(&mut *tx).await?;
-                let writes: Vec<Tuple> =
-                    serde_json::from_str(&intent.try_get::<String, _>("writes")?)?;
-                let deletes: Vec<Tuple> =
-                    serde_json::from_str(&intent.try_get::<String, _>("deletes")?)?;
-                auth.apply(&writes, &deletes)
-                    .await
-                    .map_err(|_| "pending catalog relationship replacement failed")?;
-                let next_owner: String = intent.try_get("owner_id")?;
-                let next_namespace: String = intent.try_get("namespace_id")?;
-                sqlx::query("UPDATE catalog_tables SET owner_id=$4,namespace_id=$5,status='active' WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 AND status='updating'")
-                    .bind(&project).bind(&warehouse).bind(&id).bind(&next_owner).bind(&next_namespace).execute(&mut *tx).await?;
-                sqlx::query("DELETE FROM catalog_pending_updates WHERE project_id=$1 AND warehouse_id=$2 AND table_id=$3")
-                    .bind(&project).bind(&warehouse).bind(&id).execute(&mut *tx).await?;
-            }
-            "deleting" => {
-                auth.delete_object(&object)
-                    .await
-                    .map_err(|_| "pending catalog deletion failed")?;
-                auth.write(
-                    &[Tuple {
-                        user: object.clone(),
-                        relation: "child".into(),
-                        object: format!("namespace:{namespace}"),
-                    }],
-                    false,
-                )
-                .await
-                .map_err(|_| "pending catalog hierarchy cleanup failed")?;
-                sqlx::query("UPDATE catalog_tables SET status='deleted' WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 AND status='deleting'")
-                    .bind(&project).bind(&warehouse).bind(&id).execute(&mut *tx).await?;
-            }
-            "active" | "deleted" => continue,
-            _ => return Err("invalid catalog lifecycle state".into()),
-        }
-        tx.commit().await?;
-        tracing::info!(
-            event = "catalog_recovered",
-            project,
-            object,
-            previous_status = status,
-            "catalog audit"
-        );
-    }
+    crate::authorization::recover(db, coordinator, auth, after_backend_drain).await?;
     Ok(())
 }
 
@@ -214,33 +262,6 @@ mod openfga_http {
     struct ListObjectsResponse {
         #[serde(default)]
         objects: Vec<String>,
-    }
-
-    impl OpenFgaHttp {
-        /// Raw backend enumeration for diagnostics, outside the catalog contract.
-        /// This does not enforce SQL scope, migration activation or mutation fences.
-        /// Catalog responses must continue to use their locked per-object Check.
-        pub async fn list_objects(
-            &self,
-            user: &str,
-            relation: &str,
-            object_type: &str,
-        ) -> Result<Vec<String>, AuthError> {
-            let response: ListObjectsResponse = send_json(
-                self.client
-                    .post(format!("{}/stores/{}/list-objects", self.url, self.store))
-                    .json(&json!({
-                        "authorization_model_id": self.model,
-                        "consistency": "HIGHER_CONSISTENCY",
-                        "user": format!("user:{user}"),
-                        "relation": relation,
-                        "type": object_type,
-                    })),
-                "list_objects",
-            )
-            .await?;
-            Ok(response.objects)
-        }
     }
 
     fn protocol_error(operation: &'static str, reason: &'static str) -> AuthError {
@@ -312,17 +333,10 @@ mod openfga_http {
         async fn ensure_available(&self) -> Result<(), AuthError> {
             let health: Health =
                 send_json(self.client.get(format!("{}/healthz", self.url)), "health").await?;
-            if health.status == "SERVING" {
-                Ok(())
-            } else {
-                Err(protocol_error("health", "backend is not serving"))
+            if health.status != "SERVING" {
+                return Err(protocol_error("health", "backend is not serving"));
             }
-        }
-
-        async fn ensure_ready(&self) -> Result<(), AuthError> {
-            self.ensure_available().await?;
-            // A model can remain readable after a soft-deleted store. Check
-            // both resources and their identities, not just an HTTP status.
+            // A healthy service may still have a deleted or different store.
             let store: Store = send_json(
                 self.client
                     .get(format!("{}/stores/{}", self.url, self.store)),
@@ -332,6 +346,11 @@ mod openfga_http {
             if store.id != self.store {
                 return Err(protocol_error("get_store", "store identity mismatch"));
             }
+            Ok(())
+        }
+
+        async fn ensure_ready(&self) -> Result<(), AuthError> {
+            self.ensure_available().await?;
             let model: ModelResponse = send_json(
                 self.client.get(format!(
                     "{}/stores/{}/authorization-models/{}",
@@ -366,17 +385,40 @@ mod openfga_http {
             Ok(response.allowed)
         }
 
+        #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
+        async fn list_objects(
+            &self,
+            user: &str,
+            relation: &str,
+            object_type: &str,
+        ) -> Result<Vec<String>, AuthError> {
+            let response: ListObjectsResponse = send_json(
+                self.client
+                    .post(format!("{}/stores/{}/list-objects", self.url, self.store))
+                    .json(&json!({
+                        "authorization_model_id": self.model,
+                        "consistency": "HIGHER_CONSISTENCY",
+                        "user": format!("user:{user}"),
+                        "relation": relation,
+                        "type": object_type,
+                    })),
+                "list_objects",
+            )
+            .await?;
+            Ok(response.objects)
+        }
+
         #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
         async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
             if add {
-                self.apply(tuples, &[]).await
+                self.change(tuples, &[]).await
             } else {
-                self.apply(&[], tuples).await
+                self.change(&[], tuples).await
             }
         }
 
-        #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.apply")]
-        async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.change")]
+        async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
             if writes.is_empty() && deletes.is_empty() {
                 return Ok(());
             }

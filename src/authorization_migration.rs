@@ -1,7 +1,7 @@
 //! One-time, resumable SQL → OpenFGA migration.
 //!
-//! The source is an explicitly documented legacy SQL contract, populated from
-//! existing relationships. It is frozen once a validated snapshot is bound to a
+//! The source is an explicitly documented Openlane SQL contract, populated from
+//! existing organization, membership and task relationships. It is frozen once a validated snapshot is bound to a
 //! target. The application stays fenced until tuple reconciliation and all
 //! old/new permission checks succeed. This is not a distributed transaction.
 type ToolResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -18,6 +18,9 @@ use std::{
 };
 use tokio::time::timeout;
 
+pub const PINNED_MODEL_SHA256: &str =
+    "c9186020ca60a129a82e3408f122689669302a447f34c54e70ea006d794d59f4";
+
 const MAX_RESPONSE_BYTES: usize = 1_048_576;
 const MAX_SOURCE_ROWS: usize = 10_000;
 const MAX_VERIFY_CHECKS: usize = 100_000;
@@ -32,10 +35,11 @@ struct Tuple {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct Target {
-    store_id: String,
-    model_id: String,
-    model_sha256: String,
+#[serde(deny_unknown_fields)]
+pub(crate) struct Target {
+    pub(crate) store_id: String,
+    pub(crate) model_id: String,
+    pub(crate) model_sha256: String,
 }
 
 struct Backend {
@@ -287,47 +291,15 @@ impl Backend {
     }
 }
 
-/// Synthetic existing catalog/ACL data using the pinned upstream model's
-/// resource and relation names. This is intentionally separate from tuple
-/// generation: the migration reads these SQL rows, never a tuple JSON fixture.
-pub async fn seed(db: &PgPool) -> ToolResult {
-    let mut transaction = db.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(6041927238613300)")
-        .execute(&mut *transaction)
-        .await?;
-    let existing: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog_projects")
-        .fetch_one(&mut *transaction)
-        .await?;
-    if existing != 0 {
-        return Ok(());
-    }
-    sqlx::raw_sql("\
-INSERT INTO catalog_projects(id,name) VALUES ('acme','Acme Analytics'),('other','Other tenant');
-INSERT INTO catalog_memberships(project_id,user_id) VALUES ('acme','alice'),('acme','bob'),('acme','carol'),('acme','dave'),('other','eve');
-INSERT INTO catalog_warehouses(id,project_id,name,owner_id) VALUES ('analytics','acme','Analytics warehouse','alice'),('external','other','Other warehouse','eve');
-INSERT INTO catalog_namespaces(id,project_id,warehouse_id,name,owner_id) VALUES ('metrics','acme','analytics','Metrics','alice'),('restricted','acme','analytics','Restricted','alice'),('other-metrics','other','external','Metrics','eve');
-INSERT INTO catalog_roles(id,project_id,name,owner_id) VALUES ('analysts','acme','Analysts','alice'),('analyst-members','acme','Analyst members','alice'),('other-analysts','other','Analysts','eve');
-INSERT INTO catalog_tables(project_id,warehouse_id,id,namespace_id,name,description,owner_id,status) VALUES
- ('acme','analytics','requests','metrics','Requests','Synthetic HTTP request observations','carol','active'),
- ('acme','analytics','latency','metrics','Latency','Synthetic latency measurements','alice','active'),
- ('acme','analytics','errors','metrics','Errors','Synthetic error observations','bob','active'),
- ('other','external','requests','other-metrics','Other requests','Synthetic observations from a separate tenant','eve','active');
-INSERT INTO legacy_project_grants(project_id,subject_kind,subject_id,relation) VALUES ('acme','user','alice','project_admin'),('acme','role','analyst-members','select'),('acme','role','analysts','create'),('other','user','eve','project_admin');
-INSERT INTO legacy_role_assignments(role_id,subject_kind,subject_id) VALUES ('analysts','user','bob'),('analyst-members','role','analysts');
-INSERT INTO legacy_resource_grants(object_kind,object_id,subject_kind,subject_id,relation) VALUES
- ('lakekeeper_table','analytics/latency','user','dave','select');")
-        .execute(&mut *transaction).await?;
-    transaction.commit().await?;
-    Ok(())
-}
-
 /// A runtime gate independent of the mutable decision-cache revision.
-/// Readiness and every authorization check must use the same target binding.
+/// A verified migration binding does not clear ambiguous-write debt.
 pub async fn ensure_active(db: &PgPool, store: &str, model: &str, model_hash: &str) -> ToolResult {
-    let active: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM authorization_migration WHERE singleton AND status='active' AND store_id=$1 AND model_id=$2 AND model_sha256=$3)")
+    let active: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM openlane_authorization_migration WHERE singleton AND status='active' AND store_id=$1 AND model_id=$2 AND model_sha256=$3)")
         .bind(store).bind(model).bind(model_hash).fetch_one(db).await?;
     if !active {
-        return Err("authorization migration is not active for the configured target".into());
+        return Err(
+            "Openlane authorization migration is not active for the configured target".into(),
+        );
     }
     Ok(())
 }
@@ -336,8 +308,9 @@ pub async fn ensure_active(db: &PgPool, store: &str, model: &str, model_hash: &s
 struct Object {
     kind: String,
     id: String,
-    project: String,
+    organization: String,
     owner: Option<String>,
+    assigner: Option<String>,
     parent: Option<String>,
 }
 
@@ -347,78 +320,96 @@ impl Object {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct Grant {
-    object: String,
-    subject_kind: String,
-    subject_id: String,
-    relation: String,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+struct Membership {
+    organization: String,
+    user: String,
+    role: String,
 }
 
-impl Grant {
-    fn subject(&self) -> String {
-        if self.subject_kind == "role" {
-            format!("role:{}#assignee", self.subject_id)
-        } else {
-            format!("user:{}", self.subject_id)
-        }
-    }
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+struct Grant {
+    object: String,
+    user: String,
+    relation: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 struct Source {
     users: Vec<String>,
-    memberships: BTreeSet<(String, String)>,
+    memberships: BTreeSet<Membership>,
     objects: BTreeMap<String, Object>,
-    grants: Vec<Grant>,
+    grants: BTreeSet<Grant>,
 }
 
 impl Source {
     async fn read(connection: &mut sqlx::PgConnection) -> ToolResult<Self> {
+        let incompatible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_projects) OR EXISTS(SELECT 1 FROM legacy_resource_grants) OR EXISTS(SELECT 1 FROM authorization_migration WHERE source_sha256 IS NOT NULL)")
+            .fetch_one(&mut *connection).await?;
+        if incompatible {
+            return Err("Lakekeeper data/binding is incompatible; use an isolated Openlane database and an explicitly reviewed source import".into());
+        }
+        let unresolved: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM authorization_jobs) OR EXISTS(SELECT 1 FROM organizations WHERE authz_pending OR authz_uncertain)")
+            .fetch_one(&mut *connection).await?;
+        if unresolved {
+            return Err(
+                "resolve existing authorization mutations before the initial Openlane cutover"
+                    .into(),
+            );
+        }
         let users: Vec<String> = sqlx::query_scalar("SELECT id FROM users ORDER BY id LIMIT 10001")
             .fetch_all(&mut *connection)
             .await?;
-        let memberships = sqlx::query_as::<_,(String,String)>("SELECT project_id,user_id FROM catalog_memberships ORDER BY project_id,user_id LIMIT 10001").fetch_all(&mut *connection).await?.into_iter().collect();
+        let memberships = sqlx::query_as::<_,(String,String,String)>("SELECT organization_id,user_id,role FROM organization_members ORDER BY organization_id,user_id LIMIT 10001")
+            .fetch_all(&mut *connection).await?.into_iter()
+            .map(|(organization,user,role)| Membership {organization,user,role}).collect();
         let mut objects = BTreeMap::new();
-        for id in sqlx::query_scalar::<_, String>(
-            "SELECT id FROM catalog_projects ORDER BY id LIMIT 10001",
+        for (id, owner) in sqlx::query_as::<_, (String, String)>(
+            "SELECT id,owner_id FROM organizations ORDER BY id LIMIT 10001",
         )
         .fetch_all(&mut *connection)
         .await?
         {
             let object = Object {
-                kind: "project".into(),
-                project: id.clone(),
+                kind: "organization".into(),
+                organization: id.clone(),
                 id,
-                owner: None,
+                owner: Some(owner),
+                assigner: None,
                 parent: None,
             };
             objects.insert(object.key(), object);
         }
-        for row in sqlx::query("SELECT 'warehouse' AS kind,id,project_id,owner_id FROM catalog_warehouses UNION ALL SELECT 'role',id,project_id,owner_id FROM catalog_roles ORDER BY kind,id LIMIT 10001").fetch_all(&mut *connection).await? {
-            let project:String = row.try_get("project_id")?;
-            let object = Object { kind:row.try_get("kind")?, id:row.try_get("id")?, owner:Some(row.try_get("owner_id")?), parent:Some(format!("project:{project}")), project };
-            objects.insert(object.key(),object);
+        for (id, organization, assigner, status) in
+            sqlx::query_as::<_, (String, String, String, String)>(
+                "SELECT id,organization_id,assigner_id,status FROM tasks ORDER BY id LIMIT 10001",
+            )
+            .fetch_all(&mut *connection)
+            .await?
+        {
+            if status != "active" {
+                return Err("source contains an unresolved or deleted task; resolve lifecycle state before initial cutover".into());
+            }
+            let object = Object {
+                kind: "task".into(),
+                id,
+                parent: Some(format!("organization:{organization}")),
+                organization,
+                owner: None,
+                assigner: Some(assigner),
+            };
+            objects.insert(object.key(), object);
         }
-        for (id,project,warehouse,owner) in sqlx::query_as::<_,(String,String,String,String)>("SELECT id,project_id,warehouse_id,owner_id FROM catalog_namespaces ORDER BY id LIMIT 10001").fetch_all(&mut *connection).await? {
-            let object = Object { kind:"namespace".into(), id, project, owner:Some(owner), parent:Some(format!("warehouse:{warehouse}")) };
-            objects.insert(object.key(),object);
+        let mut grants = BTreeSet::new();
+        for (organization,user,relation) in sqlx::query_as::<_,(String,String,String)>(
+            "SELECT organization_id,user_id,relation FROM organization_permissions ORDER BY organization_id,user_id,relation LIMIT 10001")
+            .fetch_all(&mut *connection).await? {
+            grants.insert(Grant {object:format!("organization:{organization}"),user,relation});
         }
-        for (id,project,warehouse,namespace,owner,status) in sqlx::query_as::<_,(String,String,String,String,String,String)>("SELECT id,project_id,warehouse_id,namespace_id,owner_id,status FROM catalog_tables ORDER BY warehouse_id,id LIMIT 10001").fetch_all(&mut *connection).await? {
-            if status != "active" { return Err("legacy catalog contains an unresolved or deleted table; resolve lifecycle state before cutover".into()); }
-            let object = Object { kind:"lakekeeper_table".into(), id:format!("{warehouse}/{id}"), project, owner:Some(owner), parent:Some(format!("namespace:{namespace}")) };
-            objects.insert(object.key(),object);
-        }
-        let mut grants = Vec::new();
-        for (project,subject_kind,subject_id,relation) in sqlx::query_as::<_,(String,String,String,String)>("SELECT project_id,subject_kind,subject_id,relation FROM legacy_project_grants ORDER BY project_id,subject_kind,subject_id,relation LIMIT 10001").fetch_all(&mut *connection).await? {
-            grants.push(Grant { object:format!("project:{project}"),subject_kind,subject_id,relation });
-        }
-        for (kind,id,subject_kind,subject_id,relation) in sqlx::query_as::<_,(String,String,String,String,String)>("SELECT object_kind,object_id,subject_kind,subject_id,relation FROM legacy_resource_grants ORDER BY object_kind,object_id,subject_kind,subject_id,relation LIMIT 10001").fetch_all(&mut *connection).await? {
-            if !matches!(kind.as_str(),"warehouse"|"namespace"|"lakekeeper_table") { return Err("unsupported legacy resource kind".into()); }
-            grants.push(Grant { object:format!("{kind}:{id}"),subject_kind,subject_id,relation });
-        }
-        for (role,subject_kind,subject_id) in sqlx::query_as::<_,(String,String,String)>("SELECT role_id,subject_kind,subject_id FROM legacy_role_assignments ORDER BY role_id,subject_kind,subject_id LIMIT 10001").fetch_all(&mut *connection).await? {
-            grants.push(Grant { object:format!("role:{role}"),subject_kind,subject_id,relation:"assignee".into() });
+        for (task,user,relation) in sqlx::query_as::<_,(String,String,String)>(
+            "SELECT task_id,user_id,relation FROM task_relations ORDER BY task_id,user_id,relation LIMIT 10001")
+            .fetch_all(&mut *connection).await? {
+            grants.insert(Grant {object:format!("task:{task}"),user,relation});
         }
         Ok(Self {
             users,
@@ -427,475 +418,252 @@ impl Source {
             grants,
         })
     }
-}
 
-impl Source {
     fn validate(&self) -> ToolResult {
         let rows =
             self.users.len() + self.memberships.len() + self.objects.len() + self.grants.len();
         if rows > MAX_SOURCE_ROWS || self.objects.is_empty() || self.users.is_empty() {
             return Err(
-                "legacy authorization source is empty or exceeds the bounded migration size".into(),
+                "Openlane authorization source is empty or exceeds the bounded migration size"
+                    .into(),
             );
         }
-        if self.users.iter().any(|user| !identifier(user)) {
-            return Err("invalid legacy user identifier".into());
+        if self.users.iter().any(|user| !identifier(user))
+            || self.users.iter().collect::<BTreeSet<_>>().len() != self.users.len()
+        {
+            return Err("invalid or duplicate source user identifier".into());
         }
-        for (project, user) in &self.memberships {
-            if !self.objects.contains_key(&format!("project:{project}"))
-                || !self.users.contains(user)
-            {
-                return Err("membership has a missing project or subject".into());
-            }
-        }
-        for object in self.objects.values() {
-            let valid_id = if object.kind == "lakekeeper_table" {
-                let parts: Vec<_> = object.id.split('/').collect();
-                parts.len() == 2 && parts.iter().all(|part| identifier(part))
-            } else {
-                identifier(&object.id)
-            };
-            if !valid_id || !identifier(&object.project) {
-                return Err("invalid legacy object identifier".into());
-            }
-            if let Some(owner) = &object.owner {
-                self.validate_subject("user", owner, &object.project)?;
-            }
-            if let Some(parent) = &object.parent {
-                let parent = self
+        let known_user =
+            |user: &str| identifier(user) && self.users.iter().any(|known| known == user);
+        let mut membership_keys = BTreeSet::new();
+        for membership in &self.memberships {
+            if !known_user(&membership.user)
+                || !self
                     .objects
-                    .get(parent)
-                    .ok_or("legacy resource parent is missing")?;
-                if parent.project != object.project {
-                    return Err("cross-tenant parent link rejected".into());
+                    .contains_key(&format!("organization:{}", membership.organization))
+                || !matches!(membership.role.as_str(), "member" | "admin")
+                || !membership_keys.insert((&membership.organization, &membership.user))
+            {
+                return Err("invalid organization membership or conflicting role".into());
+            }
+        }
+        for (key, object) in &self.objects {
+            if key != &object.key() || !identifier(&object.id) || !identifier(&object.organization)
+            {
+                return Err("invalid source object identifier".into());
+            }
+            match object.kind.as_str() {
+                "organization" => {
+                    let owner = object.owner.as_deref().ok_or("organization has no owner")?;
+                    if object.organization != object.id
+                        || object.parent.is_some()
+                        || object.assigner.is_some()
+                        || !known_user(owner)
+                        || !self
+                            .memberships
+                            .iter()
+                            .any(|m| m.organization == object.id && m.user == owner)
+                    {
+                        return Err(
+                            "organization owner must be an existing member of that organization"
+                                .into(),
+                        );
+                    }
                 }
-                if object.kind == "lakekeeper_table"
-                    && parent.parent.as_deref()
-                        != object
-                            .id
-                            .split_once('/')
-                            .map(|(warehouse, _)| format!("warehouse:{warehouse}"))
-                            .as_deref()
-                {
-                    return Err("table namespace belongs to a different warehouse".into());
+                "task" => {
+                    let assigner = object.assigner.as_deref().ok_or("task has no assigner")?;
+                    let parent = format!("organization:{}", object.organization);
+                    if object.owner.is_some()
+                        || !known_user(assigner)
+                        || object.parent.as_deref() != Some(&parent)
+                        || !self
+                            .objects
+                            .get(&parent)
+                            .is_some_and(|org| org.kind == "organization")
+                    {
+                        return Err("task has an invalid assigner or organization parent".into());
+                    }
                 }
+                _ => return Err("unsupported source object kind".into()),
             }
         }
         for grant in &self.grants {
             let object = self
                 .objects
                 .get(&grant.object)
-                .ok_or("legacy grant targets a missing object")?;
-            self.validate_subject(&grant.subject_kind, &grant.subject_id, &object.project)?;
-            let allowed: &[&str] = match object.kind.as_str() {
-                "project" => &[
-                    "project_admin",
-                    "data_admin",
-                    "security_admin",
-                    "create",
-                    "describe",
-                    "select",
-                    "write",
-                    "modify",
-                ],
-                "warehouse" | "namespace" => &[
-                    "create",
-                    "describe",
-                    "select",
-                    "write",
-                    "modify",
-                    "manage_grants",
-                    "pass_grants",
-                ],
-                "lakekeeper_table" => &[
-                    "describe",
-                    "select",
-                    "write",
-                    "modify",
-                    "manage_grants",
-                    "pass_grants",
-                ],
-                "role" => &["assignee"],
-                _ => return Err("unsupported legacy object kind".into()),
+                .ok_or("grant targets a missing object")?;
+            if !known_user(&grant.user) {
+                return Err(
+                    "unknown, wildcard or userset subjects are outside the source contract".into(),
+                );
+            }
+            let allowed = match object.kind.as_str() {
+                "organization" => matches!(
+                    grant.relation.as_str(),
+                    "can_view_task" | "can_edit_task" | "can_delete_task"
+                ),
+                "task" => matches!(
+                    grant.relation.as_str(),
+                    "viewer" | "editor" | "assignee" | "blocked"
+                ),
+                _ => false,
             };
-            if !allowed.contains(&grant.relation.as_str()) {
-                return Err("unsupported or escalating legacy relation rejected".into());
+            if !allowed {
+                return Err("unsupported or escalating source relation".into());
             }
+            // Explicit cross-organization user grants are a supported Openlane
+            // policy. They do not create membership or an organization owner.
         }
-        for object in self.objects.values().filter(|object| object.kind == "role") {
-            self.validate_role_tree(&object.id, &mut BTreeSet::new())?;
-        }
-        Ok(())
-    }
-
-    fn validate_subject(&self, kind: &str, id: &str, project: &str) -> ToolResult {
-        if !identifier(id) {
-            return Err("wildcard or invalid legacy subject rejected".into());
-        }
-        match kind {
-            "user"
-                if self.users.iter().any(|user| user == id)
-                    && self.memberships.contains(&(project.into(), id.into())) =>
-            {
-                Ok(())
-            }
-            "role"
-                if self
-                    .objects
-                    .get(&format!("role:{id}"))
-                    .is_some_and(|role| role.project == project) =>
-            {
-                Ok(())
-            }
-            _ => Err("missing or cross-tenant legacy subject rejected".into()),
-        }
-    }
-
-    fn validate_role_tree(&self, role: &str, visiting: &mut BTreeSet<String>) -> ToolResult {
-        if !visiting.insert(role.into()) {
-            return Err("cyclic role inheritance rejected".into());
-        }
-        if visiting.len() > 32 {
-            return Err("role inheritance depth exceeds supported bound".into());
-        }
-        for grant in self
-            .grants
-            .iter()
-            .filter(|grant| grant.object == format!("role:{role}") && grant.subject_kind == "role")
-        {
-            self.validate_role_tree(&grant.subject_id, visiting)?;
-        }
-        visiting.remove(role);
         Ok(())
     }
 
     fn tuples(&self) -> ToolResult<BTreeSet<Tuple>> {
-        let mut result = BTreeSet::new();
+        let mut tuples = BTreeSet::new();
         for object in self.objects.values() {
-            let key = object.key();
             if let Some(owner) = &object.owner {
-                result.insert(Tuple {
+                tuples.insert(Tuple {
                     user: format!("user:{owner}"),
-                    relation: "ownership".into(),
-                    object: key.clone(),
+                    relation: "owner".into(),
+                    object: object.key(),
+                });
+            }
+            if let Some(assigner) = &object.assigner {
+                tuples.insert(Tuple {
+                    user: format!("user:{assigner}"),
+                    relation: "assigner".into(),
+                    object: object.key(),
                 });
             }
             if let Some(parent) = &object.parent {
-                let relation = if matches!(object.kind.as_str(), "warehouse" | "role") {
-                    "project"
-                } else {
-                    "parent"
-                };
-                result.insert(Tuple {
+                tuples.insert(Tuple {
                     user: parent.clone(),
-                    relation: relation.into(),
-                    object: key.clone(),
+                    relation: "parent_context".into(),
+                    object: object.key(),
                 });
-                let reverse = match object.kind.as_str() {
-                    "warehouse" => Some("warehouse"),
-                    "namespace" => Some("namespace"),
-                    "lakekeeper_table" => Some("child"),
-                    _ => None,
-                };
-                if let Some(reverse) = reverse {
-                    result.insert(Tuple {
-                        user: key,
-                        relation: reverse.into(),
-                        object: parent.clone(),
-                    });
-                }
             }
         }
+        for member in &self.memberships {
+            tuples.insert(Tuple {
+                user: format!("user:{}", member.user),
+                relation: member.role.clone(),
+                object: format!("organization:{}", member.organization),
+            });
+        }
         for grant in &self.grants {
-            result.insert(Tuple {
-                user: grant.subject(),
+            tuples.insert(Tuple {
+                user: format!("user:{}", grant.user),
                 relation: grant.relation.clone(),
                 object: grant.object.clone(),
             });
         }
-        if result.len() > MAX_SOURCE_ROWS {
+        if tuples.len() > MAX_SOURCE_ROWS {
             return Err("tuple plan exceeds supported migration size".into());
         }
-        Ok(result)
-    }
-
-    fn role_member(&self, user: &str, role: &str) -> bool {
-        let Some(object) = self.objects.get(&format!("role:{role}")) else {
-            return false;
-        };
-        object.owner.as_deref() == Some(user)
-            || self.grants.iter().any(|grant| {
-                grant.object == object.key()
-                    && match grant.subject_kind.as_str() {
-                        "user" => grant.subject_id == user,
-                        "role" => self.role_member(user, &grant.subject_id),
-                        _ => false,
-                    }
-            })
+        Ok(tuples)
     }
 
     fn direct(&self, user: &str, object: &Object, relation: &str) -> bool {
-        self.grants.iter().any(|grant| {
-            grant.object == object.key()
-                && grant.relation == relation
-                && match grant.subject_kind.as_str() {
-                    "user" => grant.subject_id == user,
-                    "role" => self.role_member(user, &grant.subject_id),
-                    _ => false,
-                }
+        self.grants.contains(&Grant {
+            object: object.key(),
+            user: user.into(),
+            relation: relation.into(),
         })
     }
 
-    /// Independent legacy ACL evaluator. It reads normalized SQL ownership,
-    /// memberships, role assignments and parent references, not generated
-    /// tuples or the OpenFGA model expression tree. Unsupported source policy
-    /// features are rejected rather than interpreted as an empty grant.
-    fn capabilities(&self, user: &str, object: &Object) -> Capabilities {
-        if !self
-            .memberships
-            .contains(&(object.project.clone(), user.into()))
-        {
-            return Capabilities::default();
-        }
-        let own = object.owner.as_deref() == Some(user);
-        let parent = object
-            .parent
-            .as_ref()
-            .and_then(|parent| self.objects.get(parent))
-            .map(|parent| self.capabilities(user, parent))
-            .unwrap_or_default();
-        let direct = |relation| self.direct(user, object, relation);
-        let admin = object.kind == "project" && direct("project_admin");
-        let data_admin = object.kind == "project" && (admin || direct("data_admin"));
-        let security = object.kind == "project" && (admin || direct("security_admin"));
-        let modify = own
-            || direct("modify")
-            || admin
-            || parent.modify
-            || (object.kind == "warehouse" && parent.data_admin);
-        let write = own || direct("write") || modify || parent.write;
-        let select = own || direct("select") || write || parent.select;
-        let describe =
-            own || direct("describe") || select || parent.describe || data_admin || security;
-        let create = own || direct("create") || parent.create || data_admin;
-        let manage = own
-            || direct("manage_grants")
-            || if object.kind == "warehouse" {
-                parent.security
-            } else {
-                parent.manage
-            };
-        Capabilities {
-            modify,
-            write,
-            select,
-            describe,
-            create,
-            manage,
-            pass: direct("pass_grants"),
-            security,
-            data_admin,
-        }
-    }
-
-    fn visible_below(&self, user: &str, object: &Object) -> bool {
-        object.owner.as_deref() == Some(user)
-            || ["describe", "select", "write", "modify", "create"]
-                .iter()
-                .any(|relation| self.direct(user, object, relation))
-            || self
-                .objects
-                .values()
-                .filter(|child| {
-                    child.parent.as_deref() == Some(&object.key()) && child.kind != "role"
-                })
-                .any(|child| self.visible_below(user, child))
-    }
-
-    fn legacy_check(&self, user: &str, object: &Object, action: &str) -> ToolResult<bool> {
-        let permission = self.capabilities(user, object);
-        if !self
-            .memberships
-            .contains(&(object.project.clone(), user.into()))
-        {
+    /// Independent SQL authorization evaluator. It uses source rows, never
+    /// generated tuples or the OpenFGA model's expression evaluator.
+    fn source_check(&self, user: &str, object: &Object, action: &str) -> ToolResult<bool> {
+        if !self.users.iter().any(|known| known == user) {
             return Ok(false);
         }
-        let child_visible = self
-            .objects
-            .values()
-            .filter(|child| child.parent.as_deref() == Some(&object.key()) && child.kind != "role")
-            .any(|child| self.visible_below(user, child));
-        let metadata = permission.describe
-            || (object.kind != "lakekeeper_table" && (permission.create || child_visible));
-        let manage = permission.manage;
-        if object.kind == "role" {
-            let project = self
-                .objects
-                .get(&format!("project:{}", object.project))
-                .ok_or("missing role project")?;
-            return Ok(match action {
-                "can_assume" => self.role_member(user, &object.id),
-                "can_grant_assignee" | "can_change_ownership" | "can_delete" | "can_update" => {
-                    object.owner.as_deref() == Some(user)
-                        || self.capabilities(user, project).security
-                }
-                "can_read" | "can_read_assignments" => {
-                    self.legacy_check(user, project, "can_get_metadata")?
-                }
-                _ => return Err("unsupported legacy role check".into()),
-            });
+        match object.kind.as_str() {
+            "organization" => {
+                let owner = object.owner.as_deref() == Some(user);
+                let role = self
+                    .memberships
+                    .iter()
+                    .find(|m| m.organization == object.id && m.user == user)
+                    .map(|m| m.role.as_str());
+                let admin = role == Some("admin");
+                let member = role == Some("member") || owner || admin;
+                let delete_task = owner || self.direct(user, object, "can_delete_task");
+                let edit_task = delete_task || self.direct(user, object, "can_edit_task");
+                let view_task = edit_task || self.direct(user, object, "can_view_task");
+                Ok(match action {
+                    "owner" | "full_access" | "can_delete" => owner,
+                    "admin" => admin,
+                    "member" | "can_view" => member,
+                    "can_edit" => owner || admin,
+                    "can_delete_task" => delete_task,
+                    "can_edit_task" => edit_task,
+                    "can_view_task" => view_task,
+                    "can_create_task" => owner || admin || edit_task,
+                    _ => return Err("unsupported organization check".into()),
+                })
+            }
+            "task" => {
+                let parent = self
+                    .objects
+                    .get(object.parent.as_deref().ok_or("missing task parent")?)
+                    .ok_or("missing organization")?;
+                let parent_view = self.source_check(user, parent, "can_view_task")?;
+                let parent_edit = self.source_check(user, parent, "can_edit_task")?;
+                let parent_delete = self.source_check(user, parent, "can_delete_task")?;
+                let assigner = object.assigner.as_deref() == Some(user);
+                let assignee = self.direct(user, object, "assignee");
+                let blocked = self.direct(user, object, "blocked");
+                let deleter = assigner || parent_edit || parent_delete;
+                let editor =
+                    assigner || assignee || parent_edit || self.direct(user, object, "editor");
+                let viewer = editor || parent_view || self.direct(user, object, "viewer");
+                Ok(match action {
+                    "assigner" => assigner,
+                    "assignee" => assignee,
+                    "blocked" => blocked,
+                    "parent_viewer" => parent_view,
+                    "parent_editor" => parent_edit,
+                    "parent_deleter" => parent_delete,
+                    "deleter" | "can_delete" => deleter,
+                    "editor" => editor,
+                    "viewer" => viewer,
+                    "can_view" => viewer && !blocked,
+                    "can_edit" => (editor && !blocked) || deleter,
+                    _ => return Err("unsupported task check".into()),
+                })
+            }
+            _ => Err("unsupported source object kind".into()),
         }
-        Ok(match action {
-            "can_get_metadata"
-            | "can_include_in_list"
-            | "can_get_config"
-            | "can_list_warehouses"
-            | "can_list_namespaces"
-            | "can_list_tables"
-            | "can_use" => metadata,
-            "can_read_data" => permission.select,
-            "can_write_data" | "can_commit" => permission.write,
-            "can_drop" | "can_rename" => permission.modify,
-            "can_create_table"
-            | "can_create_namespace"
-            | "can_create_warehouse"
-            | "can_accept_moved_tabular" => permission.create,
-            "can_change_ownership" | "can_grant_pass_grants" | "can_grant_manage_grants" => manage,
-            "can_read_assignments" if object.kind == "project" => permission.security,
-            "can_read_assignments" => {
-                manage
-                    || permission.pass
-                        && (permission.describe
-                            || permission.select
-                            || permission.write
-                            || permission.modify
-                            || object.kind != "lakekeeper_table" && permission.create)
-            }
-            "can_move" => manage && permission.modify,
-            "can_revoke_select"
-            | "can_revoke_modify"
-            | "can_revoke_write"
-            | "can_revoke_describe" => manage,
-            "can_grant_select" => {
-                manage
-                    || permission.pass && permission.select
-                    || object.kind == "project" && permission.security
-            }
-            "can_grant_modify" => {
-                manage
-                    || permission.pass && permission.modify
-                    || object.kind == "project" && permission.security
-            }
-            "can_grant_write" => {
-                manage
-                    || permission.pass && permission.write
-                    || object.kind == "project" && permission.security
-            }
-            "can_grant_describe" => {
-                manage
-                    || permission.pass && permission.describe
-                    || object.kind == "project" && permission.security
-            }
-            _ => return Err("unsupported legacy permission check".into()),
-        })
     }
-}
-
-#[derive(Default)]
-struct Capabilities {
-    modify: bool,
-    write: bool,
-    select: bool,
-    describe: bool,
-    create: bool,
-    manage: bool,
-    pass: bool,
-    security: bool,
-    data_admin: bool,
 }
 
 fn actions(kind: &str) -> &'static [&'static str] {
     match kind {
-        "project" => &[
-            "can_get_metadata",
-            "can_include_in_list",
-            "can_list_warehouses",
-            "can_read_assignments",
-            "can_create_warehouse",
-            "can_grant_select",
-            "can_grant_modify",
-            "can_grant_write",
-            "can_grant_describe",
-        ],
-        "warehouse" => &[
-            "can_get_metadata",
-            "can_include_in_list",
-            "can_get_config",
-            "can_list_namespaces",
-            "can_create_namespace",
-            "can_change_ownership",
-            "can_read_assignments",
-            "can_grant_pass_grants",
-            "can_grant_manage_grants",
-            "can_grant_select",
-            "can_grant_modify",
-            "can_grant_write",
-            "can_grant_describe",
-            "can_revoke_select",
-            "can_revoke_modify",
-            "can_revoke_write",
-            "can_revoke_describe",
-        ],
-        "namespace" => &[
-            "can_get_metadata",
-            "can_include_in_list",
-            "can_list_tables",
-            "can_create_table",
-            "can_accept_moved_tabular",
-            "can_change_ownership",
-            "can_move",
-            "can_read_assignments",
-            "can_grant_pass_grants",
-            "can_grant_manage_grants",
-            "can_grant_select",
-            "can_grant_modify",
-            "can_grant_write",
-            "can_grant_describe",
-            "can_revoke_select",
-            "can_revoke_modify",
-            "can_revoke_write",
-            "can_revoke_describe",
-        ],
-        "lakekeeper_table" => &[
-            "can_get_metadata",
-            "can_include_in_list",
-            "can_read_data",
-            "can_write_data",
-            "can_commit",
-            "can_drop",
-            "can_rename",
-            "can_change_ownership",
-            "can_move",
-            "can_read_assignments",
-            "can_grant_pass_grants",
-            "can_grant_manage_grants",
-            "can_grant_select",
-            "can_grant_modify",
-            "can_grant_write",
-            "can_grant_describe",
-            "can_revoke_select",
-            "can_revoke_modify",
-            "can_revoke_write",
-            "can_revoke_describe",
-        ],
-        "role" => &[
-            "can_assume",
-            "can_grant_assignee",
-            "can_change_ownership",
+        "organization" => &[
+            "owner",
+            "admin",
+            "member",
+            "full_access",
             "can_delete",
-            "can_update",
-            "can_read",
-            "can_read_assignments",
+            "can_edit",
+            "can_view",
+            "can_view_task",
+            "can_edit_task",
+            "can_delete_task",
+            "can_create_task",
+        ],
+        "task" => &[
+            "assigner",
+            "assignee",
+            "parent_viewer",
+            "parent_editor",
+            "parent_deleter",
+            "deleter",
+            "editor",
+            "viewer",
+            "blocked",
+            "can_view",
+            "can_edit",
+            "can_delete",
         ],
         _ => &[],
     }
@@ -909,7 +677,61 @@ pub struct MigrationReport {
     pub source_sha256: String,
 }
 
-const SOURCE_TABLES: &str = "LOCK TABLE users, catalog_projects, catalog_memberships, catalog_warehouses, catalog_namespaces, catalog_tables, catalog_roles, legacy_project_grants, legacy_resource_grants, legacy_role_assignments IN SHARE MODE";
+const SOURCE_TABLES: &str = "LOCK TABLE users, organizations, organization_members, organization_permissions, tasks, task_relations IN SHARE MODE";
+
+/// Validate the immutable local contract before connecting to SQL or seeding.
+/// Runtime, provisioning and migration use the same reviewed model hash.
+pub(crate) fn validate_configuration(
+    config_path: &Path,
+    model_path: &Path,
+) -> ToolResult<(Target, Value)> {
+    let target: Target = serde_json::from_slice(&fs::read(config_path)?)?;
+    let valid_id = |id: &str| {
+        id.len() == 26
+            && id
+                .bytes()
+                .all(|byte| b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(&byte))
+    };
+    if !valid_id(&target.store_id) || !valid_id(&target.model_id) {
+        return Err("invalid OpenFGA target identifiers".into());
+    }
+    let bytes = fs::read(model_path)?;
+    if target.model_sha256 != digest(&bytes) || target.model_sha256 != PINNED_MODEL_SHA256 {
+        return Err("model hash differs from the pinned Openlane migration contract".into());
+    }
+    let model: Value = serde_json::from_slice(&bytes)?;
+    policy_model(&model)?;
+    Ok((target, model))
+}
+
+fn backend(base: &str, target: Target) -> ToolResult<Backend> {
+    let parsed = reqwest::Url::parse(base)?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err(
+            "FGA HTTP endpoint must be an HTTP(S) URL without credentials, query or fragment"
+                .into(),
+        );
+    }
+    Ok(Backend {
+        client: Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(5))
+            .build()?,
+        base: base.trim_end_matches('/').into(),
+        target,
+    })
+}
+
+pub(crate) async fn validate_backend(base: &str, target: &Target, model: &Value) -> ToolResult {
+    backend(base, target.clone())?.validate_target(model).await
+}
 
 /// Migrate a stable, validated SQL snapshot into a dedicated OpenFGA store.
 /// The model provisioner creates an empty target; this function alone activates
@@ -934,32 +756,12 @@ async fn migrate_with_batch_size(
     if !(1..=MAX_BATCH_SIZE).contains(&batch_size) {
         return Err("AUTHZ_MIGRATION_BATCH_SIZE must be between 1 and 100".into());
     }
-    let target: Target = serde_json::from_slice(&fs::read(config_path)?)?;
-    if !identifier(&target.store_id) || !identifier(&target.model_id) {
-        return Err("invalid target identifiers".into());
-    }
-    let model_bytes = fs::read(model_path)?;
-    // The legacy evaluator supports this exact public model version. Changing
-    // its graph requires an explicit reviewed policy/migration update.
-    const PINNED_MODEL_SHA256: &str =
-        "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d";
-    if target.model_sha256 != digest(&model_bytes) || target.model_sha256 != PINNED_MODEL_SHA256 {
-        return Err("model hash differs from the pinned Lakekeeper migration contract".into());
-    }
-    let expected_model: Value = serde_json::from_slice(&model_bytes)?;
-    let backend = Backend {
-        client: Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(5))
-            .build()?,
-        base: base.into(),
-        target,
-    };
+    let (target, expected_model) = validate_configuration(config_path, model_path)?;
+    let backend = backend(base, target)?;
     // Transaction-scoped lock releases even if this process is cancelled. It
     // is deliberately independent from the durable checkpoints below.
     let mut run_lock = db.begin().await?;
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(6041927238613301)")
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(6041927238613302)")
         .fetch_one(&mut *run_lock)
         .await?;
     if !acquired {
@@ -968,7 +770,7 @@ async fn migrate_with_batch_size(
     backend.validate_target(&expected_model).await?;
     let mut snapshot = db.begin().await?;
     sqlx::query(SOURCE_TABLES).execute(&mut *snapshot).await?;
-    let row=sqlx::query("SELECT status,store_id,model_id,model_sha256,source_sha256,next_tuple,tuple_count,verified_checks FROM authorization_migration WHERE singleton FOR UPDATE").fetch_one(&mut *snapshot).await?;
+    let row=sqlx::query("SELECT status,store_id,model_id,model_sha256,source_sha256,source_json,next_tuple,tuple_count,verified_checks,attempted FROM openlane_authorization_migration WHERE singleton FOR UPDATE").fetch_one(&mut *snapshot).await?;
     let status: String = row.try_get("status")?;
     let bound_store: Option<String> = row.try_get("store_id")?;
     let bound_model: Option<String> = row.try_get("model_id")?;
@@ -992,7 +794,8 @@ async fn migrate_with_batch_size(
     }
     let source = Source::read(&mut snapshot).await?;
     source.validate()?;
-    let source_hash = digest(&serde_json::to_vec(&source)?);
+    let source_json = serde_json::to_string(&source)?;
+    let source_hash = digest(source_json.as_bytes());
     let expected_tuples = source.tuples()?;
     let tuples: Vec<_> = expected_tuples.iter().cloned().collect();
     let mut users = source.users.clone();
@@ -1009,24 +812,34 @@ async fn migrate_with_batch_size(
         )
         .ok_or("verification matrix overflow")?;
     if checks > MAX_VERIFY_CHECKS {
-        return Err("legacy permission matrix exceeds supported migration bound".into());
+        return Err("Openlane permission matrix exceeds supported migration bound".into());
     }
     let mut next = usize::try_from(row.try_get::<i64, _>("next_tuple")?)?;
     if status == "pending" {
         if !backend.tuples().await?.is_empty() {
             return Err("initial migration requires an empty dedicated OpenFGA store".into());
         }
-        sqlx::query("UPDATE authorization_migration SET status='writing',store_id=$1,model_id=$2,model_sha256=$3,source_sha256=$4,tuple_count=$5,next_tuple=0,verified_checks=0,updated_at=now() WHERE singleton")
-            .bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).bind(&source_hash).bind(i64::try_from(tuples.len())?).execute(&mut *snapshot).await?;
+        sqlx::query("UPDATE openlane_authorization_migration SET status='writing',store_id=$1,model_id=$2,model_sha256=$3,source_sha256=$4,tuple_count=$5,source_json=$6,next_tuple=0,verified_checks=0,attempted=false,updated_at=now() WHERE singleton")
+            .bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).bind(&source_hash).bind(i64::try_from(tuples.len())?).bind(&source_json).execute(&mut *snapshot).await?;
         next = 0;
     } else if row
         .try_get::<Option<String>, _>("source_sha256")?
         .as_deref()
         != Some(&source_hash)
+        || row.try_get::<Option<String>, _>("source_json")?.as_deref() != Some(source_json.as_str())
         || usize::try_from(row.try_get::<i64, _>("tuple_count")?)? != tuples.len()
         || next > tuples.len()
     {
-        return Err("legacy source or tuple plan differs from the persisted checkpoint".into());
+        return Err("Openlane source or tuple plan differs from the persisted checkpoint".into());
+    }
+    if row.try_get::<bool, _>("attempted")? {
+        // A prior writer may still be buffered before its OpenFGA commit.
+        // Idempotent replay proves the current graph, not remote quiescence.
+        // Persist independent global debt BEFORE replay/activation; ordinary
+        // resume cannot clear it. Only the explicit drained-recovery command
+        // may make the verified target available for requests again.
+        sqlx::query("UPDATE authz_cache_state SET pending=pending+1,generation=generation+1 WHERE singleton")
+            .execute(&mut *snapshot).await?;
     }
     snapshot.commit().await?;
     // From this point any error, timeout, cancellation or process death leaves
@@ -1042,8 +855,13 @@ async fn migrate_with_batch_size(
     }
     while next < tuples.len() {
         let end = (next + batch_size).min(tuples.len());
+        let marked = sqlx::query("UPDATE openlane_authorization_migration SET attempted=true,updated_at=now() WHERE singleton AND source_sha256=$1 AND store_id=$2 AND model_id=$3 AND model_sha256=$4 AND next_tuple=$5 AND status IN ('writing','verifying')")
+            .bind(&source_hash).bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).bind(i64::try_from(next)?).execute(db).await?.rows_affected();
+        if marked != 1 {
+            return Err("migration attempt binding changed before remote write".into());
+        }
         backend.write(&tuples[next..end]).await?;
-        let advanced = sqlx::query("UPDATE authorization_migration SET next_tuple=$1,status='writing',updated_at=now() WHERE singleton AND source_sha256=$2 AND store_id=$3 AND model_id=$4 AND model_sha256=$5 AND next_tuple=$6 AND status IN ('writing','verifying')")
+        let advanced = sqlx::query("UPDATE openlane_authorization_migration SET next_tuple=$1,status='writing',attempted=false,updated_at=now() WHERE singleton AND source_sha256=$2 AND store_id=$3 AND model_id=$4 AND model_sha256=$5 AND next_tuple=$6 AND status IN ('writing','verifying')")
             .bind(i64::try_from(end)?).bind(&source_hash).bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).bind(i64::try_from(next)?).execute(db).await?.rows_affected();
         if advanced != 1 {
             return Err(
@@ -1053,7 +871,7 @@ async fn migrate_with_batch_size(
         }
         next = end;
     }
-    let verifying = sqlx::query("UPDATE authorization_migration SET status='verifying',verified_checks=0,updated_at=now() WHERE singleton AND status IN ('writing','verifying') AND source_sha256=$1 AND store_id=$2 AND model_id=$3 AND model_sha256=$4 AND next_tuple=tuple_count")
+    let verifying = sqlx::query("UPDATE openlane_authorization_migration SET status='verifying',verified_checks=0,updated_at=now() WHERE singleton AND status IN ('writing','verifying') AND source_sha256=$1 AND store_id=$2 AND model_id=$3 AND model_sha256=$4 AND next_tuple=tuple_count AND NOT attempted")
         .bind(&source_hash).bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).execute(db).await?.rows_affected();
     if verifying != 1 {
         return Err("migration verification preconditions changed".into());
@@ -1065,7 +883,7 @@ async fn migrate_with_batch_size(
     for user in &users {
         for object in source.objects.values() {
             for action in actions(&object.kind) {
-                let expected = source.legacy_check(user, object, action)?;
+                let expected = source.source_check(user, object, action)?;
                 let actual = backend.check(user, action, &object.key()).await?;
                 if actual != expected {
                     return Err(format!(
@@ -1088,9 +906,9 @@ async fn migrate_with_batch_size(
     sqlx::query(SOURCE_TABLES).execute(&mut *activation).await?;
     let final_source = Source::read(&mut activation).await?;
     if digest(&serde_json::to_vec(&final_source)?) != source_hash {
-        return Err("legacy source changed during permission verification".into());
+        return Err("Openlane source changed during permission verification".into());
     }
-    let changed=sqlx::query("UPDATE authorization_migration SET status='active',verified_checks=$1,activated_at=now(),updated_at=now() WHERE singleton AND status='verifying' AND source_sha256=$2 AND store_id=$3 AND model_id=$4 AND model_sha256=$5 AND next_tuple=tuple_count")
+    let changed=sqlx::query("UPDATE openlane_authorization_migration SET status='active',verified_checks=$1,activated_at=now(),updated_at=now() WHERE singleton AND status='verifying' AND source_sha256=$2 AND store_id=$3 AND model_id=$4 AND model_sha256=$5 AND next_tuple=tuple_count AND NOT attempted")
         .bind(i64::try_from(verified)?).bind(&source_hash).bind(&backend.target.store_id).bind(&backend.target.model_id).bind(&backend.target.model_sha256).execute(&mut *activation).await?.rows_affected();
     if changed != 1 {
         return Err("migration activation preconditions changed".into());
@@ -1112,7 +930,20 @@ async fn migrate_with_batch_size(
 /// CLI entry point. Existing SQL data is mandatory; this command never creates
 /// synthetic users or silently replaces a target/source binding.
 pub async fn run() -> ToolResult {
-    let database = std::env::var("DATABASE_URL")?;
+    let base = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
+    let config = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
+    let model = std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
+    let batch = std::env::var("AUTHZ_MIGRATION_BATCH_SIZE")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .unwrap_or(MAX_BATCH_SIZE);
+    if !(1..=MAX_BATCH_SIZE).contains(&batch) {
+        return Err("AUTHZ_MIGRATION_BATCH_SIZE must be between 1 and 100".into());
+    }
+    let (target, expected_model) = validate_configuration(Path::new(&config), Path::new(&model))?;
+    validate_backend(&base, &target, &expected_model).await?;
+    let database = crate::configuration::secret("DATABASE_URL")?;
     let db = PgPoolOptions::new()
         .max_connections(4)
         .acquire_timeout(Duration::from_secs(5))
@@ -1123,14 +954,6 @@ pub async fn run() -> ToolResult {
         .await?
         .run(&db)
         .await?;
-    let base = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
-    let config = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
-    let model = std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
-    let batch = std::env::var("AUTHZ_MIGRATION_BATCH_SIZE")
-        .ok()
-        .map(|value| value.parse::<usize>())
-        .transpose()?
-        .unwrap_or(MAX_BATCH_SIZE);
     let report =
         migrate_with_batch_size(&db, &base, Path::new(&config), Path::new(&model), batch).await?;
     println!("{}", serde_json::to_string(&report)?);
@@ -1143,201 +966,197 @@ mod tests {
 
     fn source() -> Source {
         let mut objects = BTreeMap::new();
-        for (kind, id, project, owner, parent) in [
-            ("project", "acme", "acme", None, None),
-            ("project", "other", "other", None, None),
+        for (kind, id, organization, owner, assigner, parent) in [
+            ("organization", "acme", "acme", Some("alice"), None, None),
+            ("organization", "other", "other", Some("erin"), None, None),
             (
-                "warehouse",
-                "analytics",
+                "task",
+                "access-review",
                 "acme",
-                Some("alice"),
-                Some("project:acme"),
-            ),
-            (
-                "warehouse",
-                "external",
-                "other",
-                Some("eve"),
-                Some("project:other"),
-            ),
-            (
-                "namespace",
-                "metrics",
-                "acme",
-                Some("alice"),
-                Some("warehouse:analytics"),
-            ),
-            (
-                "namespace",
-                "foreign",
-                "other",
-                Some("eve"),
-                Some("warehouse:external"),
-            ),
-            (
-                "lakekeeper_table",
-                "analytics/requests",
-                "acme",
+                None,
                 Some("carol"),
-                Some("namespace:metrics"),
+                Some("organization:acme"),
             ),
             (
-                "lakekeeper_table",
-                "external/requests",
-                "other",
-                Some("eve"),
-                Some("namespace:foreign"),
-            ),
-            (
-                "role",
-                "analysts",
+                "task",
+                "vendor-review",
                 "acme",
+                None,
                 Some("alice"),
-                Some("project:acme"),
+                Some("organization:acme"),
             ),
             (
-                "role",
-                "nested",
-                "acme",
-                Some("alice"),
-                Some("project:acme"),
-            ),
-            (
-                "role",
-                "other-role",
+                "task",
+                "other-review",
                 "other",
-                Some("eve"),
-                Some("project:other"),
+                None,
+                Some("erin"),
+                Some("organization:other"),
             ),
         ] {
             let object = Object {
                 kind: kind.into(),
                 id: id.into(),
-                project: project.into(),
+                organization: organization.into(),
                 owner: owner.map(str::to_owned),
+                assigner: assigner.map(str::to_owned),
                 parent: parent.map(str::to_owned),
             };
             objects.insert(object.key(), object);
         }
         Source {
-            users: vec!["alice", "bob", "carol", "eve"]
-                .into_iter()
+            users: ["alice", "bob", "carol", "dave", "erin"]
                 .map(str::to_owned)
-                .collect(),
-            memberships: BTreeSet::from([
-                ("acme".into(), "alice".into()),
-                ("acme".into(), "bob".into()),
-                ("acme".into(), "carol".into()),
-                ("other".into(), "eve".into()),
-            ]),
+                .to_vec(),
+            memberships: [
+                ("acme", "alice", "member"),
+                ("acme", "bob", "admin"),
+                ("acme", "carol", "member"),
+                ("other", "erin", "member"),
+                ("other", "dave", "member"),
+            ]
+            .into_iter()
+            .map(|(organization, user, role)| Membership {
+                organization: organization.into(),
+                user: user.into(),
+                role: role.into(),
+            })
+            .collect(),
             objects,
-            grants: vec![
+            grants: BTreeSet::from([
                 Grant {
-                    object: "project:acme".into(),
-                    subject_kind: "user".into(),
-                    subject_id: "alice".into(),
-                    relation: "project_admin".into(),
+                    object: "organization:acme".into(),
+                    user: "bob".into(),
+                    relation: "can_view_task".into(),
                 },
                 Grant {
-                    object: "role:analysts".into(),
-                    subject_kind: "user".into(),
-                    subject_id: "bob".into(),
-                    relation: "assignee".into(),
+                    object: "task:vendor-review".into(),
+                    user: "dave".into(),
+                    relation: "viewer".into(),
                 },
-                Grant {
-                    object: "role:nested".into(),
-                    subject_kind: "role".into(),
-                    subject_id: "analysts".into(),
-                    relation: "assignee".into(),
-                },
-                Grant {
-                    object: "warehouse:analytics".into(),
-                    subject_kind: "role".into(),
-                    subject_id: "nested".into(),
-                    relation: "select".into(),
-                },
-            ],
+            ]),
         }
     }
 
     #[test]
-    fn legacy_roles_owners_and_parents_preserve_separate_privilege_tiers() {
+    fn sql_owners_roles_inheritance_and_direct_sharing_preserve_privilege_tiers() {
         let source = source();
         source.validate().unwrap();
-        let table = &source.objects["lakekeeper_table:analytics/requests"];
-        assert!(source.legacy_check("bob", table, "can_read_data").unwrap());
-        assert!(!source.legacy_check("bob", table, "can_write_data").unwrap());
-        assert!(
-            !source
-                .legacy_check("bob", table, "can_grant_select")
-                .unwrap()
-        );
-        assert!(source.legacy_check("carol", table, "can_drop").unwrap());
+        let task = &source.objects["task:access-review"];
+        assert!(source.source_check("bob", task, "can_view").unwrap());
+        assert!(!source.source_check("bob", task, "can_edit").unwrap());
+        assert!(!source.source_check("bob", task, "can_delete").unwrap());
+        assert!(source.source_check("carol", task, "can_delete").unwrap());
+        assert!(source.source_check("alice", task, "can_delete").unwrap());
         assert!(
             source
-                .legacy_check("alice", table, "can_change_ownership")
+                .source_check(
+                    "bob",
+                    &source.objects["organization:acme"],
+                    "can_create_task"
+                )
                 .unwrap()
         );
-        for action in actions("lakekeeper_table") {
-            assert!(!source.legacy_check("eve", table, action).unwrap());
-            assert!(!source.legacy_check("unknown", table, action).unwrap());
+        for action in actions("task") {
+            assert!(!source.source_check("erin", task, action).unwrap());
+            assert!(!source.source_check("unknown", task, action).unwrap());
         }
+        assert!(
+            source
+                .source_check("dave", &source.objects["task:vendor-review"], "can_view")
+                .unwrap()
+        );
         let tuples = source.tuples().unwrap();
-        assert!(tuples.contains(&Tuple {
-            user: "role:analysts#assignee".into(),
-            relation: "assignee".into(),
-            object: "role:nested".into()
-        }));
-        assert!(tuples.contains(&Tuple {
-            user: "lakekeeper_table:analytics/requests".into(),
-            relation: "child".into(),
-            object: "namespace:metrics".into()
-        }));
+        for (user, relation, object) in [
+            ("user:alice", "owner", "organization:acme"),
+            ("organization:acme", "parent_context", "task:access-review"),
+            ("user:carol", "assigner", "task:access-review"),
+            ("user:bob", "admin", "organization:acme"),
+        ] {
+            assert!(tuples.contains(&Tuple {
+                user: user.into(),
+                relation: relation.into(),
+                object: object.into()
+            }));
+        }
     }
 
     #[test]
-    fn legacy_source_rejects_cross_tenant_unknown_wildcard_and_escalating_grants() {
-        for (kind, id, relation) in [
-            ("role", "other-role", "select"),
-            ("user", "eve", "select"),
-            ("user", "missing", "select"),
-            ("user", "*", "select"),
-            ("user", "bob", "ownership"),
-            ("user", "bob", "can_grant_select"),
+    fn blocked_precedence_matches_upstream_and_does_not_hide_delete_permission() {
+        let mut source = source();
+        source.grants.insert(Grant {
+            object: "task:access-review".into(),
+            user: "carol".into(),
+            relation: "blocked".into(),
+        });
+        source.grants.insert(Grant {
+            object: "task:access-review".into(),
+            user: "bob".into(),
+            relation: "editor".into(),
+        });
+        source.grants.insert(Grant {
+            object: "task:access-review".into(),
+            user: "bob".into(),
+            relation: "blocked".into(),
+        });
+        let task = &source.objects["task:access-review"];
+        assert!(!source.source_check("carol", task, "can_view").unwrap());
+        assert!(source.source_check("carol", task, "can_edit").unwrap());
+        assert!(source.source_check("carol", task, "can_delete").unwrap());
+        assert!(!source.source_check("bob", task, "can_view").unwrap());
+        assert!(!source.source_check("bob", task, "can_edit").unwrap());
+        assert!(!source.source_check("bob", task, "can_delete").unwrap());
+    }
+
+    #[test]
+    fn sql_source_rejects_unknown_users_usersets_wildcards_and_derived_grants() {
+        for (object, user, relation) in [
+            ("task:access-review", "missing", "viewer"),
+            ("task:access-review", "*", "viewer"),
+            ("task:access-review", "bob#member", "viewer"),
+            ("task:access-review", "bob", "can_delete"),
+            ("task:access-review", "bob", "assigner"),
+            ("organization:acme", "bob", "owner"),
         ] {
             let mut source = source();
-            source.grants.push(Grant {
-                object: "lakekeeper_table:analytics/requests".into(),
-                subject_kind: kind.into(),
-                subject_id: id.into(),
+            source.grants.insert(Grant {
+                object: object.into(),
+                user: user.into(),
                 relation: relation.into(),
             });
             assert!(
                 source.validate().is_err(),
-                "invalid grant accepted: {kind}/{id}/{relation}"
+                "invalid grant accepted: {object}/{user}/{relation}"
             );
         }
     }
 
     #[test]
-    fn legacy_source_rejects_cycles_and_invalid_parent_references() {
-        let mut cyclic = source();
-        cyclic.grants.push(Grant {
-            object: "role:analysts".into(),
-            subject_kind: "role".into(),
-            subject_id: "nested".into(),
-            relation: "assignee".into(),
-        });
-        assert!(cyclic.validate().is_err());
-        for parent in ["namespace:foreign", "namespace:missing"] {
-            let mut invalid = source();
-            invalid
-                .objects
-                .get_mut("lakekeeper_table:analytics/requests")
-                .unwrap()
-                .parent = Some(parent.into());
-            assert!(invalid.validate().is_err());
+    fn sql_source_rejects_inconsistent_parent_owner_and_membership_roles() {
+        for parent in ["organization:other", "organization:missing"] {
+            let mut source = source();
+            source.objects.get_mut("task:access-review").unwrap().parent = Some(parent.into());
+            assert!(source.validate().is_err());
         }
+        let mut missing_member = source();
+        missing_member
+            .memberships
+            .retain(|member| member.user != "alice");
+        assert!(missing_member.validate().is_err());
+        let mut duplicate_role = source();
+        duplicate_role.memberships.insert(Membership {
+            organization: "acme".into(),
+            user: "bob".into(),
+            role: "member".into(),
+        });
+        assert!(duplicate_role.validate().is_err());
+        let mut escalating_role = source();
+        escalating_role.memberships.insert(Membership {
+            organization: "acme".into(),
+            user: "dave".into(),
+            role: "owner".into(),
+        });
+        assert!(escalating_role.validate().is_err());
     }
 
     #[test]
@@ -1365,8 +1184,8 @@ mod tests {
         assert!(decode_object::<ReadPage>(br#"{"error":"unavailable"}"#).is_err());
         assert!(decode_object::<ReadPage>(br#"{"tuples":[],"continuation_token":""}"#).is_ok());
         for value in [
-            json!({"user":"user:alice","relation":"select","object":"lakekeeper_table:analytics/requests"}),
-            json!({"user":"user:alice","relation":"select","object":"lakekeeper_table:analytics/requests","condition":null}),
+            json!({"user":"user:alice","relation":"viewer","object":"task:access-review"}),
+            json!({"user":"user:alice","relation":"viewer","object":"task:access-review","condition":null}),
         ] {
             let tuple: WireTupleKey = serde_json::from_value(value).unwrap();
             assert_eq!(tuple.unconditional().unwrap().user, "user:alice");
@@ -1376,7 +1195,7 @@ mod tests {
             json!({"name":"conditional","context":{}}),
             json!(false),
         ] {
-            let tuple: WireTupleKey=serde_json::from_value(json!({"user":"user:alice","relation":"select","object":"lakekeeper_table:analytics/requests","condition":condition})).unwrap();
+            let tuple: WireTupleKey=serde_json::from_value(json!({"user":"user:alice","relation":"viewer","object":"task:access-review","condition":condition})).unwrap();
             assert!(tuple.unconditional().is_err());
         }
     }
@@ -1386,11 +1205,11 @@ mod tests {
         let model: Value = serde_json::from_slice(include_bytes!("../fga/model.json")).unwrap();
         let normalized = policy_model(&model).unwrap();
         let mut changed = model.clone();
-        changed["type_definitions"][3]["relations"]["can_assume"] = json!({"this":{}});
+        changed["type_definitions"][2]["relations"]["can_view"] = json!({"this":{}});
         assert_ne!(normalized, policy_model(&changed).unwrap());
         assert_eq!(
             digest(include_bytes!("../fga/model.json")),
-            "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"
+            PINNED_MODEL_SHA256
         );
     }
 }

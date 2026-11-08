@@ -62,10 +62,10 @@ processes or benchmark runner have been changed or installed on the phone.
 ## Raw backend diagnostics
 
 `backend_bench` and the Criterion target `authz_cache` exercise concrete OpenFGA
-adapters directly. They do not measure the catalog API, PostgreSQL authorization
+adapters directly. They do not measure the task API, PostgreSQL authorization
 scope, migration activation, mutation fencing or the denial cache. Raw
-`ListObjects` is available only on the concrete adapters; catalog enumeration
-continues to require its locked, per-object Check path.
+`ListObjects` is used for adapter/model diagnostics; task enumeration
+continues to require bounded SQL candidates, per-object Check and revision validation.
 
 Set `FGA_URL`, `FGA_STORE` and `FGA_MODEL` to a disposable backend's endpoint,
 store ID and model ID. The diagnostic defaults to HTTP when compiled with that
@@ -78,12 +78,12 @@ backend errors and unexpected decisions fail the run without a timing summary.
 ITERS=101 CONC=8 cargo run --locked --release --bin backend_bench
 ```
 
-The default Check is Alice's `can_get_metadata` on
-`lakekeeper_table:analytics/requests`. `BENCH_USER`, `BENCH_RELATION` and
+The default Check is Alice's `can_view` on
+`task:access-review`. `BENCH_USER`, `BENCH_RELATION` and
 `BENCH_OBJECT` select another fixture. `BENCH_EXPECT_ALLOWED` defaults to `true`;
 set it explicitly to `false` for an intentional denial workload. `MODE=list`
 also requires `BENCH_EXPECTED_OBJECTS` as the exact expected JSON array and uses
-`BENCH_TYPE` (default `lakekeeper_table`). Unexpected, missing or duplicate
+`BENCH_TYPE` (default `task`). Unexpected, missing or duplicate
 returned objects invalidate the measurement; an explicitly expected empty list
 is a distinct workload.
 
@@ -97,7 +97,7 @@ The Criterion target uses `FGA_URL_HTTP`/`FGA_URL_GRPC` and the same store/model
 and Check fixture variables. Its gRPC connection lives on the runtime used for
 the entire benchmark. Every timed Check validates the expected decision, and a
 backend error aborts the benchmark. Existing historical results are not evidence
-for the current Lakekeeper workload; apply the comparison controls above before
+for the current Openlane workload; apply the comparison controls above before
 making a new claim.
 
 ## Historical calibration, before the Rust harness

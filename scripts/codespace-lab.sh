@@ -47,7 +47,7 @@ case "${1:-start}" in
     if test "$fresh" = true; then verify; fi
     curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/readyz
     printf '\nReal lab ready: open private port 3000 in the Ports panel.\n'
-    printf 'Demo users: alice, bob, carol, dave, eve. Read the password in your own terminal:\ncat .lab/codespaces/secrets/demo-password\n'
+    printf 'Demo users: alice, bob, carol, dave, erin. Read the password in your own terminal:\ncat .lab/codespaces/secrets/demo-password\n'
     ;;
   private)
     if test "${CODESPACES:-false}" = true; then

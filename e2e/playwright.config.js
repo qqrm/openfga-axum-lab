@@ -11,4 +11,9 @@ module.exports = defineConfig({
     trace: "off",
   },
   timeout: 60000,
+  expect: { timeout: 10000 },
+  reporter: process.argv.includes("--list") ? [["list"]] : [
+    ["list"],
+    ["junit", { outputFile: "../artifacts/browser-e2e-" + (process.env.FGA_TRANSPORT || "default") + ".xml" }],
+  ],
 });

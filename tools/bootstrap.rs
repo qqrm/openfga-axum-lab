@@ -9,9 +9,7 @@ use tokio::time::{sleep, timeout};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-// Lakekeeper authorization schema v4.15, also enforced by the SQL migration.
-const PINNED_MODEL_SHA256: &str =
-    "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d";
+use openfga_axum_lab::authorization_migration::PINNED_MODEL_SHA256;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -75,7 +73,7 @@ fn validate_existing(config: &Config, model: &[u8]) -> ToolResult {
     }
     if config.model_sha256 != digest(model) || config.model_sha256 != PINNED_MODEL_SHA256 {
         return Err(
-            "model differs from the pinned catalog model; explicit migration required".into(),
+            "model differs from the pinned Openlane model; explicit migration required".into(),
         );
     }
     Ok(())
@@ -222,7 +220,7 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
     let model_bytes = fs::read(model_path)?;
     let model_hash = digest(&model_bytes);
     if model_hash != PINNED_MODEL_SHA256 {
-        return Err("bootstrap requires the exact pinned Lakekeeper model".into());
+        return Err("bootstrap requires the exact pinned Openlane model".into());
     }
     let model: Value = serde_json::from_slice(&model_bytes)?;
     let client = Client::builder()
@@ -249,7 +247,7 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
     let store: Store = send_json(
         client
             .post(format!("{base}/stores"))
-            .json(&json!({"name": "axum-catalog-lab"})),
+            .json(&json!({"name": "axum-openlane-lab"})),
         StatusCode::CREATED,
     )
     .await?;

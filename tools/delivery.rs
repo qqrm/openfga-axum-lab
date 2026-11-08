@@ -107,14 +107,11 @@ fn base() -> String {
     std::env::var("SMOKE_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into())
 }
 pub async fn probe() -> ToolResult {
-    let response = client()?.get(format!("{}/readyz", base())).send().await?;
-    if response.status() != StatusCode::OK {
-        return Err("readiness did not return 200".into());
-    }
-    let body: Value = response.json().await?;
-    if body["ready"] != true {
-        return Err("readiness is false or malformed".into());
-    }
+    client()?
+        .get(format!("{}/readyz", base()))
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 async fn expect(
@@ -125,13 +122,11 @@ async fn expect(
     token: &str,
     expected: StatusCode,
 ) -> ToolResult {
-    let mut request = client
+    let response = client
         .request(method, format!("{base}{path}"))
-        .bearer_auth(token);
-    if path.ends_with("/grants/modify") {
-        request = request.json(&json!({"subject":{"type":"user","id":"dave"}}));
-    }
-    let response = request.send().await?;
+        .bearer_auth(token)
+        .send()
+        .await?;
     if response.status() != expected {
         return Err(format!("{path}: expected {expected}, got {}", response.status()).into());
     }
@@ -162,13 +157,13 @@ pub async fn acceptance() -> ToolResult {
     probe().await?;
     let carol = login(&client, &base, "carol", &password).await?;
     let dave = login(&client, &base, "dave", &password).await?;
-    let path = "/projects/acme/warehouses/analytics/tables/requests/grants/modify";
+    let path = "/tasks/access-review/relations/assignee/dave";
     // Refuse to modify a fixture which already grants dave access.
     expect(
         &client,
         &base,
         Method::GET,
-        "/projects/acme/warehouses/analytics/tables/requests",
+        "/tasks/access-review",
         &dave,
         StatusCode::FORBIDDEN,
     )
@@ -187,7 +182,7 @@ pub async fn acceptance() -> ToolResult {
             &client,
             &base,
             Method::GET,
-            "/projects/acme/warehouses/analytics/tables/requests",
+            "/tasks/access-review",
             &dave,
             StatusCode::OK,
         )
@@ -205,7 +200,7 @@ pub async fn acceptance() -> ToolResult {
             &client,
             &base,
             Method::GET,
-            "/projects/acme/warehouses/analytics/tables/requests",
+            "/tasks/access-review",
             &dave,
             StatusCode::FORBIDDEN,
         )

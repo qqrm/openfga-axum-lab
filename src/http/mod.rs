@@ -1,11 +1,7 @@
-use crate::application::{App, CatalogTable, Identity, TableInput, TableMetadata};
-use crate::domain::{
-    NamespaceId, Privilege, ProjectId, RoleId, Scope, Subject, TableAction, TableId, UserId,
-    WarehouseId,
-};
+use crate::application::{App, CreateTask, Identity, TaskInput};
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, MatchedPath, Path, Query, Request, State},
+    extract::{DefaultBodyLimit, MatchedPath, Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
@@ -15,95 +11,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 mod auth;
+mod identifiers;
 pub(crate) use auth::guard;
-
-pub(crate) const TABLES: &str = "/projects/{project}/warehouses/{warehouse}/tables";
-pub(crate) const TABLE: &str = "/projects/{project}/warehouses/{warehouse}/tables/{id}";
-pub(crate) const GRANTS: &str =
-    "/projects/{project}/warehouses/{warehouse}/tables/{id}/grants/{relation}";
-pub(crate) const OWNER: &str = "/projects/{project}/warehouses/{warehouse}/tables/{id}/owner";
-pub(crate) const NAMESPACE: &str =
-    "/projects/{project}/warehouses/{warehouse}/tables/{id}/namespace";
-pub(crate) const CHECK: &str = "/projects/{project}/warehouses/{warehouse}/tables/{id}/check";
-pub(crate) const ROLE_ASSIGNEE: &str = "/projects/{project}/roles/{role}/assignees/{user}";
-
-#[derive(Deserialize)]
-pub(crate) struct ScopePath {
-    project: ProjectId,
-    warehouse: WarehouseId,
-}
-impl ScopePath {
-    fn scope(&self) -> Scope {
-        Scope {
-            project: self.project.clone(),
-            warehouse: self.warehouse.clone(),
-        }
-    }
-}
-#[derive(Deserialize)]
-pub(crate) struct TablePath {
-    project: ProjectId,
-    warehouse: WarehouseId,
-    id: TableId,
-}
-impl TablePath {
-    pub(crate) fn scope(&self) -> Scope {
-        Scope {
-            project: self.project.clone(),
-            warehouse: self.warehouse.clone(),
-        }
-    }
-}
-#[derive(Deserialize)]
-struct GrantPath {
-    project: ProjectId,
-    warehouse: WarehouseId,
-    id: TableId,
-    relation: String,
-}
-#[derive(Deserialize)]
-struct RolePath {
-    project: ProjectId,
-    role: RoleId,
-    user: UserId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OwnerInput {
-    owner_id: UserId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NamespaceInput {
-    namespace_id: NamespaceId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CheckInput {
-    action: String,
-}
-#[derive(Deserialize)]
-#[serde(
-    tag = "type",
-    content = "id",
-    rename_all = "lowercase",
-    deny_unknown_fields
-)]
-enum SubjectInput {
-    User(UserId),
-    Role(RoleId),
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GrantInput {
-    subject: SubjectInput,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ListQuery {
-    cursor: Option<String>,
-    limit: Option<u32>,
-}
+use identifiers::{OrganizationId, TaskId, UserId};
 
 pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(AUTHORIZATION).iter();
@@ -119,6 +29,12 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
         return None;
     }
     Some(token)
+}
+
+fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
+    let mut values = headers.get_all("idempotency-key").iter();
+    let value = values.next()?.to_str().ok()?;
+    (values.next().is_none() && crate::domain::valid_idempotency_key(value)).then_some(value)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,11 +57,15 @@ async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
     let Some(token) = bearer(&headers) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    complete(app.logout(token).await)
+    match app.logout(token).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => error_response(error),
+    }
 }
+
 fn error_response(error: crate::use_cases::Error) -> Response {
     use crate::use_cases::Error;
-    let status = match error {
+    match error {
         Error::Invalid => StatusCode::BAD_REQUEST,
         Error::NotFound => StatusCode::NOT_FOUND,
         Error::Conflict => StatusCode::CONFLICT,
@@ -154,60 +74,38 @@ fn error_response(error: crate::use_cases::Error) -> Response {
         Error::Forbidden => StatusCode::FORBIDDEN,
         Error::Unauthenticated => StatusCode::UNAUTHORIZED,
         Error::Throttled => StatusCode::TOO_MANY_REQUESTS,
-    };
-    (status, Json(json!({"error":error.to_string()}))).into_response()
-}
-fn complete(result: Result<(), crate::use_cases::Error>) -> Response {
-    match result {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => error_response(error),
     }
-}
-async fn catalog(
-    State(app): State<App>,
-    axum::Extension(identity): axum::Extension<Identity>,
-) -> Response {
-    match app.catalog(&identity.0).await {
-        Ok(value) => Json(value).into_response(),
-        Err(error) => error_response(error),
-    }
+    .into_response()
 }
 async fn list(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<ScopePath>,
-    Query(query): Query<ListQuery>,
 ) -> Response {
-    match app
-        .visible_tables(
-            &identity.0,
-            &path.scope(),
-            query.cursor.as_deref(),
-            query.limit.unwrap_or(50),
-        )
-        .await
-    {
-        Ok(page) => Json(page).into_response(),
+    match app.visible_tasks(&identity.0).await {
+        Ok(tasks) => Json(tasks).into_response(),
         Err(error) => error_response(error),
     }
 }
-async fn table(axum::Extension(table): axum::Extension<CatalogTable>) -> Response {
-    Json(table).into_response()
+async fn task(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<TaskId>,
+) -> Response {
+    match app.get_task(&identity.0, &id).await {
+        Ok(task) => Json(task).into_response(),
+        Err(error) => error_response(error),
+    }
 }
 async fn create(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<ScopePath>,
     headers: HeaderMap,
-    Json(input): Json<TableInput>,
+    Json(input): Json<CreateTask>,
 ) -> Response {
-    let Some(key) = headers.get("idempotency-key").and_then(|v| v.to_str().ok()) else {
-        return error_response(crate::use_cases::Error::Invalid);
+    let Some(key) = idempotency_key(&headers) else {
+        return StatusCode::BAD_REQUEST.into_response();
     };
-    match app
-        .create_table(&identity.0, &path.scope(), key, &input)
-        .await
-    {
+    match app.create_task(&identity.0, key, &input).await {
         Ok(id) => (StatusCode::CREATED, Json(json!({"id":id}))).into_response(),
         Err(error) => error_response(error),
     }
@@ -215,118 +113,132 @@ async fn create(
 async fn edit(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<TablePath>,
-    Json(input): Json<TableMetadata>,
+    Path(id): Path<TaskId>,
+    Json(input): Json<TaskInput>,
 ) -> Response {
-    complete(
-        app.edit_table(&identity.0, &path.scope(), &path.id, &input)
+    mutation_response(app.edit_task(&identity.0, &id, &input).await)
+}
+async fn delete_task(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<TaskId>,
+) -> Response {
+    mutation_response(app.delete_task(&identity.0, &id).await)
+}
+async fn relation(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, relation, subject)): Path<(TaskId, String, UserId)>,
+    method: Method,
+) -> Response {
+    mutation_response(
+        app.set_task_relation(&identity.0, &id, &relation, &subject, method == Method::PUT)
             .await,
     )
 }
-async fn delete_table(
+async fn organizations(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<TablePath>,
 ) -> Response {
-    complete(app.delete_table(&identity.0, &path.scope(), &path.id).await)
+    match app.visible_organizations(&identity.0).await {
+        Ok(organizations) => Json(organizations).into_response(),
+        Err(error) => error_response(error),
+    }
 }
-async fn grant(
+async fn members(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<GrantPath>,
-    method: Method,
-    Json(input): Json<GrantInput>,
+    Path(id): Path<OrganizationId>,
 ) -> Response {
-    let Some(privilege) = Privilege::parse(&path.relation) else {
-        return error_response(crate::use_cases::Error::Invalid);
-    };
-    let subject = match input.subject {
-        SubjectInput::User(id) => Subject::User(id),
-        SubjectInput::Role(id) => Subject::Role(id),
-    };
-    complete(
-        app.set_grant(
+    match app.organization_members(&identity.0, &id).await {
+        Ok(members) => Json(members).into_response(),
+        Err(error) => error_response(error),
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemberRole {
+    role: String,
+}
+async fn put_member(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, subject)): Path<(OrganizationId, UserId)>,
+    Json(input): Json<MemberRole>,
+) -> Response {
+    mutation_response(
+        app.set_member(&identity.0, &id, &subject, Some(&input.role))
+            .await,
+    )
+}
+async fn delete_member(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, subject)): Path<(OrganizationId, UserId)>,
+) -> Response {
+    mutation_response(app.set_member(&identity.0, &id, &subject, None).await)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ownership {
+    expected_owner: UserId,
+    new_owner: UserId,
+}
+async fn transfer_owner(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<OrganizationId>,
+    Json(input): Json<Ownership>,
+) -> Response {
+    mutation_response(
+        app.transfer_ownership(&identity.0, &id, &input.expected_owner, &input.new_owner)
+            .await,
+    )
+}
+async fn organization_permission(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, relation, subject)): Path<(OrganizationId, String, UserId)>,
+    method: Method,
+) -> Response {
+    mutation_response(
+        app.set_organization_permission(
             &identity.0,
-            &Scope {
-                project: path.project,
-                warehouse: path.warehouse,
-            },
-            &path.id,
-            privilege,
+            &id,
+            &relation,
             &subject,
             method == Method::PUT,
         )
         .await,
     )
 }
-async fn owner(
-    State(app): State<App>,
-    axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<TablePath>,
-    Json(input): Json<OwnerInput>,
-) -> Response {
-    complete(
-        app.transfer_owner(&identity.0, &path.scope(), &path.id, &input.owner_id)
-            .await,
-    )
-}
-async fn namespace(
-    State(app): State<App>,
-    axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<TablePath>,
-    Json(input): Json<NamespaceInput>,
-) -> Response {
-    complete(
-        app.move_table(&identity.0, &path.scope(), &path.id, &input.namespace_id)
-            .await,
-    )
-}
-async fn role_assignee(
-    State(app): State<App>,
-    axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<RolePath>,
-    method: Method,
-) -> Response {
-    complete(
-        app.set_role_assignee(
-            &identity.0,
-            &path.project,
-            &path.role,
-            &path.user,
-            method == Method::PUT,
-        )
-        .await,
-    )
-}
-async fn check(
-    State(app): State<App>,
-    axum::Extension(identity): axum::Extension<Identity>,
-    Path(path): Path<TablePath>,
-    Json(input): Json<CheckInput>,
-) -> Response {
-    let Some(action) = TableAction::parse(&input.action) else {
-        return error_response(crate::use_cases::Error::Invalid);
-    };
-    match app
-        .check_table(&identity.0, &path.scope(), &path.id, action)
-        .await
-    {
-        Ok(value) => Json(value).into_response(),
+fn mutation_response(result: crate::use_cases::Result<()>) -> Response {
+    match result {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => error_response(error),
     }
 }
 pub(crate) fn router(app: App) -> Router {
     Router::new()
-        .route("/catalog", get(catalog))
-        .route(TABLES, get(list).post(create))
-        .route(TABLE, get(table).patch(edit).delete(delete_table))
-        .route(GRANTS, axum::routing::put(grant).delete(grant))
-        .route(OWNER, axum::routing::put(owner))
-        .route(NAMESPACE, axum::routing::put(namespace))
-        .route(CHECK, axum::routing::post(check))
+        .route("/tasks", get(list).post(create))
+        .route("/tasks/{id}", get(task).patch(edit).delete(delete_task))
         .route(
-            ROLE_ASSIGNEE,
-            axum::routing::put(role_assignee).delete(role_assignee),
+            "/tasks/{id}/relations/{relation}/{subject}",
+            axum::routing::put(relation).delete(relation),
+        )
+        .route("/organizations", get(organizations))
+        .route("/organizations/{id}/members", get(members))
+        .route(
+            "/organizations/{id}/members/{subject}",
+            axum::routing::put(put_member).delete(delete_member),
+        )
+        .route(
+            "/organizations/{id}/owner",
+            axum::routing::put(transfer_owner),
+        )
+        .route(
+            "/organizations/{id}/permissions/{relation}/{subject}",
+            axum::routing::put(organization_permission).delete(organization_permission),
         )
         .route_layer(middleware::from_fn_with_state(app.clone(), guard))
         .route(
@@ -354,6 +266,7 @@ pub(crate) fn router(app: App) -> Router {
                 )
             }),
         )
+        .route("/healthz", get(|| async { "ok" }))
         .route(
             "/model",
             get(|| async {
@@ -372,10 +285,10 @@ pub(crate) fn router(app: App) -> Router {
                 )
             }),
         )
-        .route("/healthz", get(|| async { "ok" }))
         .route("/metrics", get(metrics))
         .route("/session", axum::routing::post(login).delete(logout))
         .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn_with_state(app.clone(), observe_request))
         .with_state(app)
 }
@@ -422,7 +335,8 @@ async fn observe_request(State(app): State<App>, request: Request, next: Next) -
 pub(crate) async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    headers.insert(axum::http::header::CONTENT_SECURITY_POLICY,axum::http::HeaderValue::from_static("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"));
+    headers.insert(axum::http::header::CONTENT_SECURITY_POLICY,
+        axum::http::HeaderValue::from_static("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"));
     headers.insert(
         axum::http::header::X_CONTENT_TYPE_OPTIONS,
         axum::http::HeaderValue::from_static("nosniff"),
@@ -467,49 +381,66 @@ mod tests {
     }
 
     #[test]
+    fn idempotency_rejects_duplicate_and_combined_keys() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(idempotency_key(&headers), None);
+        headers.insert("idempotency-key", "request-123".parse().unwrap());
+        assert_eq!(idempotency_key(&headers), Some("request-123"));
+        headers.append("idempotency-key", "request-456".parse().unwrap());
+        assert_eq!(idempotency_key(&headers), None);
+        for value in [
+            "request-123, request-456",
+            "request-123 ",
+            "short",
+            "user:alice",
+        ] {
+            headers.clear();
+            headers.insert("idempotency-key", value.parse().unwrap());
+            assert_eq!(idempotency_key(&headers), None);
+        }
+    }
+
+    #[test]
     fn request_dtos_reject_identity_and_privilege_smuggling() {
+        for field in ["assigner_id", "owner_id", "can_edit", "relations"] {
+            let mut value = json!({"organization_id":"acme","title":"Review access","description":"","status":"todo"});
+            value[field] = json!("alice");
+            assert!(serde_json::from_value::<CreateTask>(value).is_err());
+        }
         assert!(
-            serde_json::from_value::<TableInput>(json!({
-                "namespace_id":"metrics","name":"Requests","description":"",
-                "owner_id":"alice"
+            serde_json::from_value::<TaskInput>(json!({
+                "title":"Review access","description":"","status":"todo","organization_id":"other"
             }))
             .is_err()
         );
         assert!(
-            serde_json::from_value::<CheckInput>(json!({
-                "action":"can_get_metadata","subject":"user:alice"
-            }))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_value::<GrantInput>(json!({
-                "subject":{"type":"user","id":"eve","project_id":"other"}
-            }))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_value::<GrantInput>(json!({
-                "subject":{"type":"role","id":"analysts#assignee"}
+            serde_json::from_value::<Ownership>(json!({
+                "expected_owner":"alice","new_owner":"bob","actor":"alice"
             }))
             .is_err()
         );
     }
 
     #[test]
-    fn typed_paths_and_subjects_refuse_fga_syntax() {
-        assert!(serde_json::from_value::<OwnerInput>(json!({"owner_id":"user:alice"})).is_err());
-        assert!(
-            serde_json::from_value::<NamespaceInput>(json!({"namespace_id":"../other"})).is_err()
-        );
-        assert!(
-            serde_json::from_value::<GrantInput>(json!({"subject":{"type":"service","id":"bot"}}))
+    fn typed_identifiers_refuse_fga_syntax() {
+        for value in [
+            "user:alice",
+            "bob#owner",
+            "*",
+            "../other",
+            "",
+            "task/review",
+        ] {
+            assert!(serde_json::from_value::<UserId>(json!(value)).is_err());
+            assert!(serde_json::from_value::<TaskId>(json!(value)).is_err());
+            assert!(serde_json::from_value::<OrganizationId>(json!(value)).is_err());
+            assert!(
+                serde_json::from_value::<Ownership>(json!({
+                    "expected_owner":"alice","new_owner":value
+                }))
                 .is_err()
-        );
-        assert!(
-            serde_json::from_value::<GrantInput>(
-                json!({"subject":{"type":"role","id":"analysts"}})
-            )
-            .is_ok()
-        );
+            );
+        }
+        assert!(serde_json::from_value::<OrganizationId>(json!("acme-123")).is_ok());
     }
 }

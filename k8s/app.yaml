@@ -62,6 +62,13 @@ spec:
               value: local-demo-password
           ports:
             - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 2
           volumeMounts:
             - name: data
               mountPath: /data

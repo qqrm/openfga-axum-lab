@@ -21,6 +21,8 @@ COPY --from=build /app/target/release/openfga-axum-lab /usr/local/bin/app
 COPY --from=build /app/target/release/lab-tool /usr/local/bin/lab-tool
 COPY migrations /app/migrations
 COPY fga /app/fga
+COPY LICENSES /app/LICENSES
+COPY NOTICE /app/NOTICE
 WORKDIR /app
 USER 65534:65534
 EXPOSE 3000

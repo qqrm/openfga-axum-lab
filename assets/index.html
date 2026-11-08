@@ -1,18 +1,128 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization Lab · Lakekeeper model</title><link rel="stylesheet" href="/assets/app.css"><script src="/assets/app.js" defer></script></head>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Openlane · организации и задачи</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
 <body>
-<header><a class="brand" href="/">Authorization Lab</a><span class="tag">RUST / AXUM / OPENFGA</span><a href="https://github.com/qqrm/openfga-axum-lab">Source</a></header>
-<main>
-<section class="intro"><p class="eyebrow">LIVE AUTHORIZATION CONSOLE</p><h1>Catalog authorization</h1><p>Projects, roles, ownership and catalog tables using the original Lakekeeper authorization model. Every result below comes from the running API.</p><div class="model-line"><span id="model-name">Loading model provenance…</span><a id="model-source" href="/model">Model provenance</a><a href="/model/schema">Full schema</a></div></section>
-<section class="session panel" aria-labelledby="session-title"><div><h2 id="session-title">Session</h2><p class="muted">Synthetic lab identities. Use your stand's configured password.</p></div><form id="login-form"><label>Identity<select id="who"><option value="alice">alice · project administrator</option><option value="bob">bob · inherited role access</option><option value="carol">carol · table owner</option><option value="dave">dave · direct reader</option><option value="eve">eve · other project</option></select></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button id="sign-in" type="submit">Sign in</button><button id="sign-out" type="button" class="secondary">Sign out</button></form><p id="session-state" class="muted">Signed out</p></section>
-<p id="error" role="alert"></p>
-<section id="workspace" hidden>
-<div class="scopebar"><label>Project / warehouse<select id="scope"></select></label><button id="refresh" class="secondary">Refresh</button><span id="readiness" class="muted"></span></div>
-<div class="columns"><section class="panel catalog" aria-labelledby="catalog-title"><div class="section-head"><div><p class="eyebrow">AUTHORIZED CATALOG</p><h2 id="catalog-title">Tables</h2></div><span id="table-count" class="tag">0 on this page</span></div><div class="table-wrap"><table><thead><tr><th>Name / ID</th><th>Namespace</th><th>Owner</th><th></th></tr></thead><tbody id="tables"></tbody></table></div><p id="empty" class="muted" hidden>No visible tables on this page.</p><button id="next-page" class="secondary" hidden>Next page</button><details><summary>Create a table</summary><form id="create-form" class="stack-form"><label>Name<input id="create-name" required maxlength="120"></label><label>Description<textarea id="create-description" maxlength="4000"></textarea></label><label>Namespace<select id="create-namespace"></select></label><button type="submit">Create table</button></form></details></section>
-<section class="panel inspector" aria-labelledby="inspector-title"><p class="eyebrow">OBJECT INSPECTOR</p><h2 id="inspector-title">Permission checks</h2><form id="check-form" class="stack-form"><label>Table ID<input id="object-id" placeholder="requests" required></label><label>Action<select id="action"><option>can_get_metadata</option><option>can_read_data</option><option>can_commit</option><option>can_drop</option><option>can_read_assignments</option><option>can_change_ownership</option><option>can_move</option></select></label><button type="submit">Check my access</button></form><output id="decision" aria-live="polite" class="decision">No decision requested</output><p class="muted">The subject is your authenticated session. A failed or incomplete check never becomes an allow.</p><pre id="object-details" hidden></pre></section></div>
-<section class="panel" aria-labelledby="changes-title"><div class="section-head"><div><p class="eyebrow">PRIVILEGED OPERATIONS</p><h2 id="changes-title">Change relationships</h2></div><p class="muted">Uses the table ID above. Each operation is authorized again by the service.</p></div><div class="operation-grid"><form id="grant-form" class="stack-form"><h3>Direct grant</h3><label>Privilege<select id="grant-relation"><option>select</option><option>describe</option><option>write</option><option>modify</option><option>manage_grants</option><option>pass_grants</option></select></label><label>Subject type<select id="subject-type"><option value="user">User</option><option value="role">Role</option></select></label><label>Subject ID<input id="subject-id" value="dave" required></label><div class="buttons"><button type="submit" name="operation" value="grant">Grant</button><button type="submit" name="operation" value="revoke" class="secondary">Revoke</button></div></form><form id="owner-form" class="stack-form"><h3>Transfer ownership</h3><label>New owner<input id="new-owner" value="bob" required></label><button type="submit">Transfer ownership</button><p class="muted">Replaces ownership in one OpenFGA write. Uncertain outcomes keep the object unavailable.</p></form><form id="move-form" class="stack-form"><h3>Move table</h3><label>Destination namespace<select id="new-namespace"></select></label><button type="submit">Move table</button><p class="muted">Requires source move permission and the destination's acceptance permissions.</p></form><form id="role-form" class="stack-form"><h3>Role membership</h3><label>Role<select id="role-id"></select></label><label>User<input id="role-user" value="dave" required></label><div class="buttons"><button type="submit" name="operation" value="grant">Assign role</button><button type="submit" name="operation" value="revoke" class="secondary">Remove role</button></div></form></div></section>
-</section>
-<section class="panel activity" aria-labelledby="activity-title"><div class="section-head"><h2 id="activity-title">Request results</h2><button id="clear-results" class="secondary">Clear</button></div><p class="muted">Results from this browser session. Credentials and session tokens are never displayed.</p><ol id="results" aria-live="polite"></ol></section>
-</main><footer><span>Lakekeeper model · synthetic catalog · isolated lab</span><span>403 = denied · 503 = no trustworthy decision</span></footer>
-</body></html>
+  <header class="app-header">
+    <div><span class="brand">Openlane / Access Lab</span><p>Организации, задачи и объектные права</p></div>
+    <span id="session-status" class="session-status">Вход не выполнен</span>
+  </header>
+  <main>
+    <section class="panel session-panel" aria-labelledby="session-title">
+      <div><h1 id="session-title">Рабочее пространство</h1><p class="muted">Сценарий на основе публичной модели Openlane. Учебные аккаунты и данные; решения о доступе принимает сервер.</p></div>
+      <form id="session-form" class="session-controls">
+        <label>Пользователь<select id="who" name="username" autocomplete="username"><option value="alice">Alice</option><option value="bob">Bob</option><option value="carol">Carol</option><option value="dave">Dave</option><option value="erin">Erin</option></select></label>
+        <label>Пароль<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button id="sign-in" type="submit">Войти</button>
+        <button id="sign-out" type="button" class="secondary" disabled>Выйти</button>
+      </form>
+      <p class="hint">Используйте пароль, заданный при запуске локального стенда через DEMO_PASSWORD. Смена пользователя завершает текущий сеанс в интерфейсе.</p>
+    </section>
+    <p id="error" role="alert"></p>
+    <p id="notice" role="status" aria-live="polite"></p>
+
+    <div id="workspace" hidden>
+      <section class="toolbar" aria-label="Фильтр задач">
+        <label>Организация<select id="organization"><option value="*">Все доступные задачи</option></select></label>
+        <p id="task-count" class="muted"></p>
+        <button id="refresh" type="button" class="secondary">Обновить</button>
+        <button id="new-task" type="button">Создать задачу</button>
+      </section>
+
+      <section id="create-panel" class="panel" hidden aria-labelledby="create-heading">
+        <div class="section-heading"><h2 id="create-heading">Новая задача</h2><button id="cancel-create" type="button" class="secondary">Отмена</button></div>
+        <form id="create-task" class="form-grid">
+          <label>Организация задачи<select id="create-organization" required></select></label>
+          <label>Статус<select id="create-status"><option value="todo">К выполнению</option><option value="in_progress">В работе</option><option value="done">Готово</option></select></label>
+          <label class="wide">Название<input id="create-title" maxlength="160" required></label>
+          <label class="wide">Описание<textarea id="create-description" maxlength="4000" rows="3"></textarea></label>
+          <div class="wide"><button id="create-submit" type="submit">Создать</button></div>
+        </form>
+        <p class="hint">Создатель становится назначающим (assigner). Право создавать задачи не означает доступ ко всем существующим задачам.</p>
+      </section>
+
+      <div class="task-layout">
+        <section class="panel" aria-labelledby="tasks-heading">
+          <div class="section-heading"><h2 id="tasks-heading">Доступные задачи</h2></div>
+          <ul id="tasks" class="task-list" aria-live="polite"></ul>
+          <p id="empty-tasks" class="muted" hidden>Доступных задач нет.</p>
+          <p class="hint">Здесь показаны только задачи, для которых сервер подтвердил can_view. Прямой доступ к задаче возможен без членства в её организации.</p>
+        </section>
+
+        <section id="task-detail" class="panel" aria-labelledby="task-heading" hidden>
+          <p id="task-context" class="eyebrow"></p>
+          <div class="section-heading"><h2 id="task-heading"></h2><button id="delete-task" type="button" class="danger" hidden>Удалить задачу</button></div>
+          <p id="task-recovery" class="recovery-note" role="status" hidden>Только чтение: требуется завершение восстановления прав. Обратитесь к оператору стенда.</p>
+          <p id="task-permissions" class="muted"></p>
+          <form id="edit-task">
+            <fieldset id="edit-fields" class="form-grid">
+              <label class="wide">Название задачи<input id="edit-title" maxlength="160" required></label>
+              <label class="wide">Описание задачи<textarea id="edit-description" maxlength="4000" rows="4"></textarea></label>
+              <label>Статус задачи<select id="edit-status"><option value="todo">К выполнению</option><option value="in_progress">В работе</option><option value="done">Готово</option></select></label>
+              <div class="form-actions"><button id="save-task" type="submit">Сохранить задачу</button></div>
+            </fieldset>
+          </form>
+          <section id="task-access" class="subsection" hidden aria-labelledby="access-heading">
+            <h3 id="access-heading">Прямые права на задачу</h3>
+            <ul id="direct-relations" class="compact-list" hidden></ul>
+            <form id="task-relation" class="form-grid">
+              <label>Пользователь для доступа<input id="relation-user" placeholder="например, dave" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+              <label>Отношение<select id="relation"><option value="viewer">viewer — чтение</option><option value="editor">editor — редактирование</option><option value="assignee">assignee — исполнитель</option><option value="blocked">blocked — ограничение</option></select></label>
+              <div class="wide button-row"><button id="grant-relation" type="submit" value="grant">Выдать отношение</button><button id="revoke-relation" type="submit" value="revoke" class="secondary">Отозвать отношение</button></div>
+            </form>
+            <p class="hint">Менять отношения может тот, у кого есть can_delete. Отзыв одного прямого отношения не отменяет доступ по другим отношениям или через организацию.</p>
+          </section>
+        </section>
+      </div>
+
+      <section id="organization-panel" class="panel" hidden aria-labelledby="org-heading">
+        <div class="section-heading"><div><p class="eyebrow">Организация</p><h2 id="org-heading"></h2></div><p id="org-owner" class="owner-label"></p></div>
+        <p id="organization-recovery" class="recovery-note" role="status" hidden>Только чтение: требуется завершение восстановления прав. Обратитесь к оператору стенда.</p>
+        <div class="table-scroll"><table><thead><tr><th>Пользователь</th><th>Роль</th><th>Владение</th></tr></thead><tbody id="members"></tbody></table></div>
+        <div id="organization-management" hidden>
+          <div class="management-grid">
+            <section class="subsection" aria-labelledby="member-heading">
+              <h3 id="member-heading">Участники и роли</h3>
+              <form id="member-form" class="form-grid">
+                <label>Участник<input id="member-user" placeholder="например, carol" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+                <label>Роль участника<select id="member-role"><option value="member">member — участник</option><option value="admin">admin — администратор</option></select></label>
+                <div class="wide button-row"><button id="set-member" type="submit" value="set">Установить роль</button><button id="remove-member" type="submit" value="remove" class="secondary">Удалить участника</button></div>
+              </form>
+              <p class="hint">Admin может создавать задачи, но не получает автоматически доступ ко всем задачам. Владелец управляется отдельной операцией передачи.</p>
+            </section>
+            <section class="subsection" aria-labelledby="inheritance-heading">
+              <h3 id="inheritance-heading">Права на все задачи организации</h3>
+              <form id="organization-permission" class="form-grid">
+                <label>Получатель права<input id="permission-user" placeholder="например, bob" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+                <label>Право организации<select id="organization-relation"><option value="can_view_task">can_view_task</option><option value="can_edit_task">can_edit_task</option><option value="can_delete_task">can_delete_task</option></select></label>
+                <div class="wide button-row"><button id="grant-permission" type="submit" value="grant">Выдать право</button><button id="revoke-permission" type="submit" value="revoke" class="secondary">Отозвать право</button></div>
+              </form>
+              <p class="hint">Права наследуются задачами через parent_context. В исходной модели can_edit_task также даёт право удалять задачи; это широкое полномочие.</p>
+            </section>
+          </div>
+          <section class="subsection ownership" aria-labelledby="ownership-heading">
+            <div><h3 id="ownership-heading">Передача владения</h3><p class="hint">Передать можно существующему участнику. Прежний владелец теряет доступ, полученный через owner, но сохраняет независимые прямые права.</p></div>
+            <form id="transfer-owner"><label>Новый владелец<select id="new-owner" required></select></label><button id="transfer-owner-submit" type="submit" class="secondary">Передать владение</button></form>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <details class="model-notes">
+      <summary>Как устроен доступ в этом примере</summary>
+      <div class="notes-grid">
+        <div><h3>Владелец и администратор</h3><p>Owner наследует полный доступ к задачам своей организации. Admin может создавать задачи. Member видит организацию, но не получает автоматически доступ к её задачам.</p></div>
+        <div><h3>Назначающий и исполнитель</h3><p>Assigner может читать, редактировать и удалять свою задачу. Assignee и editor могут читать и редактировать, но не получают права удаления или выдачи доступа.</p></div>
+        <div><h3>Особенность blocked</h3><p>Сохранён приоритет исходной модели Openlane: blocked исключает can_view; can_edit всё ещё допускается через can_delete, а can_delete не ограничивается blocked. Это не универсальный запрет всех операций.</p></div>
+        <div><h3>Проверка на сервере</h3><p>Доступ после изменения прав проверяется заново. При недоступности авторизации сервер не выдаёт доступ по старому разрешению. Интерфейс не является источником прав.</p></div>
+      </div>
+    </details>
+  </main>
+  <footer><p>Адаптация публичной модели <a href="https://github.com/theopenlane/core/tree/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga">Openlane</a> · Apache-2.0 · Rust / Axum / PostgreSQL / OpenFGA</p><p><a href="/model">Происхождение модели стенда</a> · <a href="/model/schema">Модель JSON</a></p></footer>
+</body>
+</html>

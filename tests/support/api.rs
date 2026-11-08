@@ -52,6 +52,13 @@ pub async fn expect(request: RequestBuilder, expected: StatusCode) -> TestResult
             return Err(format!("{context}: expected a JSON response, got an empty body").into());
         }
         Ok(Value::Null)
+    } else if !status.is_success()
+        && content_type.split(';').next().map(str::trim) == Some("text/plain")
+    {
+        // Axum's typed-path and body-limit extractors return plain-text
+        // rejections. The exact expected status was asserted above; success
+        // bodies and JSON error responses must still decode as valid JSON.
+        Ok(Value::Null)
     } else {
         serde_json::from_slice(&bytes).map_err(|error| {
             format!(
