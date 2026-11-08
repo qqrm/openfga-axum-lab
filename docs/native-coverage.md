@@ -49,6 +49,40 @@ The original release-mode integration, Compose image, latency, browser,
 formal and security jobs remain required. Instrumented timings are not used as
 performance evidence; the separate Criterion benchmarks are not selected.
 
+## Authorization and failure scenarios
+
+The failure/recovery integration keeps the useful scenarios from PRs #15, #16,
+#17, #20 and #21, merged in #28 and adapted to the catalog data model:
+
+| Original PR | Retained behavioral evidence |
+| --- | --- |
+| #15 | Edit, deletion and select grant/revoke wait for a real PostgreSQL catalog row lock. A coordinated real ownership revocation must then deny the operation without changing catalog state or unrelated OpenFGA tuples; restoring authority makes the same request succeed. |
+| #16 | Real SQL faults in login accounting, credential lookup, session insertion, authentication and logout fail closed and recover. Missing cache-coordinator state, a rejected pre-write marker and failed post-write finalization preserve intent/fences across replicas and restart. |
+| #17 | Failed startup after lost committed provisioning/deletion responses, activation UPDATE or deferred COMMIT errors, deletion UPDATE errors and a missing recovery table must exit normally with a nonzero status before listening. Each failed instrumented child is reaped and must retain its own profile. |
+| #20 | With OpenFGA offline, emergency deny mode keeps sessions usable while denying domain access and writes, preserves catalog lifecycle data, relationship intents and existing grants, and cannot execute recovery. Every current DenyAll trait operation also has an ordinary unit assertion. |
+| #21 | Three real successful Check responses are paused while unrelated writes advance the generation. Exhausting the bounded retry budget returns 503; the unchanged request recovers when churn stops. |
+
+These cases preserve the catalog protocol: unresolved lifecycle rows remain
+hidden and uncertain remote writes leave global debt. An ordinary restart or
+acknowledged replay cannot prove that an older request drained, so the tests do
+not invoke a blanket fence reset. Known SQL failures after an acknowledged
+backend write have separate positive controls: repairing SQL permits lifecycle
+replay when no earlier global uncertainty remains.
+
+The marker-failure case checks readiness when an owner-change intent is durable
+but the global pre-send marker could not commit. The target stays hidden and
+readiness is 503; an unrelated authorized resource remains a positive control.
+After the SQL fault is removed, a confirmed startup replay completes that intent
+and restores readiness without clearing old debt. With a failed post-write
+finalization, debt remains across replay and restart. Credentials continue to
+work in both cases. Failed startup children must exit normally before listening
+and save their own instrumented profiles.
+
+The older requirement that every competing lifecycle handler be admitted is not
+restored. Current concurrent lifecycle and row-lock scenarios retain their
+no-resurrection and tuple-cleanup checks while allowing the durable fence to
+reject an overlapping request with 503.
+
 ## Login and session boundary scenarios
 
 The native `system` suite also ports the useful, previously unmerged cases from

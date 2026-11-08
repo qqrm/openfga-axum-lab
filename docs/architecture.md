@@ -34,6 +34,9 @@ idempotency key; a different payload conflicts, and a deleted result remains a
 Creation commits `pending`, provisions ownership/parent/child tuples, then
 activates the row. Deletion commits `deleting`, removes direct tuples and the
 namespace backlink, then marks `deleted`. IDs are not reused.
+The recorded delete actor may retry deletion or read its completion receipt,
+but both public paths still require backend availability and an open fence.
+Startup intent replay is separate and cannot clear pre-existing uncertainty.
 
 Ownership transfer and namespace move commit `updating` with an exact durable
 write/delete intent before touching OpenFGA. Replacement uses one mixed Write,
@@ -42,6 +45,8 @@ success and SQL metadata is committed. Startup replays unresolved intents
 idempotently only after the target-bound migration gate is active.
 
 These lifecycle records are separate from the durable authorization fence.
+Readiness also rejects pending/updating/deleting rows and relationship intents,
+even if committing the global pre-send marker failed before OpenFGA was called.
 Replaying an intent does **not** erase an older uncertain mutation marker.
 
 ## Denial cache and replica fence

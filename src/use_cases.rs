@@ -819,6 +819,12 @@ impl App {
             return Err(Error::NotFound);
         }
         tx.commit().await.map_err(storage)?;
+        if matches!(state, Lifecycle::Deleting | Lifecycle::Deleted) {
+            // A recorded delete actor may retry cleanup or its final receipt,
+            // but both must respect deny mode, backend loss and unresolved debt.
+            // Normal active deletion already passed its authoritative Check.
+            self.auth.ensure_available().await.map_err(authorization)?;
+        }
         if state == Lifecycle::Deleted {
             return Ok(());
         }

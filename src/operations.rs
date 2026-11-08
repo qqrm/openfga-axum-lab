@@ -1,4 +1,4 @@
-//! Readiness includes the bound migration gate and durable mutation fence.
+//! Readiness includes the bound migration gate, durable intent and mutation fence.
 use crate::application::{AuthorizationTarget, Authorizer};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
@@ -32,16 +32,21 @@ async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
         );
     };
     let result = tokio::time::timeout(Duration::from_secs(3), async {
-        let (db, fga) = tokio::join!(
+        let (db, unresolved, fga) = tokio::join!(
             crate::authorization_migration::ensure_active(
                 &state.db,
                 &target.store,
                 &target.model,
                 &target.model_sha256
             ),
+            // Domain intent can commit before the global write marker. A
+            // failed marker must not leave unfinished catalog work reporting ready.
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM catalog_pending_updates) OR EXISTS(SELECT 1 FROM catalog_tables WHERE status IN ('pending','updating','deleting'))"
+            ).fetch_one(&state.db),
             state.backend.ensure_ready()
         );
-        db.is_ok() && fga.is_ok()
+        db.is_ok() && matches!(unresolved, Ok(false)) && fga.is_ok()
     })
     .await
     .unwrap_or(false);

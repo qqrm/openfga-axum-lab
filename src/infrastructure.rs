@@ -442,3 +442,49 @@ mod openfga_http {
 
 #[cfg(feature = "http")]
 pub use openfga_http::OpenFgaHttp;
+
+#[cfg(test)]
+mod tests {
+    use super::{Authorizer, DenyAll, Tuple};
+
+    #[tokio::test]
+    async fn deny_all_never_grants_or_mutates_authorization() {
+        let auth: &dyn Authorizer = &DenyAll;
+        assert!(auth.ensure_available().await.is_err());
+        assert!(auth.ensure_ready().await.is_err());
+        assert!(
+            auth.list_objects("alice", "can_get_metadata", "lakekeeper_table")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        for (user, relation, object) in [
+            ("alice", "can_create_table", "namespace:metrics"),
+            (
+                "carol",
+                "can_get_metadata",
+                "lakekeeper_table:analytics/requests",
+            ),
+            ("carol", "can_commit", "lakekeeper_table:analytics/requests"),
+            ("carol", "can_drop", "lakekeeper_table:analytics/requests"),
+        ] {
+            assert!(!auth.check(user, relation, object).await.unwrap());
+        }
+        let tuples = [Tuple {
+            user: "user:dave".into(),
+            relation: "select".into(),
+            object: "lakekeeper_table:analytics/requests".into(),
+        }];
+        for add in [true, false] {
+            assert!(auth.write(&tuples, add).await.is_err());
+        }
+        assert!(auth.apply(&tuples, &[]).await.is_err());
+        assert!(auth.apply(&[], &tuples).await.is_err());
+        assert!(auth.apply(&[], &[]).await.is_err());
+        assert!(
+            auth.delete_object("lakekeeper_table:analytics/requests")
+                .await
+                .is_err()
+        );
+    }
+}

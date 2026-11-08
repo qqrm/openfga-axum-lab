@@ -11,7 +11,7 @@ Use the CI run for the exact commit and its JUnit/job output.
 | Domain / HTTP unit tests | Typed identifier grammar, lifecycle transitions, explicit routes/actions, strict DTOs, ambiguous bearer rejection |
 | `http_adapter` | Real loopback HTTP with malformed/duplicate decisions, unexpected statuses, redirects, content type/size, stalled body, wrong target, soft-deleted store despite positive Check, pagination and mixed Write |
 | `grpc_adapter` | Real loopback gRPC framing, presence/status failures, consistency, target identity and tuple/mixed-write handling |
-| `system` | Real Axum + PostgreSQL + OpenFGA: role matrix, sessions, metrics, concurrent idempotency, deletion/grant race, held locks, create/delete recovery, persistence and outage |
+| `system` | Real Axum + PostgreSQL + OpenFGA: role matrix, sessions, metrics, concurrent idempotency, deletion/grant race, held locks, create/delete recovery, SQL/authentication faults, post-lock revocation, retry exhaustion, persistence and outage |
 | `cache_replicas` | Two real replicas: every allow checks live, negative-cache invalidation, delayed decision, Check-only failure, ambiguous grant/revoke, HTTP redirect without forwarding, restart fence |
 | `authorization_migration` | Real SQL source and CLI: closed initial gate, role/owner/hierarchy equivalence, source/target rejection, checkpoints, lost response and restart, verification mismatch, late pre-forward batch debt across app/storage restarts, foreign-scenario rejection and post-cutover revocation |
 | `compose_deployment` | Actual Dockerfile and provisioning/migration startup, selected runtime transport, authenticated catalog read |
