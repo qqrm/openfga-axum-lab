@@ -234,7 +234,7 @@ impl Stack {
             .to_owned())
     }
 
-    pub async fn sql(&self, statement: &str) -> TestResult {
+    pub async fn sql(&self, statement: &'static str) -> TestResult {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&self.database)

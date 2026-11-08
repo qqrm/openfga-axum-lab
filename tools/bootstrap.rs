@@ -17,7 +17,12 @@ fn validate_existing(config: &Config, model: &[u8]) -> ToolResult {
     if config.store_id.is_empty() || config.model_id.is_empty() {
         return Err("existing store/model identifiers are missing".into());
     }
-    if config.model_sha256 != format!("{:x}", Sha256::digest(model)) {
+    if config.model_sha256
+        != Sha256::digest(model)
+            .iter()
+            .map(|byte| format!("{:02x}", byte))
+            .collect::<String>()
+    {
         return Err("model changed; explicit migration is required".into());
     }
     Ok(())
@@ -136,7 +141,10 @@ pub async fn run() -> ToolResult {
         &Config {
             store_id: store_id.into(),
             model_id: model_id.into(),
-            model_sha256: format!("{:x}", Sha256::digest(&model_bytes)),
+            model_sha256: Sha256::digest(&model_bytes)
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>(),
         },
     )?;
     println!("Demo migration complete");
@@ -152,7 +160,10 @@ mod tests {
         Config {
             store_id: "store".into(),
             model_id: "model".into(),
-            model_sha256: format!("{:x}", Sha256::digest(b"model")),
+            model_sha256: Sha256::digest(b"model")
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>(),
         }
     }
 
