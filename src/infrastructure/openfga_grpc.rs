@@ -28,6 +28,27 @@ impl OpenFgaGrpc {
             .set_consistency(ConsistencyPreference::HigherConsistency);
         Ok(Self { client })
     }
+
+    /// Raw backend enumeration for diagnostics, outside the catalog contract.
+    /// This does not enforce SQL scope, migration activation or mutation fences.
+    /// Catalog responses must continue to use their locked per-object Check.
+    pub async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
+        let response = bounded(self.client.list_objects(
+            object_type.to_owned(),
+            relation.to_owned(),
+            format!("user:{user}"),
+            None,
+            None,
+        ))
+        .await?
+        .into_inner();
+        Ok(response.objects)
+    }
 }
 
 // Bound the complete unary response, including its body and gRPC trailers.

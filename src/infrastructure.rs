@@ -209,6 +209,40 @@ mod openfga_http {
         continuation_token: String,
     }
 
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ListObjectsResponse {
+        #[serde(default)]
+        objects: Vec<String>,
+    }
+
+    impl OpenFgaHttp {
+        /// Raw backend enumeration for diagnostics, outside the catalog contract.
+        /// This does not enforce SQL scope, migration activation or mutation fences.
+        /// Catalog responses must continue to use their locked per-object Check.
+        pub async fn list_objects(
+            &self,
+            user: &str,
+            relation: &str,
+            object_type: &str,
+        ) -> Result<Vec<String>, AuthError> {
+            let response: ListObjectsResponse = send_json(
+                self.client
+                    .post(format!("{}/stores/{}/list-objects", self.url, self.store))
+                    .json(&json!({
+                        "authorization_model_id": self.model,
+                        "consistency": "HIGHER_CONSISTENCY",
+                        "user": format!("user:{user}"),
+                        "relation": relation,
+                        "type": object_type,
+                    })),
+                "list_objects",
+            )
+            .await?;
+            Ok(response.objects)
+        }
+    }
+
     fn protocol_error(operation: &'static str, reason: &'static str) -> AuthError {
         tracing::warn!(operation, reason, "invalid OpenFGA HTTP response");
         AuthError

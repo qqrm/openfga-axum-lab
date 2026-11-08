@@ -34,16 +34,23 @@ jobs:
           echo "DELIVERY_IMAGE=$image" >> "$GITHUB_ENV"
           docker image inspect authzlab-candidate:ci --format '{{.Id}} {{.Config.User}} {{json .Config.Labels}}' > artifacts/image.txt
       - name: Test packaged image on two disposable stands
+        id: delivery_tests
         run: cargo +1.99.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Record environment
         if: always()
+        env:
+          DELIVERY_TEST_OUTCOME: ${{ steps.delivery_tests.outcome }}
         run: |
           mkdir -p artifacts
           rustc +1.99.0 -Vv > artifacts/rustc.txt
           docker version > artifacts/docker.txt
           git rev-parse HEAD > artifacts/commit.txt
           sha256sum Cargo.lock Dockerfile compose.release.yaml > artifacts/inputs.sha256
-          docker image inspect postgres:17-bookworm openfga/openfga:v1.10.3 --format '{{json .RepoDigests}}' > artifacts/dependencies.jsonl
+          if [ "$DELIVERY_TEST_OUTCOME" = skipped ]; then
+            printf 'Packaged-image tests were skipped; dependency images were not pulled.\n' > artifacts/dependencies-skipped.txt
+          else
+            docker image inspect postgres:17-bookworm openfga/openfga:v1.10.3 --format '{{json .RepoDigests}}' > artifacts/dependencies.jsonl
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

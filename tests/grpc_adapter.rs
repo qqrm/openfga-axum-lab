@@ -14,8 +14,9 @@ use openfga_axum_lab::{
 };
 use openfga_client::client::{
     AuthorizationModel, CheckRequest, CheckResponse, ConsistencyPreference, GetStoreRequest,
-    GetStoreResponse, ReadAuthorizationModelRequest, ReadAuthorizationModelResponse, ReadRequest,
-    ReadResponse, Tuple as FgaTuple, TupleKey, WriteRequest, WriteResponse,
+    GetStoreResponse, ListObjectsRequest, ListObjectsResponse, ReadAuthorizationModelRequest,
+    ReadAuthorizationModelResponse, ReadRequest, ReadResponse, Tuple as FgaTuple, TupleKey,
+    WriteRequest, WriteResponse,
 };
 use prost::Message;
 use std::{collections::VecDeque, convert::Infallible, sync::Arc, time::Duration};
@@ -107,6 +108,9 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
             }),
         }),
         "Write" => frame(WriteResponse {}),
+        "ListObjects" => frame(ListObjectsResponse {
+            objects: vec!["lakekeeper_table:analytics/example".into()],
+        }),
         "Read" => frame(state.reads.lock().await.pop_front().unwrap_or_default()),
         _ => panic!("unexpected RPC {}", uri.path()),
     };
@@ -168,6 +172,20 @@ async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
     )
     .await?;
     auth.apply(&[], &[]).await?;
+    assert_eq!(
+        auth.list_objects("alice", "can_read_data", "lakekeeper_table")
+            .await?,
+        ["lakekeeper_table:analytics/example"]
+    );
+    let lists = stub.requests::<ListObjectsRequest>("ListObjects").await?;
+    assert_eq!(lists.len(), 1);
+    assert_eq!(
+        lists[0].consistency(),
+        ConsistencyPreference::HigherConsistency
+    );
+    assert_eq!(lists[0].store_id, "store");
+    assert_eq!(lists[0].authorization_model_id, "model");
+    assert_eq!(lists[0].user, "user:alice");
 
     let health = stub.requests::<GetStoreRequest>("GetStore").await?;
     assert_eq!(health.len(), 1);
