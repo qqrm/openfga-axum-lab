@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Native gRPC adapter with the same consistency and retry contract as HTTP.
 pub struct OpenFgaGrpc {
-    pub client: OpenFgaClient<Channel>,
+    client: OpenFgaClient<Channel>,
 }
 
 impl OpenFgaGrpc {
@@ -27,6 +27,27 @@ impl OpenFgaGrpc {
         let client = OpenFgaClient::new(OpenFgaServiceClient::new(channel), store, model)
             .set_consistency(ConsistencyPreference::HigherConsistency);
         Ok(Self { client })
+    }
+
+    /// Raw backend enumeration for diagnostics, outside the catalog contract.
+    /// This does not enforce SQL scope, migration activation or mutation fences.
+    /// Catalog responses must continue to use their locked per-object Check.
+    pub async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
+        let response = bounded(self.client.list_objects(
+            object_type.to_owned(),
+            relation.to_owned(),
+            format!("user:{user}"),
+            None,
+            None,
+        ))
+        .await?
+        .into_inner();
+        Ok(response.objects)
     }
 }
 
@@ -43,7 +64,7 @@ async fn bounded<T, E>(request: impl Future<Output = Result<T, E>>) -> Result<T,
 impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
-        // Cache hits must still prove that the real authorization store responds.
+        // Operational health must prove that the configured store responds.
         bounded(self.client.client().get_store(GetStoreRequest {
             store_id: self.client.store_id().to_owned(),
         }))
@@ -77,8 +98,17 @@ impl Authorizer for OpenFgaGrpc {
 
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        let writes = add.then(|| {
-            tuples
+        if add {
+            self.apply(tuples, &[]).await
+        } else {
+            self.apply(&[], tuples).await
+        }
+    }
+
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.apply")]
+    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        let writes = (!writes.is_empty()).then(|| {
+            writes
                 .iter()
                 .map(|tuple| TupleKey {
                     user: tuple.user.clone(),
@@ -88,8 +118,8 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
-        let deletes = (!add).then(|| {
-            tuples
+        let deletes = (!deletes.is_empty()).then(|| {
+            deletes
                 .iter()
                 .map(|tuple| TupleKeyWithoutCondition {
                     user: tuple.user.clone(),
@@ -98,30 +128,13 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
+        // write_with_options sends one unary Write and rejects an oversized
+        // transaction; it never chunks a replacement into separate requests.
         bounded(
             self.client
                 .write_with_options(writes, deletes, WriteOptions::new_idempotent()),
         )
         .await
-    }
-
-    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
-    async fn list_objects(
-        &self,
-        user: &str,
-        relation: &str,
-        object_type: &str,
-    ) -> Result<Vec<String>, AuthError> {
-        let response = bounded(self.client.list_objects(
-            object_type.to_owned(),
-            relation.to_owned(),
-            format!("user:{user}"),
-            None,
-            None,
-        ))
-        .await?
-        .into_inner();
-        Ok(response.objects)
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]

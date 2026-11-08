@@ -6,7 +6,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 export LAB_STATE_DIR="$root/.lab/codespaces"
 export APP_PORT=3000
-project=petlab-codespaces
+project=authzlab-codespaces
 compose=(docker compose -p "$project" --env-file "$LAB_STATE_DIR/environment.env" -f compose.release.yaml)
 
 verify() {
@@ -26,9 +26,9 @@ case "${1:-start}" in
     done
     # Trust only this explicit mounted workspace, not every directory on the host.
     revision=$(git -c "safe.directory=$root" rev-parse HEAD)
-    docker build --build-arg "APP_REVISION=$revision" -t petlab-codespaces:local .
+    docker build --build-arg "APP_REVISION=$revision" -t authzlab-codespaces:local .
     export LAB_IMAGE
-    LAB_IMAGE=$(docker image inspect petlab-codespaces:local --format '{{.Id}}')
+    LAB_IMAGE=$(docker image inspect authzlab-codespaces:local --format '{{.Id}}')
     fresh=false
     if ! test -e "$LAB_STATE_DIR"; then
       docker run --rm --user "$(id -u):$(id -g)" \
@@ -47,7 +47,7 @@ case "${1:-start}" in
     if test "$fresh" = true; then verify; fi
     curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/readyz
     printf '\nReal lab ready: open private port 3000 in the Ports panel.\n'
-    printf 'Demo users: alice, bob, carol, dave. Read the password in your own terminal:\ncat .lab/codespaces/secrets/demo-password\n'
+    printf 'Demo users: alice, bob, carol, dave, eve. Read the password in your own terminal:\ncat .lab/codespaces/secrets/demo-password\n'
     ;;
   private)
     if test "${CODESPACES:-false}" = true; then

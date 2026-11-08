@@ -47,11 +47,11 @@ check_gate() {
 load_state() {
   : "${LIVE_LAB_STATE:?Missing owned session state}"
   : "${RUNNER_TEMP:?Hosted runner temporary directory is required}"
-  [[ "$LIVE_LAB_STATE" == "$RUNNER_TEMP"/petlab-live.* ]] || return 1
+  [[ "$LIVE_LAB_STATE" == "$RUNNER_TEMP"/authzlab-live.* ]] || return 1
   test -d "$LIVE_LAB_STATE" && test ! -L "$LIVE_LAB_STATE"
   project=$(cat "$LIVE_LAB_STATE/project")
-  [[ "$project" =~ ^petlab-live-[0-9]+-[0-9]+$ ]] || return 1
-  test "$project" = "petlab-live-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
+  [[ "$project" =~ ^authzlab-live-[0-9]+-[0-9]+$ ]] || return 1
+  test "$project" = "authzlab-live-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
   export LAB_STATE_DIR="$LIVE_LAB_STATE/state"
   export APP_PORT=0
   compose=(docker compose -p "$project" --env-file "$LAB_STATE_DIR/environment.env" -f compose.release.yaml)
@@ -83,16 +83,16 @@ start_session() {
   [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ && "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]]
   : "${RUNNER_TEMP:?}" "${GITHUB_ENV:?}" "${GITHUB_SHA:?}" "${GITHUB_STEP_SUMMARY:?}"
   umask 077
-  LIVE_LAB_STATE=$(mktemp -d "$RUNNER_TEMP/petlab-live.XXXXXX")
+  LIVE_LAB_STATE=$(mktemp -d "$RUNNER_TEMP/authzlab-live.XXXXXX")
   export LIVE_LAB_STATE
   printf 'LIVE_LAB_STATE=%s\n' "$LIVE_LAB_STATE" >> "$GITHUB_ENV"
-  printf 'petlab-live-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$LIVE_LAB_STATE/project"
+  printf 'authzlab-live-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$LIVE_LAB_STATE/project"
   trap 'if test "$?" -ne 0; then stop_session || true; fi' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   load_state
   local tag image origin url='' pid expiry
-  tag="petlab-live:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+  tag="authzlab-live:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
   docker build --build-arg "APP_REVISION=$GITHUB_SHA" -t "$tag" .
   image=$(docker image inspect "$tag" --format '{{.Id}}')
   docker run --rm --user "$(id -u):$(id -g)" -v "$LIVE_LAB_STATE:$LIVE_LAB_STATE" \

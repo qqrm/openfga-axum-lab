@@ -12,7 +12,7 @@ store-success-output = false
 store-failure-output = true
 
 [[profile.ci.overrides]]
-filter = 'binary(system) | binary(cache_replicas) | binary(performance) | binary(compose_deployment)'
+filter = 'binary(system) | binary(cache_replicas) | binary(authorization_migration) | binary(performance) | binary(compose_deployment)'
 test-group = 'docker'
 
 [[profile.ci.overrides]]

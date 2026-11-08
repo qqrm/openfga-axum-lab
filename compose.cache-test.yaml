@@ -7,7 +7,7 @@ services:
       - "127.0.0.1::5432"
   fga-migrate:
     environment: &cache-test-database
-      OPENFGA_DATASTORE_URI: postgres://petlab:${CACHE_TEST_PASSWORD:?set by the Rust test}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_URI: postgres://authzlab:${CACHE_TEST_PASSWORD:?set by the Rust test}@postgres:5432/openfga?sslmode=disable
   openfga:
     environment: *cache-test-database
     ports:

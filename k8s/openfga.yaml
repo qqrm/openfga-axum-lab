@@ -21,7 +21,7 @@ spec:
             - name: OPENFGA_DATASTORE_ENGINE
               value: postgres
             - name: OPENFGA_DATASTORE_URI
-              value: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+              value: postgres://authzlab:authzlab-local-only@postgres:5432/openfga?sslmode=disable
           ports:
             - containerPort: 8080
             - containerPort: 8081
@@ -65,7 +65,7 @@ spec:
             - name: OPENFGA_DATASTORE_ENGINE
               value: postgres
             - name: OPENFGA_DATASTORE_URI
-              value: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+              value: postgres://authzlab:authzlab-local-only@postgres:5432/openfga?sslmode=disable
           resources:
             requests:
               cpu: 100m

@@ -2,6 +2,9 @@ name: CI
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   shell:
     runs-on: ubuntu-latest
@@ -58,7 +61,7 @@ jobs:
             cargo-deny@0.20.2
             cargo-machete@0.9.2
           fallback: none
-      - run: cargo nextest run --locked --profile ci
+      - run: cargo nextest run --locked --all-features --profile ci
       - run: bash scripts/audit-dependencies.sh
       - run: bash scripts/audit-negative.sh
       - run: cargo deny check advisories bans sources
@@ -95,7 +98,7 @@ jobs:
         run: >-
           cargo nextest run --locked --release --profile ci
           --no-default-features --features "$FGA_TRANSPORT"
-          --test system --test cache_replicas --test compose_deployment --test performance
+          --test system --test cache_replicas --test authorization_migration --test compose_deployment --test performance
           --run-ignored only -E 'not test(paired_aa_calibration)'
           --success-output immediate
       - name: Record Docker engine
@@ -111,9 +114,34 @@ jobs:
             artifacts/
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
+  browser-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the locked browser test runner
+        working-directory: e2e
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
+      - name: Run browser scenarios against real Axum, PostgreSQL and OpenFGA
+        run: |
+          DEMO_PASSWORD=$(cat /proc/sys/kernel/random/uuid)
+          export DEMO_PASSWORD
+          echo "::add-mask::$DEMO_PASSWORD"
+          bash scripts/browser-e2e.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: browser-e2e-failure-screenshots
+          path: e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
   ci-gate:
     if: always()
-    needs: [rust, integration, shell, formal, browser-demo]
+    needs: [rust, integration, shell, formal, browser-demo, browser-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks
@@ -123,9 +151,11 @@ jobs:
           SHELL_RESULT: ${{ needs.shell.result }}
           FORMAL_RESULT: ${{ needs.formal.result }}
           BROWSER_RESULT: ${{ needs.browser-demo.result }}
+          E2E_RESULT: ${{ needs.browser-e2e.result }}
         run: |
           test "$RUST_RESULT" = success
           test "$INTEGRATION_RESULT" = success
           test "$SHELL_RESULT" = success
           test "$FORMAL_RESULT" = success
           test "$BROWSER_RESULT" = success
+          test "$E2E_RESULT" = success

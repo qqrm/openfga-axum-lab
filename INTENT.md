@@ -1,9 +1,11 @@
-# Intent: first-class engineering for a small pet project
+# Intent: a strict Rust authorization integration lab
 
-Build an understandable pet-shelter service that demonstrates production-minded
-Rust engineering using realistic authorization, persistence and failures. The
-people, animals and local credentials are fictional. The goal is credible,
-reviewable engineering, not a claim of production certification.
+Build an understandable catalog authorization service using a pinned, unchanged
+model from the public Lakekeeper project. Demonstrate Rust engineering with real
+OpenFGA checks, tenant isolation, roles, ownership, hierarchy changes, SQL migration
+and failure recovery. The lab identities and catalog data are synthetic. The goal
+is credible, reviewable engineering with conservative denial, not a claim of
+production certification.
 
 ## What the project should demonstrate
 

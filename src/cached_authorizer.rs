@@ -1,4 +1,4 @@
-//! A local decision cache coordinated by the shared PostgreSQL primary.
+//! A denial cache coordinated by the shared PostgreSQL primary.
 use crate::application::{AuthError, Authorizer, Tuple};
 use async_trait::async_trait;
 use moka::future::Cache;
@@ -23,7 +23,7 @@ struct Revision {
 pub(crate) struct CachedAuthorizer {
     inner: Arc<dyn Authorizer>,
     coordinator: PgPool,
-    decisions: Cache<Key, bool>,
+    denials: Cache<Key, ()>,
     events: IntCounterVec,
 }
 
@@ -36,7 +36,7 @@ impl CachedAuthorizer {
         Self {
             inner,
             coordinator,
-            decisions: Cache::builder()
+            denials: Cache::builder()
                 .max_capacity(10_000)
                 .time_to_live(Duration::from_secs(2))
                 .build(),
@@ -56,13 +56,24 @@ impl CachedAuthorizer {
         })
     }
 
+    async fn unfenced_revision(&self) -> Result<Revision, AuthError> {
+        let revision = self.revision().await?;
+        if revision.pending != 0 {
+            self.events.with_label_values(&["blocked_pending"]).inc();
+            tracing::warn!("authorization mutation is unresolved; access blocked");
+            return Err(AuthError);
+        }
+        Ok(revision)
+    }
+
     async fn mutate(
         &self,
         operation: impl Future<Output = Result<(), AuthError>> + Send,
     ) -> Result<(), AuthError> {
-        // These statements commit independently of the caller's pet transaction.
+        // These statements commit independently of the caller's transaction.
         // Persist the fence before polling the remote operation. Cancellation
-        // or an ambiguous response leaves it in place on every replica.
+        // or an ambiguous response leaves all replicas blocked until explicit
+        // reconciliation. A later successful write only clears its own marker.
         sqlx::query_scalar::<_, i64>(
             "UPDATE authz_cache_state SET generation = generation + 1, pending = pending + 1 WHERE singleton RETURNING generation",
         )
@@ -70,7 +81,7 @@ impl CachedAuthorizer {
         .await
         .map_err(|_| AuthError)?;
         if operation.await.is_err() {
-            tracing::warn!("authorization mutation outcome uncertain; decision cache bypassed");
+            tracing::warn!("authorization mutation outcome uncertain; access remains blocked");
             return Err(AuthError);
         }
         sqlx::query_scalar::<_, i64>(
@@ -87,61 +98,51 @@ impl CachedAuthorizer {
 impl Authorizer for CachedAuthorizer {
     #[tracing::instrument(skip(self), name = "authz_cache.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
-        self.inner.ensure_available().await
+        self.unfenced_revision().await?;
+        self.inner.ensure_available().await?;
+        self.unfenced_revision().await?;
+        Ok(())
     }
 
     async fn ensure_ready(&self) -> Result<(), AuthError> {
-        self.inner.ensure_ready().await
+        self.unfenced_revision().await?;
+        self.inner.ensure_ready().await?;
+        self.unfenced_revision().await?;
+        Ok(())
     }
 
-    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "authz_cache.list_objects")]
-    async fn list_objects(
-        &self,
-        user: &str,
-        relation: &str,
-        object_type: &str,
-    ) -> Result<Vec<String>, AuthError> {
-        self.inner.list_objects(user, relation, object_type).await
-    }
-
+    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "authz_cache.check")]
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         for _ in 0..3 {
-            let before = self.revision().await?;
+            let before = self.unfenced_revision().await?;
             let key = Key {
                 generation: before.generation,
                 user: user.into(),
                 relation: relation.into(),
                 object: object.into(),
             };
-            let hit = if before.pending == 0 {
-                self.decisions.get(&key).await
+            let hit = self.denials.get(&key).await.is_some();
+            // A healthy probe is not evidence that Check succeeded. Never cache
+            // permission to access an object: every allow needs a live Check.
+            let allowed = if hit {
+                false
             } else {
-                None
+                self.inner.check(user, relation, object).await?
             };
-            let allowed = match hit {
-                // A cached allow still requires live backend readiness. An
-                // unreachable OpenFGA must not turn a warm cache into a bypass.
-                Some(true) => {
-                    self.ensure_available().await?;
-                    true
-                }
-                Some(false) => false,
-                None => self.inner.check(user, relation, object).await?,
-            };
-            // This read is the decision's linearization point. A late fill
-            // after it can only populate the old generation's key.
-            if before != self.revision().await? {
+            // This read is the decision's linearization point. A late denial
+            // fill can only populate the old generation's key. Pending writes
+            // block immediately, including writes with an ambiguous outcome.
+            if before != self.unfenced_revision().await? {
                 self.events.with_label_values(&["retry"]).inc();
                 continue;
             }
-            let event = match (hit, before.pending) {
-                (Some(true), _) => "hit_allow",
-                (Some(false), _) => "hit_deny",
-                (None, 0) => {
-                    self.decisions.insert(key, allowed).await;
-                    "miss"
+            let event = if hit {
+                "hit_deny"
+            } else {
+                if !allowed {
+                    self.denials.insert(key, ()).await;
                 }
-                (None, _) => "bypass_pending",
+                "miss"
             };
             self.events.with_label_values(&[event]).inc();
             return Ok(allowed);
@@ -152,6 +153,11 @@ impl Authorizer for CachedAuthorizer {
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "authz_cache.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         self.mutate(self.inner.write(tuples, add)).await
+    }
+
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "authz_cache.apply")]
+    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        self.mutate(self.inner.apply(writes, deletes)).await
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "authz_cache.delete_object")]

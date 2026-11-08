@@ -1,5 +1,5 @@
-//! Operational probes use the raw adapter, outside the authorization cache path.
-use crate::application::Authorizer;
+//! Readiness includes the bound migration gate and durable mutation fence.
+use crate::application::{AuthorizationTarget, Authorizer};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -9,16 +9,30 @@ use std::{sync::Arc, time::Duration};
 pub(crate) struct Readiness {
     db: PgPool,
     backend: Arc<dyn Authorizer>,
+    target: AuthorizationTarget,
 }
 impl Readiness {
-    pub(crate) fn new(db: PgPool, backend: Arc<dyn Authorizer>) -> Self {
-        Self { db, backend }
+    pub(crate) fn new(
+        db: PgPool,
+        backend: Arc<dyn Authorizer>,
+        target: AuthorizationTarget,
+    ) -> Self {
+        Self {
+            db,
+            backend,
+            target,
+        }
     }
 }
 async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
     let result = tokio::time::timeout(Duration::from_secs(3), async {
         let (db, fga) = tokio::join!(
-            sqlx::query("SELECT 1").execute(&state.db),
+            crate::authorization_migration::ensure_active(
+                &state.db,
+                &state.target.store,
+                &state.target.model,
+                &state.target.model_sha256
+            ),
             state.backend.ensure_ready()
         );
         db.is_ok() && fga.is_ok()
