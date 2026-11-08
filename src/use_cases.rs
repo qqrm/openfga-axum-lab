@@ -41,32 +41,18 @@ impl App {
             Err(Error::Forbidden)
         }
     }
-    pub(crate) async fn authorize_pet(
-        &self,
-        user: &str,
-        id: &str,
-        relation: &str,
-        deletion_retry: bool,
-    ) -> Result<()> {
+    pub(crate) async fn authorize_pet(&self, user: &str, id: &str, relation: &str) -> Result<()> {
         if !domain::valid_id(id) {
             return Err(Error::Invalid);
         }
-        let row = sqlx::query("SELECT status,delete_actor FROM pets WHERE id=$1")
+        let status: String = sqlx::query_scalar("SELECT status FROM pets WHERE id=$1")
             .bind(id)
             .fetch_optional(&self.db)
             .await
             .map_err(|_| Error::Unavailable)?
             .ok_or(Error::NotFound)?;
-        let status: String = row.get("status");
-        let actor: Option<String> = row.get("delete_actor");
         let state = Lifecycle::from_storage(&status).ok_or(Error::Unavailable)?;
         if !domain::is_visible(state) {
-            if deletion_retry
-                && matches!(state, Lifecycle::Deleting | Lifecycle::Deleted)
-                && actor.as_deref() == Some(user)
-            {
-                return Ok(());
-            }
             return Err(Error::NotFound);
         }
         if self
@@ -298,14 +284,6 @@ impl App {
         if !domain::valid_id(subject) || !matches!(relation, "viewer" | "caregiver") {
             return Err(Error::Invalid);
         }
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
-            .bind(subject)
-            .fetch_one(&self.db)
-            .await
-            .map_err(|_| Error::Unavailable)?;
-        if !exists {
-            return Err(Error::NotFound);
-        }
         let mut tx = self.db.begin().await.map_err(|_| Error::Unavailable)?;
         let status: Option<String> =
             sqlx::query_scalar("SELECT status FROM pets WHERE id=$1 FOR UPDATE")
@@ -327,6 +305,14 @@ impl App {
             .map_err(|_| Error::Unavailable)?
         {
             return Err(Error::Forbidden);
+        }
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
+            .bind(subject)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        if !exists {
+            return Err(Error::NotFound);
         }
         let tuple = Tuple {
             user: format!("user:{subject}"),

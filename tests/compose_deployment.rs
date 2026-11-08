@@ -20,6 +20,7 @@ impl Deployment {
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("APP_PORT", "0")
             .env("DEMO_PASSWORD", &self.password)
+            .env("POSTGRES_PASSWORD", &self.password)
             .args(["compose", "-p", &self.project, "-f", "compose.yaml"]);
         command
     }

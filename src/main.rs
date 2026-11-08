@@ -1,9 +1,11 @@
 mod application;
 mod authentication;
 mod cached_authorizer;
+mod configuration;
 mod http;
 mod infrastructure;
 mod metrics;
+mod operations;
 mod use_cases;
 
 use application::{App, Authorizer};
@@ -15,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let database = std::env::var("DATABASE_URL")?;
+    let database = configuration::secret("DATABASE_URL")?;
     let db = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database)
@@ -26,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run(&db)
         .await?;
     if std::env::var("DEMO_SEED").as_deref() == Ok("true") {
-        let password = std::env::var("DEMO_PASSWORD")?;
+        let password = configuration::secret("DEMO_PASSWORD")?;
         if password.len() < 12 {
             return Err("DEMO_PASSWORD must have at least 12 bytes".into());
         }
@@ -34,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let readiness = operations::Readiness::new(db.clone(), &config)?;
     let val = |k: &str| -> Result<String, Box<dyn std::error::Error>> {
         config[k]
             .as_str()
@@ -56,8 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics = metrics::Metrics::new()?;
     let mut auth = auth;
     if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
-        // Pet mutations can hold a connection from the main pool while
-        // checking authorization. Keep revision queries on a separate pool.
+        // Keep revision queries separate from transactions holding pet row locks.
         let coordinator = PgPoolOptions::new()
             .max_connections(4)
             .acquire_timeout(Duration::from_secs(2))
@@ -72,8 +74,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let address = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
     let listener = tokio::net::TcpListener::bind(address).await?;
-    // Unknown usernames still execute password verification, using a value
-    // generated for this process and unrelated to configured accounts.
     let dummy_password_hash: Arc<str> =
         infrastructure::hash_password(&uuid::Uuid::new_v4().to_string())?.into();
     println!("Listening on {}", listener.local_addr()?);
@@ -85,7 +85,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,
             metrics,
-        }),
+        })
+        .merge(operations::router(readiness)),
     )
     .await?;
     Ok(())

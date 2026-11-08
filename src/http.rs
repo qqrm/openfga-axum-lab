@@ -1,4 +1,5 @@
 use crate::application::{App, Identity, PetInput};
+use crate::use_cases::Error;
 use axum::{
     Json, Router,
     extract::{MatchedPath, Path, Request, State},
@@ -57,26 +58,22 @@ async fn guard(State(app): State<App>, mut request: Request, next: Next) -> Resp
         .get::<MatchedPath>()
         .map(MatchedPath::as_str)
         .unwrap_or("");
-    let relation = match (request.method(), path) {
-        (&Method::GET, "/pets") => {
-            request.extensions_mut().insert(Identity(who));
-            return next.run(request).await;
+    let id = request.uri().path().split('/').nth(2).unwrap_or("");
+    let decision = match (request.method(), path) {
+        (&Method::GET, "/pets") => Ok(()),
+        (&Method::POST, "/pets") => app.authorize_shelter_creation(&who).await,
+        (&Method::GET, "/pets/{id}") => app.authorize_pet(&who, id, "can_view").await,
+        (&Method::PATCH | &Method::DELETE, "/pets/{id}")
+        | (&Method::PUT | &Method::DELETE, "/pets/{id}/relations/{relation}/{subject}") => {
+            // Mutations authorize under the use case's pet row lock. An earlier
+            // check here could race deletion or changes to that same pet.
+            if openfga_axum_lab::domain::valid_id(id) {
+                Ok(())
+            } else {
+                Err(Error::Invalid)
+            }
         }
-        (&Method::POST, "/pets") => "can_create",
-        (&Method::GET, "/pets/{id}") => "can_view",
-        (&Method::PATCH, "/pets/{id}") => "can_edit",
-        (&Method::DELETE, "/pets/{id}") => "can_manage",
-        (&Method::PUT | &Method::DELETE, "/pets/{id}/relations/{relation}/{subject}") => {
-            "can_manage"
-        }
-        _ => return StatusCode::FORBIDDEN.into_response(),
-    };
-    let decision = if relation == "can_create" {
-        app.authorize_shelter_creation(&who).await
-    } else {
-        let id = request.uri().path().split('/').nth(2).unwrap_or("");
-        let retry = request.method() == Method::DELETE && path == "/pets/{id}";
-        app.authorize_pet(&who, id, relation, retry).await
+        _ => Err(Error::Forbidden),
     };
     match decision {
         Ok(()) => {
@@ -87,8 +84,7 @@ async fn guard(State(app): State<App>, mut request: Request, next: Next) -> Resp
     }
 }
 
-fn error_response(error: crate::use_cases::Error) -> Response {
-    use crate::use_cases::Error;
+fn error_response(error: Error) -> Response {
     match error {
         Error::Invalid => StatusCode::BAD_REQUEST,
         Error::NotFound => StatusCode::NOT_FOUND,
