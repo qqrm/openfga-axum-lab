@@ -144,8 +144,18 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         expect(api.call(M::GET, "/tasks/access-review", token), S::OK).await?;
     }
 
-    // Preserve the current literal Bearer prefix and bounded opaque-token
-    // contract. No malformed request may revoke an independent live session.
+    // Authentication schemes are case-insensitive (RFC 9110, section 11.1),
+    // including the current HTTP parser. The opaque token is unchanged.
+    for scheme in ["bearer", "bEaReR"] {
+        expect(
+            api.request(M::GET, "/tasks/access-review")
+                .header(AUTHORIZATION, format!("{scheme} {live}")),
+            S::OK,
+        )
+        .await?;
+    }
+
+    // No malformed request may revoke an independent live session.
     for (case, header) in [
         ("missing header", None),
         ("empty header", Some(HeaderValue::from_static(""))),
@@ -159,8 +169,8 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         ),
         ("empty token", Some(HeaderValue::from_static("Bearer "))),
         (
-            "lowercase scheme",
-            Some(HeaderValue::from_str(&format!("bearer {live}"))?),
+            "ambiguous separator",
+            Some(HeaderValue::from_str(&format!("Bearer  {live}"))?),
         ),
         (
             "non-ASCII header",
@@ -220,7 +230,12 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
     expect(api.call(M::DELETE, "/session", &expired), S::UNAUTHORIZED).await?;
     expect(api.call(M::GET, "/tasks/access-review", &live), S::OK).await?;
 
-    expect(api.call(M::DELETE, "/session", &live), S::NO_CONTENT).await?;
+    expect(
+        api.request(M::DELETE, "/session")
+            .header(AUTHORIZATION, format!("bearer {live}")),
+        S::NO_CONTENT,
+    )
+    .await?;
     expect(api.call(M::DELETE, "/session", &live), S::UNAUTHORIZED).await?;
     expect(
         api.call(M::GET, "/tasks/access-review", &live),
@@ -241,7 +256,12 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         )
         .await?;
     }
-    expect(api.call(M::DELETE, "/session", &fresh), S::NO_CONTENT).await?;
+    expect(
+        api.request(M::DELETE, "/session")
+            .header(AUTHORIZATION, format!("bEaReR {fresh}")),
+        S::NO_CONTENT,
+    )
+    .await?;
     assert_eq!(session_count(&db).await?, 1);
     db.close().await;
     app.stop().await?;
