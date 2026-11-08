@@ -42,4 +42,9 @@ http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["client", "client-legacy", "http2", "tokio"] }
 prost = "0.14"
 tempfile = "3"
+criterion = { version = "0.5", features = ["async_tokio"] }
 tokio = { version = "1", features = ["io-util", "process", "time"] }
+
+[[bench]]
+name = "authz_cache"
+harness = false
