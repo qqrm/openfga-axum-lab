@@ -48,7 +48,7 @@ PostgreSQL и OpenFGA там не запускаются. Постоянные �
 ```sh
 git clone https://github.com/qqrm/openfga-axum-lab.git
 cd openfga-axum-lab
-docker compose up -d --build app
+POSTGRES_PASSWORD=petlab-local-only DEMO_PASSWORD=local-demo-password docker compose up -d --build app
 ```
 
 Откройте `http://localhost:3000`. Локальный исходный стенд использует пароль
