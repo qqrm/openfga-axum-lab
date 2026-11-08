@@ -114,6 +114,14 @@ pub(crate) async fn apply(
     let deletes: Vec<Tuple> =
         serde_json::from_str(job.get::<&str, _>("deletes")).map_err(|_| Error::Unavailable)?;
     let replayed = job.get::<bool, _>("attempted");
+    if replayed {
+        // The previous process may have died after marking the attempt but
+        // before the cache's own write marker committed. A replay cannot prove
+        // that no older request remains buffered. Fence every replica until
+        // explicit backend-drained recovery, even when this replay succeeds.
+        sqlx::query("UPDATE authz_cache_state SET pending=pending+1,generation=generation+1 WHERE singleton")
+            .execute(coordinator).await.map_err(|_| Error::Unavailable)?;
+    }
     // Commit before the first remote poll, outside the transaction holding the
     // organization lock. A separate pool prevents pool-exhaustion deadlocks.
     // No retry/ack proves that an older timed-out request has stopped running.
@@ -261,12 +269,22 @@ impl App {
             .map_err(|_| Error::Unavailable)
     }
     pub(crate) async fn organization_snapshot(&self) -> Result<Vec<(String, i64, bool)>> {
-        sqlx::query_as(
-            "SELECT id,authorization_version,authz_pending FROM organizations ORDER BY id",
+        // Also probes empty lists and detects a global uncertain-write fence.
+        self.auth
+            .ensure_available()
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        let rows = sqlx::query_as(
+            "SELECT id,authorization_version,authz_pending FROM organizations ORDER BY id LIMIT $1",
         )
+        .bind(crate::use_cases::MAX_ENUMERATED_OBJECTS + 1)
         .fetch_all(&self.db)
         .await
-        .map_err(|_| Error::Unavailable)
+        .map_err(|_| Error::Unavailable)?;
+        if rows.len() > crate::use_cases::MAX_ENUMERATED_OBJECTS as usize {
+            return Err(Error::Unavailable);
+        }
+        Ok(rows)
     }
     pub(crate) async fn stable_organization(&self, id: &str, version: i64) -> Result<bool> {
         let (current, pending): (i64, bool) = sqlx::query_as(

@@ -2,7 +2,7 @@
 
 The Rust nextest binary `tests/performance.rs` measures a complete HTTP read:
 token lookup in PostgreSQL, object lookup, the current authorization/cache path
-including OpenFGA availability checks, and data read. It uses closed-loop
+including a fresh OpenFGA Check for every successful access, and data read. It uses closed-loop
 clients, disables idle connection pooling and sends `Connection: close`, retaining
 one HTTP connection per request. It does not establish a capacity or SLO.
 
@@ -58,6 +58,47 @@ hardware, but Android scheduling, thermal throttling, battery/charging, CPU clus
 Termux/proot or virtualization and process interference affect results.
 Hardware and workload are not equivalent to x86 cloud VMs. No device settings,
 processes or benchmark runner have been changed or installed on the phone.
+
+## Raw backend diagnostics
+
+`backend_bench` and the Criterion target `authz_cache` exercise concrete OpenFGA
+adapters directly. They do not measure the task API, PostgreSQL authorization
+scope, migration activation, mutation fencing or the denial cache. Raw
+`ListObjects` is used for adapter/model diagnostics; task enumeration
+continues to require bounded SQL candidates, per-object Check and revision validation.
+
+Set `FGA_URL`, `FGA_STORE` and `FGA_MODEL` to a disposable backend's endpoint,
+store ID and model ID. The diagnostic defaults to HTTP when compiled with that
+feature. `BACKEND=grpc` requires the gRPC feature and endpoint. `ITERS` and `CONC`
+must be positive integers; every requested iteration completes even when the
+division has a remainder or concurrency exceeds the batch size. Invalid options,
+backend errors and unexpected decisions fail the run without a timing summary.
+
+```sh
+ITERS=101 CONC=8 cargo run --locked --release --bin backend_bench
+```
+
+The default Check is Alice's `can_view` on
+`task:access-review`. `BENCH_USER`, `BENCH_RELATION` and
+`BENCH_OBJECT` select another fixture. `BENCH_EXPECT_ALLOWED` defaults to `true`;
+set it explicitly to `false` for an intentional denial workload. `MODE=list`
+also requires `BENCH_EXPECTED_OBJECTS` as the exact expected JSON array and uses
+`BENCH_TYPE` (default `task`). Unexpected, missing or duplicate
+returned objects invalidate the measurement; an explicitly expected empty list
+is a distinct workload.
+
+The diagnostic reports individual operation mean/p50/p99 latency separately
+from wall-clock throughput. `DELAY_MS` paces each worker before its request;
+that delay reduces throughput and is excluded from request latency. It does
+not simulate network delay inside the transport. These are diagnostic samples,
+not a controlled HTTP-versus-gRPC performance verdict.
+
+The Criterion target uses `FGA_URL_HTTP`/`FGA_URL_GRPC` and the same store/model
+and Check fixture variables. Its gRPC connection lives on the runtime used for
+the entire benchmark. Every timed Check validates the expected decision, and a
+backend error aborts the benchmark. Existing historical results are not evidence
+for the current Openlane workload; apply the comparison controls above before
+making a new claim.
 
 ## Historical calibration, before the Rust harness
 

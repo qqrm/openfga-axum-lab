@@ -30,31 +30,25 @@ pub(crate) enum Error {
 }
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
+// This deliberately small lab returns complete lists within a fixed budget.
+// Larger datasets need a scoped pagination contract rather than a partial
+// ListObjects result presented as the full set of visible objects.
+pub(crate) const MAX_ENUMERATED_OBJECTS: i64 = 256;
+
 impl App {
     pub(crate) async fn visible_tasks(&self, user: &str) -> Result<Vec<Task>> {
         for _ in 0..3 {
             let before = self.organization_snapshot().await?;
-            let objects = self
-                .auth
-                .list_objects(user, "can_view", "task")
-                .await
-                .map_err(|_| Error::Unavailable)?;
-            let visible_ids: Vec<&str> = objects
-                .iter()
-                .map(|object| {
-                    object
-                        .strip_prefix("task:")
-                        .filter(|id| domain::valid_id(id))
-                        .ok_or(Error::Unavailable)
-                })
-                .collect::<Result<_>>()?;
             let ids: Vec<String> = sqlx::query_scalar(
-                "SELECT id FROM tasks WHERE status='active' AND id = ANY($1) ORDER BY id",
+                "SELECT id FROM tasks WHERE status='active' ORDER BY id LIMIT $1",
             )
-            .bind(&visible_ids)
+            .bind(MAX_ENUMERATED_OBJECTS + 1)
             .fetch_all(&self.db)
             .await
             .map_err(|_| Error::Unavailable)?;
+            if ids.len() > MAX_ENUMERATED_OBJECTS as usize {
+                return Err(Error::Unavailable);
+            }
             let mut tasks = Vec::new();
             for id in ids {
                 match self.get_task(user, &id).await {
@@ -108,8 +102,11 @@ impl App {
                 task.can_delete =
                     !recovery_required && self.allowed(user, "can_delete", &object).await?;
                 if task.can_delete {
-                    let rows = sqlx::query("SELECT relation,user_id FROM task_relations WHERE task_id=$1 ORDER BY relation,user_id")
-                        .bind(id).fetch_all(&self.db).await.map_err(|_| Error::Unavailable)?;
+                    let rows = sqlx::query("SELECT relation,user_id FROM task_relations WHERE task_id=$1 ORDER BY relation,user_id LIMIT $2")
+                        .bind(id).bind(MAX_ENUMERATED_OBJECTS + 1).fetch_all(&self.db).await.map_err(|_| Error::Unavailable)?;
+                    if rows.len() > MAX_ENUMERATED_OBJECTS as usize {
+                        return Err(Error::Unavailable);
+                    }
                     let mut relations = vec![Relation {
                         relation: "assigner".into(),
                         user_id: task.assigner_id.clone(),
@@ -166,6 +163,12 @@ impl App {
                 &input.organization_id,
             )
             .await?;
+            // Reconciliation may finish without proving that an older request
+            // has drained. Do not report success while global debt remains.
+            self.auth
+                .ensure_available()
+                .await
+                .map_err(|_| Error::Unavailable)?;
             let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id=$1")
                 .bind(&id)
                 .fetch_one(&self.db)
@@ -287,17 +290,26 @@ impl App {
                 return Err(Error::Unavailable);
             }
             tx.rollback().await.map_err(|_| Error::Unavailable)?;
-            return authorization::apply(
+            authorization::apply(
                 &self.db,
                 &self.authz_coordinator,
                 self.auth.as_ref(),
                 &organization,
             )
-            .await;
+            .await?;
+            return self
+                .auth
+                .ensure_available()
+                .await
+                .map_err(|_| Error::Unavailable);
         }
         if state == Lifecycle::Deleted
             && row.get::<Option<String>, _>("delete_actor").as_deref() == Some(actor)
         {
+            self.auth
+                .ensure_available()
+                .await
+                .map_err(|_| Error::Unavailable)?;
             return Ok(());
         }
         if domain::transition(state, Event::BeginDeletion) != Some(Lifecycle::Deleting) {

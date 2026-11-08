@@ -59,7 +59,7 @@ pub fn initialize(directory: &str, image: &str) -> ToolResult {
     fs::create_dir(path.join("secrets"))?;
     let database_password = uuid::Uuid::new_v4().simple().to_string();
     let demo_password = uuid::Uuid::new_v4().simple().to_string();
-    let db_uri = format!("postgres://petlab:{database_password}@postgres:5432");
+    let db_uri = format!("postgres://authzlab:{database_password}@postgres:5432");
     write_new(
         &path.join("secrets/postgres-password"),
         &database_password,
@@ -68,7 +68,7 @@ pub fn initialize(directory: &str, image: &str) -> ToolResult {
     write_new(&path.join("secrets/demo-password"), &demo_password, false)?;
     write_new(
         &path.join("secrets/database-url"),
-        &format!("{db_uri}/petlab?sslmode=disable"),
+        &format!("{db_uri}/authzlab?sslmode=disable"),
         false,
     )?;
     write_new(

@@ -66,7 +66,9 @@ docker compose up -d --build app
 Это не пароль личного Codespace или защищённой Actions-сессии.
 
 Compose создаёт две базы в PostgreSQL; Rust `lab-tool bootstrap` инициализирует
-модель/отношения OpenFGA. Повторный запуск сохраняет store/model.
+пустой store и модель OpenFGA. Затем явные DEMO_SEED/DEMO_MIGRATE создают
+SQL-источник и проверяют перенос его разрешений. Повторный запуск сохраняет
+store/model и не возвращает отозванные права.
 `APP_PORT=3001 docker compose up -d app` меняет порт. `DEMO_PASSWORD` задаёт
 только первоначальный пароль: существующие аккаунты переменная не изменяет.
 
@@ -84,9 +86,10 @@ Compose создаёт две базы в PostgreSQL; Rust `lab-tool bootstrap` 
 
 Передача владельца и смена роли применяют удаление/добавление tuple одним
 атомарным запросом OpenFGA. Незавершённое изменение записывается в PostgreSQL;
-до подтверждения организация закрыта с 503, а запуск приложения повторяет
-сохранённую операцию. После неопределённого результата повтор возвращает чтение;
-запись остаётся закрытой до явного завершения всех прежних запросов и сверки. Данные других организаций не перепривязываются.
+до подтверждения доступ закрыт с 503, а запуск приложения повторяет
+сохранённую операцию. После неопределённого результата повтор сверяет граф;
+чтения, изменения и readiness остаются закрыты до явного завершения всех
+прежних запросов и восстановления. Данные других организаций не перепривязываются.
 
 Прежние миграции и записи не переписываются. Новый model fingerprint намеренно
 несовместим со старым сохранённым config: автоматического сброса store/томов нет.
@@ -121,7 +124,7 @@ curl --fail http://localhost:3000/version
 ```
 
 `/healthz` проверяет процесс; `/readyz` — PostgreSQL, OpenFGA и конкретные
-store/model; `/version` — пакет и встроенный source SHA. Не используйте
+store/model, активацию SQL-миграции и отсутствие незавершённых записей; `/version` — пакет и встроенный source SHA. Не используйте
 liveness как доказательство готовности авторизации.
 `docker compose down` сохраняет данные. **Только для полного сброса своего
 локального стенда:** `docker compose down -v` удаляет все его тома.
@@ -185,7 +188,10 @@ Criterion A/A–A/B пока находится в [PR #8](https://github.com/qq
 Передача владения требует `expected_owner` и `new_owner`; новую роль участника
 задают через `{"role":"member"}` или `{"role":"admin"}`.
 Создание требует `Idempotency-Key`; конфликт содержимого — 409.
-OpenFGA errors закрывают доступ с 503, а не становятся allow. `/metrics` — Prometheus.
+OpenFGA errors закрывают доступ с 503, а не становятся allow. Разрешения всегда
+проверяются живым Check; кэшируются только отказы. Списки ограничены 256
+кандидатами и при превышении возвращают 503, без молчаливого усечения.
+`/model` и `/model/schema` показывают provenance и исполняемую модель; `/metrics` — Prometheus.
 
 Не выставляйте исходный Compose в интернет. Постоянный публичный сервис требует
 собственных секретов, TLS, ограничения доступа и backup. Actions-лаборатория —
@@ -251,8 +257,9 @@ just test
 just stop
 ```
 
-Необязательный Playwright-набор (`just e2e`) использует экспортированный
-`DEMO_PASSWORD` работающего локального стенда. Текущий CI этот набор не запускает.
+Playwright-набор (`just e2e`) использует экспортированный `DEMO_PASSWORD`
+работающего локального стенда. CI запускает его на настоящих контейнерах
+Axum/PostgreSQL/OpenFGA отдельно для HTTP и gRPC.
 
 Английская версия: [README.en.md](README.en.md).
 
@@ -262,6 +269,11 @@ just stop
 инициализации. Сборка, применение в кластере и проверка сервиса в Kubernetes
 не входят в подтверждённые CI-проверки; этот путь пока не проверен в кластере.
 Для воспроизводимого стенда используйте описанный выше Compose или Codespaces.
+В Kubernetes-примере базы и model config используют `emptyDir` и рассчитаны на
+одноразовый стенд. Замена только app Pod теряет config: новый store не совпадёт
+с сохранённой SQL-привязкой, и запуск будет запрещён. Для сохранения состояния
+нужно отдельно обеспечить совместную долговечность обеих баз и config.
+Readiness probe обращается к `/readyz` и учитывает блокировку авторизации.
 
 ## OpenFGA transport
 
@@ -282,16 +294,16 @@ suites separately for each transport. `/readyz` independently verifies PostgreSQ
 the selected transport, the store and the configured authorization model. It
 never relies on an authorization cache hit.
 
-Compose builds gRPC by default. To build and run the HTTP variant, set both the
-build feature and the application's endpoint (bootstrap keeps using HTTP):
+Compose and image-only delivery default to HTTP. To build and run gRPC, set both
+the build feature and the application endpoint (bootstrap/migration keep HTTP):
 
 ```sh
-FGA_TRANSPORT=http FGA_APP_URL=http://openfga:8080 docker compose up --build
+FGA_TRANSPORT=grpc FGA_APP_URL=http://openfga:8081 docker compose up --build
 ```
 
-The image-only `compose.release.yaml` expects a gRPC image by default. If you
-explicitly build an HTTP image, also set `FGA_APP_URL=http://openfga:8080` for
-that environment. Bootstrap continues to use HTTP in either case.
+The image-only `compose.release.yaml` expects an HTTP image. A separately built
+gRPC image needs `FGA_APP_URL=http://openfga:8081`. Bootstrap and SQL authorization
+migration continue to use the HTTP endpoint in either case.
 
 ## Backend diagnostic benchmark
 
@@ -299,8 +311,10 @@ that environment. Bootstrap continues to use HTTP in either case.
 isolated lab. `BACKEND` defaults to the enabled transport; `ITERS` defaults to
 20 and must be positive. `MODE=check|list`, `CONC` and `DELAY_MS` retain the
 concurrent diagnostic introduced on main. The default probe is Alice viewing
-`task:access-review`; list mode targets `task`. Any failed or denied authorization,
-including during warmup, aborts without publishing timings.
+`task:access-review`. `BENCH_EXPECT_ALLOWED=false` selects an intentional deny
+workload. List mode targets `task` and requires `BENCH_EXPECTED_OBJECTS` as an
+exact JSON array. Errors and unexpected decisions/sets, including during warmup,
+abort without publishing timings. See [measurement details](docs/performance.md).
 
 ```sh
 cargo run --locked --release --bin backend_bench

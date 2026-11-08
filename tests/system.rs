@@ -86,6 +86,33 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     let dave = stack.login(&client, &app, "dave").await?;
     expect(api.request(M::GET, "/tasks"), S::UNAUTHORIZED).await?;
     expect(api.call(M::GET, "/tasks", "invalid-token"), S::UNAUTHORIZED).await?;
+    expect(
+        api.call(M::GET, "/tasks", &alice)
+            .header("Authorization", format!("Bearer {bob}")),
+        S::UNAUTHORIZED,
+    )
+    .await?;
+    expect(
+        api.call(M::POST, "/tasks", &alice)
+            .header("Idempotency-Key", "request-one")
+            .header("Idempotency-Key", "request-two")
+            .json(&create_input("acme")),
+        S::BAD_REQUEST,
+    )
+    .await?;
+    expect(
+        api.call(M::GET, "/tasks/task:access-review", &alice),
+        S::BAD_REQUEST,
+    )
+    .await?;
+    let mut oversized = task_input();
+    oversized["description"] = json!("x".repeat(17 * 1024));
+    expect(
+        api.call(M::PATCH, "/tasks/access-review", &alice)
+            .json(&oversized),
+        S::PAYLOAD_TOO_LARGE,
+    )
+    .await?;
     let all = expect(api.call(M::GET, "/tasks", &alice), S::OK).await?;
     assert!(ids(&all).is_superset(&BTreeSet::from([
         "access-review",
@@ -206,6 +233,11 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     .await?;
     expect(api.call(M::DELETE, "/session", &dave), S::NO_CONTENT).await?;
     expect(api.call(M::GET, "/tasks", &dave), S::UNAUTHORIZED).await?;
+    // A bounded full scan must refuse an oversized source rather than claim
+    // that a truncated ListObjects result is a complete authorized task list.
+    stack.sql("INSERT INTO tasks(id,organization_id,title,description,task_status,assigner_id,status) SELECT 'bound-' || n,'acme','List bound','','todo','alice','active' FROM generate_series(1,257) AS n").await?;
+    expect(api.call(M::GET, "/tasks", &alice), S::SERVICE_UNAVAILABLE).await?;
+    expect(api.call(M::GET, "/tasks/access-review", &alice), S::OK).await?;
     Ok(())
 }
 
@@ -462,10 +494,8 @@ async fn pending_creation_recovers_after_restart() -> TestResult {
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
     let path = "/tasks/recovery-fixture";
-    let task = expect(api.call(M::GET, path, &carol), S::OK).await?;
-    assert_eq!(task["id"], "recovery-fixture");
-    assert_eq!(task["recovery_required"], true);
-    assert_eq!(task["can_delete"], false);
+    expect(api.call(M::GET, path, &carol), S::SERVICE_UNAVAILABLE).await?;
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     expect(api.call(M::DELETE, path, &carol), S::SERVICE_UNAVAILABLE).await?;
     app.stop().await?;
     // The fixture was inserted with all apps stopped, and the recovery write
@@ -473,6 +503,10 @@ async fn pending_creation_recovers_after_restart() -> TestResult {
     stack.recover_after_backend_drain(&stack.fga_url).await?;
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
+    let task = expect(api.call(M::GET, path, &carol), S::OK).await?;
+    assert_eq!(task["id"], "recovery-fixture");
+    assert_eq!(task["can_delete"], true);
+    expect(api.request(M::GET, "/readyz"), S::OK).await?;
     expect(api.call(M::DELETE, path, &carol), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, "recovery-fixture").await?;
     Ok(())
@@ -497,6 +531,12 @@ async fn pending_deletion_recovers_and_removes_all_tuples() -> TestResult {
     )
     .await?;
     stack.assert_no_tuples(&client, "incident-response").await?;
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
+    app.stop().await?;
+    stack.recover_after_backend_drain(&stack.fga_url).await?;
+    let app = stack.app(&stack.fga_url).await?;
+    let api = Api::new(client.clone(), &app);
+    expect(api.request(M::GET, "/readyz"), S::OK).await?;
     Ok(())
 }
 
@@ -589,7 +629,7 @@ async fn bootstrap_reuses_state_and_refuses_implicit_resets() -> TestResult {
     let api = Api::new(client.clone(), &app);
     let alice = stack.login(&client, &app, "alice").await?;
     // Deleting a store leaves the process health endpoint serving. Both
-    // transports must reject even cached allows when this store disappears.
+    // transports must reject access after earlier successful reads.
     for _ in 0..2 {
         expect(api.call(M::GET, "/tasks/access-review", &alice), S::OK).await?;
     }
@@ -600,15 +640,16 @@ async fn bootstrap_reuses_state_and_refuses_implicit_resets() -> TestResult {
         .error_for_status()?
         .text()
         .await?;
-    let hits = metrics
+    let misses = metrics
         .lines()
-        .find_map(|line| line.strip_prefix("authz_cache_events_total{event=\"hit_allow\"} "))
+        .find_map(|line| line.strip_prefix("authz_cache_events_total{event=\"miss\"} "))
         .unwrap_or("0")
         .parse::<u64>()?;
     assert!(
-        hits > 0,
-        "store-deletion regression requires a warm allow cache"
+        misses >= 6,
+        "every successful view/edit/delete decision must use a live Check"
     );
+    assert!(!metrics.contains("event=\"hit_allow\""));
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     client

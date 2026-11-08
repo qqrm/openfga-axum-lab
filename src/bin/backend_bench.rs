@@ -1,283 +1,220 @@
+//! Raw OpenFGA diagnostics; these measurements do not exercise task API authorization.
 use openfga_axum_lab::application::Authorizer;
-use std::{
-    env,
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tokio::task::JoinSet;
-
 #[cfg(feature = "grpc")]
 use openfga_axum_lab::infrastructure::OpenFgaGrpc;
 #[cfg(feature = "http")]
 use openfga_axum_lab::infrastructure::OpenFgaHttp;
+use std::{collections::BTreeSet, env, error::Error, str::FromStr, sync::Arc, time::Instant};
+use tokio::task::JoinSet;
 
-type BenchResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type BenchResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
 
-#[derive(Clone, Copy)]
-enum Mode {
-    Check,
-    List,
+enum Backend {
+    #[cfg(feature = "grpc")]
+    Grpc(OpenFgaGrpc),
+    #[cfg(feature = "http")]
+    Http(OpenFgaHttp),
 }
 
-impl Mode {
-    fn name(self) -> &'static str {
+impl Backend {
+    fn authorizer(&self) -> &dyn Authorizer {
         match self {
-            Self::Check => "check",
-            Self::List => "list",
+            #[cfg(feature = "grpc")]
+            Self::Grpc(auth) => auth,
+            #[cfg(feature = "http")]
+            Self::Http(auth) => auth,
         }
+    }
+
+    async fn list(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> BenchResult<Vec<String>> {
+        Ok(match self {
+            #[cfg(feature = "grpc")]
+            Self::Grpc(auth) => auth.list_objects(user, relation, object_type).await?,
+            #[cfg(feature = "http")]
+            Self::Http(auth) => auth.list_objects(user, relation, object_type).await?,
+        })
     }
 }
 
+enum Operation {
+    Check {
+        object: String,
+        expected: bool,
+    },
+    List {
+        object_type: String,
+        expected: BTreeSet<String>,
+    },
+}
+
 struct Workload {
-    mode: Mode,
     user: String,
     relation: String,
-    object_type: String,
-    object: String,
+    operation: Operation,
 }
 
 impl Workload {
-    async fn request(&self, auth: &dyn Authorizer) -> BenchResult {
-        let valid = match self.mode {
-            Mode::Check => auth.check(&self.user, &self.relation, &self.object).await?,
-            Mode::List => auth
-                .list_objects(&self.user, &self.relation, &self.object_type)
-                .await?
-                .contains(&self.object),
-        };
-        if !valid {
-            return Err(
-                "BENCH_OBJECT was denied or absent from ListObjects; benchmark is invalid".into(),
-            );
+    async fn execute(&self, backend: &Backend) -> BenchResult {
+        match &self.operation {
+            Operation::Check { object, expected } => {
+                let actual = backend
+                    .authorizer()
+                    .check(&self.user, &self.relation, object)
+                    .await?;
+                if actual != *expected {
+                    return Err("unexpected Check decision; benchmark is invalid".into());
+                }
+            }
+            Operation::List {
+                object_type,
+                expected,
+            } => {
+                let objects = backend
+                    .list(&self.user, &self.relation, object_type)
+                    .await?;
+                let count = objects.len();
+                let actual: BTreeSet<_> = objects.into_iter().collect();
+                if actual.len() != count || actual != *expected {
+                    return Err("unexpected ListObjects set; benchmark is invalid".into());
+                }
+            }
         }
         Ok(())
     }
 }
 
-fn setting<T: FromStr>(name: &str, default: T) -> BenchResult<T> {
+fn setting<T: FromStr>(name: &str, default: T) -> BenchResult<T>
+where
+    T::Err: std::fmt::Display,
+{
     match env::var(name) {
         Ok(value) => value
             .parse()
-            .map_err(|_| format!("{name} must be an unsigned integer").into()),
+            .map_err(|error| format!("{name}: {error}").into()),
         Err(env::VarError::NotPresent) => Ok(default),
         Err(error) => Err(error.into()),
     }
 }
 
-async fn measure(
-    auth: Arc<dyn Authorizer>,
-    workload: Arc<Workload>,
-    iters: usize,
-    concurrency: usize,
-    delay: Duration,
-) -> BenchResult<(Vec<f64>, Duration)> {
-    if iters == 0 || concurrency == 0 {
-        return Err("ITERS and CONC must be positive".into());
-    }
-    let mut workers = JoinSet::new();
-    let started = Instant::now();
-    for worker in 0..concurrency.min(iters) {
-        let auth = auth.clone();
-        let workload = workload.clone();
-        workers.spawn(async move {
-            let mut samples = Vec::new();
-            for _ in (worker..iters).step_by(concurrency) {
-                if !delay.is_zero() {
-                    tokio::time::sleep(delay).await;
-                }
-                let started = Instant::now();
-                workload.request(auth.as_ref()).await?;
-                samples.push(started.elapsed().as_secs_f64() * 1000.0);
-            }
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(samples)
-        });
-    }
-    let mut samples = Vec::with_capacity(iters);
-    while let Some(result) = workers.join_next().await {
-        samples.extend(result??);
-    }
-    let elapsed = started.elapsed();
-    if samples.len() != iters {
-        return Err("measurement count differs from ITERS; benchmark is invalid".into());
-    }
-    Ok((samples, elapsed))
-}
-
 #[tokio::main]
 async fn main() -> BenchResult {
-    let backend = env::var("BACKEND").unwrap_or_else(|_| {
-        if cfg!(feature = "grpc") {
-            "grpc"
-        } else {
+    let backend_name = setting(
+        "BACKEND",
+        if cfg!(feature = "http") {
             "http"
+        } else {
+            "grpc"
         }
-        .into()
-    });
-    let mode = match env::var("MODE").as_deref().unwrap_or("check") {
-        "check" => Mode::Check,
-        "list" => Mode::List,
-        _ => return Err("MODE must be check or list".into()),
-    };
+        .to_owned(),
+    )?;
+    let mode = setting("MODE", "check".to_owned())?;
     let iters = setting("ITERS", 20usize)?;
-    let concurrency = setting("CONC", 1usize)?;
-    if iters == 0 || concurrency == 0 {
+    let requested_conc = setting("CONC", 1usize)?;
+    let delay_ms = setting("DELAY_MS", 0u64)?;
+    if iters == 0 || requested_conc == 0 {
         return Err("ITERS and CONC must be positive".into());
     }
-    let delay = Duration::from_millis(setting("DELAY_MS", 0u64)?);
-    let object_type = env::var("BENCH_TYPE").unwrap_or_else(|_| "task".into());
-    let object =
-        env::var("BENCH_OBJECT").unwrap_or_else(|_| format!("{object_type}:access-review"));
-    if !object
-        .strip_prefix(&format!("{object_type}:"))
-        .is_some_and(|id| !id.is_empty())
-    {
-        return Err("BENCH_OBJECT must include the BENCH_TYPE prefix and an object ID".into());
-    }
+    let workers = requested_conc.min(iters);
+    let operation = match mode.as_str() {
+        "check" => Operation::Check {
+            object: setting("BENCH_OBJECT", "task:access-review".to_owned())?,
+            expected: setting("BENCH_EXPECT_ALLOWED", true)?,
+        },
+        "list" => {
+            let objects: Vec<String> = serde_json::from_str(
+                &env::var("BENCH_EXPECTED_OBJECTS")
+                    .map_err(|_| "MODE=list requires BENCH_EXPECTED_OBJECTS as a JSON array")?,
+            )?;
+            let count = objects.len();
+            let expected: BTreeSet<_> = objects.into_iter().collect();
+            if expected.len() != count {
+                return Err("BENCH_EXPECTED_OBJECTS must not contain duplicates".into());
+            }
+            Operation::List {
+                object_type: setting("BENCH_TYPE", "task".to_owned())?,
+                expected,
+            }
+        }
+        _ => return Err("MODE must be check or list".into()),
+    };
     let workload = Arc::new(Workload {
-        mode,
-        user: env::var("BENCH_USER").unwrap_or_else(|_| "alice".into()),
-        relation: env::var("BENCH_RELATION").unwrap_or_else(|_| "can_view".into()),
-        object_type,
-        object,
+        user: setting("BENCH_USER", "alice".to_owned())?,
+        relation: setting("BENCH_RELATION", "can_view".to_owned())?,
+        operation,
     });
     let url = env::var("FGA_URL")?;
     let store = env::var("FGA_STORE")?;
     let model = env::var("FGA_MODEL")?;
-    let auth: Arc<dyn Authorizer> = match backend.as_str() {
+    let backend = Arc::new(match backend_name.as_str() {
         #[cfg(feature = "grpc")]
-        "grpc" => Arc::new(OpenFgaGrpc::connect(url, &store, &model).await?),
+        "grpc" => Backend::Grpc(OpenFgaGrpc::connect(url, &store, &model).await?),
         #[cfg(feature = "http")]
-        "http" => Arc::new(OpenFgaHttp {
+        "http" => Backend::Http(OpenFgaHttp {
             client: reqwest::Client::builder()
-                .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
-                .timeout(Duration::from_secs(2))
+                .timeout(std::time::Duration::from_secs(2))
                 .build()?,
             url,
             store,
             model,
         }),
-        _ => return Err("BACKEND is unsupported by the enabled Cargo features".into()),
-    };
-
-    auth.ensure_ready().await?;
+        _ => return Err("unsupported backend for the compiled features".into()),
+    });
+    backend.authorizer().ensure_ready().await?;
     for _ in 0..3 {
-        workload.request(auth.as_ref()).await?;
+        workload.execute(&backend).await?;
     }
-    let (mut samples, elapsed) = measure(auth, workload, iters, concurrency, delay).await?;
+
+    let mut tasks = JoinSet::new();
+    let started = Instant::now();
+    for worker in 0..workers {
+        let backend = backend.clone();
+        let workload = workload.clone();
+        let count = iters / workers + usize::from(worker < iters % workers);
+        tasks.spawn(async move {
+            let mut samples = Vec::with_capacity(count);
+            for _ in 0..count {
+                // Pacing affects throughput, but is not request latency.
+                if delay_ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                let request_started = Instant::now();
+                workload.execute(&backend).await?;
+                samples.push(request_started.elapsed().as_secs_f64() * 1000.0);
+            }
+            Ok::<_, Box<dyn Error + Send + Sync>>(samples)
+        });
+    }
+    let mut samples = Vec::with_capacity(iters);
+    while let Some(result) = tasks.join_next().await {
+        samples.extend(result??);
+    }
+    let total = started.elapsed().as_secs_f64();
+    if samples.len() != iters {
+        return Err("incomplete measurement; benchmark is invalid".into());
+    }
     samples.sort_by(f64::total_cmp);
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let p50 = samples[(samples.len() - 1) / 2];
-    let p99 = samples[(samples.len() - 1) * 99 / 100];
-    let total = elapsed.as_secs_f64();
+    let p50 = samples[samples.len() / 2];
+    let p99 = samples[(samples.len() as f64 * 0.99) as usize];
     println!(
-        "backend={} mode={} conc={} workers={} iters={} total_ms={:.1} mean_ms={:.3} p50_ms={:.3} p99_ms={:.3} rps={:.1}",
-        backend,
-        mode.name(),
-        concurrency,
-        concurrency.min(iters),
-        iters,
+        "backend={} mode={} requested_conc={} workers={} iters={} delay_ms={} total_ms={:.1} request_mean_ms={:.3} p50_ms={:.3} p99_ms={:.3} throughput_rps={:.1}",
+        backend_name,
+        mode,
+        requested_conc,
+        workers,
+        samples.len(),
+        delay_ms,
         total * 1000.0,
         mean,
         p50,
         p99,
-        iters as f64 / total
+        samples.len() as f64 / total
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use async_trait::async_trait;
-    use openfga_axum_lab::application::{AuthError, Tuple};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct ObservedBackend {
-        calls: AtomicUsize,
-        outcome: Result<bool, AuthError>,
-    }
-
-    #[async_trait]
-    impl Authorizer for ObservedBackend {
-        async fn ensure_available(&self) -> Result<(), AuthError> {
-            Ok(())
-        }
-        async fn ensure_ready(&self) -> Result<(), AuthError> {
-            Ok(())
-        }
-        async fn check(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthError> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            self.outcome.as_ref().copied().map_err(|_| AuthError)
-        }
-        async fn list_objects(&self, _: &str, _: &str, _: &str) -> Result<Vec<String>, AuthError> {
-            self.check("", "", "").await.map(|allowed| {
-                if allowed {
-                    vec!["task:access-review".into()]
-                } else {
-                    Vec::new()
-                }
-            })
-        }
-        async fn write(&self, _: &[Tuple], _: bool) -> Result<(), AuthError> {
-            Err(AuthError)
-        }
-        async fn change(&self, _: &[Tuple], _: &[Tuple]) -> Result<(), AuthError> {
-            Err(AuthError)
-        }
-        async fn delete_object(&self, _: &str) -> Result<(), AuthError> {
-            Err(AuthError)
-        }
-    }
-
-    fn workload(mode: Mode) -> Arc<Workload> {
-        Arc::new(Workload {
-            mode,
-            user: "alice".into(),
-            relation: "can_view".into(),
-            object_type: "task".into(),
-            object: "task:access-review".into(),
-        })
-    }
-
-    #[tokio::test]
-    async fn records_every_request_for_uneven_and_excess_concurrency() -> BenchResult {
-        for mode in [Mode::Check, Mode::List] {
-            for (iterations, concurrency) in [(17, 4), (3, 8)] {
-                let auth = Arc::new(ObservedBackend {
-                    calls: AtomicUsize::new(0),
-                    outcome: Ok(true),
-                });
-                let (samples, _) = measure(
-                    auth.clone(),
-                    workload(mode),
-                    iterations,
-                    concurrency,
-                    Duration::ZERO,
-                )
-                .await?;
-                assert_eq!(samples.len(), iterations);
-                assert_eq!(auth.calls.load(Ordering::SeqCst), iterations);
-            }
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn backend_errors_denials_and_missing_objects_invalidate_measurement() {
-        for mode in [Mode::Check, Mode::List] {
-            for outcome in [Ok(false), Err(AuthError)] {
-                let auth = Arc::new(ObservedBackend {
-                    calls: AtomicUsize::new(0),
-                    outcome,
-                });
-                assert!(
-                    measure(auth, workload(mode), 3, 2, Duration::ZERO)
-                        .await
-                        .is_err()
-                );
-            }
-        }
-    }
 }

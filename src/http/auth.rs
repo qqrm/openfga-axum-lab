@@ -56,6 +56,18 @@ pub(crate) async fn guard(State(app): State<App>, mut request: Request, next: Ne
     if !registered_domain_route(request.method(), path) {
         return StatusCode::FORBIDDEN.into_response();
     }
+    if let Some(target) = &app.authorization_target
+        && crate::authorization_migration::ensure_active(
+            &app.db,
+            &target.store,
+            &target.model,
+            &target.model_sha256,
+        )
+        .await
+        .is_err()
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     request.extensions_mut().insert(Identity(who));
     next.run(request).await
 }

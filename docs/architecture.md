@@ -21,7 +21,8 @@ organization. The graph does not invent a task owner or a universal deny policy.
 - Creation keys are scoped by organization and assigner. The same key/payload
   yields one ID; conflicting content yields 409; a deleted result yields 410.
   Tombstones keep their keys. A matching, already-authorized pending creation
-  can resume its exact durable projection; a fresh request cannot bypass a fence.
+  can resume its exact durable projection; its response stays 503 if uncertainty
+  remains. A fresh request cannot bypass a fence.
 - All mutations lock the organization first and the task second, then check
   OpenFGA permission while holding those locks. Organization role changes
   cannot interleave between a task mutation's check and staging/commit.
@@ -53,11 +54,11 @@ If the request is cancelled, the remote response is lost, or the final SQL commi
 fails, the durable journal/fence survives. A pending organization's public task
 and organization operations return 503, even when OpenFGA may already have
 applied the change. Startup replays jobs before serving requests. Acknowledged
-replay restores reads, but an already-attempted job sets a persistent
-`authz_uncertain` write quarantine. Duplicate writes/missing deletes make that
+replay reconciles the desired graph, but an already-attempted job sets persistent
+`authz_uncertain` quarantine and durable global cache debt. Duplicate writes/missing deletes make that
 one operation idempotent; they do not order a late original request against a
-newer change. Every further mutation stays 503 until an explicit backend-drain
-recovery. Responses disable mutation capabilities and expose `recovery_required`.
+newer change. Checks, lists, further mutations and readiness stay 503 until explicit backend-drained
+recovery. No cached allow or partially recovered read bypasses the global fence.
 Historical pending/deleting lifecycle fixtures are also converted to projections.
 Multiple orphan lifecycle rows in the same organization can stop ordinary
 startup after the first replay establishes quarantine. The explicit drained
@@ -73,9 +74,9 @@ The first OpenFGA Read page is reread after each deletion batch; pagination is
 not assumed stable during mutation. Cleanup has a finite safety bound.
 
 A failed generic grant/role/owner mutation is replayed by restarting against
-the same store/database, restoring read access but retaining write quarantine.
+the same store/database, reconciling the graph but retaining the global fence.
 The explicit one-shot `app --recover-authorization-after-backend-drain` command
-is required to restore writes after all application writers, OpenFGA and proxy
+is required to restore service after all application writers, OpenFGA and proxy
 queues have been drained. It asserts that operator precondition rather than
 proving it; no fixed sleep or successful replay is treated as a drain barrier.
 Do not clear flags manually or re-seed. See the [recovery procedure](openlane-migration.md).
@@ -83,11 +84,14 @@ A new process refuses to listen if replay itself fails.
 
 ## Reads and concurrent revocation
 
-Task lists obtain candidate object IDs through OpenFGA `ListObjects`, then
-read active SQL rows and evaluate each returned task's view/edit/delete
-capabilities. Candidate selection is inside the same organization revision
-snapshot as the final response; an empty candidate list does not bypass the
-final version/fence check.
+Task lists scan at most 257 active SQL IDs and evaluate each returned task's
+view/edit/delete capabilities. A maximum of 256 candidates, organizations,
+members or direct task relations can be enumerated by one request; exceeding
+the bound returns 503 instead of a misleading partial result. This small lab
+does not implement a production pagination protocol. `ListObjects` remains
+an adapter/model diagnostic, not the source of complete API lists. The complete
+scan sits inside an organization revision snapshot. Even an empty list probes
+the backend and revalidates the final version/global fence.
 
 Ordinary reads do not hold SQL locks over network calls, allowing a revoke to
 complete while an old check response is delayed. They capture the organization's
@@ -96,7 +100,8 @@ before returning. A changed version retries; a pending fence or repeated
 contention returns 503. Task/organization lists also validate the complete
 organization version snapshot, so they cannot combine pre/post-change access
 from different checks. A list may return 503 when any scanned organization is
-pending; a direct read of an unaffected organization's task remains available.
+pending. A global pending remote write also closes unrelated scopes until its
+acknowledgement, and an ambiguous result retains that fence until drained recovery.
 
 A request can finish after a revoke if it already passed the final revision
 check before that revoke began. Revocation does not cancel authorized in-flight
@@ -111,22 +116,24 @@ fence, not a distributed transaction or an exhaustive concurrency proof.
 Each replica uses Moka (10,000 entries, two-second TTL). Keys include a generation
 from the shared PostgreSQL primary. Before a remote mutation, the cache coordinator
 commits a generation increment and pending count; acknowledgement commits a second
-increment and removes that operation's count. Both positive/negative hits and
-live checks re-read the generation; changed generations retry. A delayed fill
+increment and removes that operation's count. Denial hits and live checks re-read the generation; changed generations retry. A delayed fill
 can populate only its old generation's key. Graph-wide invalidation includes
 organization permissions inherited by tasks.
 
-Cached allows still require live backend/store availability. HTTP probes health
-and the configured store; gRPC probes the store. Readiness additionally checks
-the configured immutable model. A healthy server with a soft-deleted store
-cannot validate a cached allow. Errors are never cached. This costs network and
-SQL round trips; no latency improvement is claimed without measurement.
+Only denials are cached. Every successful decision requires a live OpenFGA
+Check using HIGHER_CONSISTENCY, even after an earlier allow. HTTP validates
+exact statuses, endpoint, bounded JSON and typed responses; redirects and
+malformed acknowledgements fail closed. Readiness additionally compares the
+configured immutable model with the pinned source model. A healthy server with
+a deleted store or a substituted model is not ready. Errors are never cached.
+This costs network and SQL round trips; no latency improvement is claimed.
 
 The cache pending counter is separate from the durable organization job. An
 ambiguous remote response leaves its conservative cache marker across restarts;
 a successfully replayed job clears the organization fence but not an older
-uncertain cache count. Until reconciliation all decisions use live checks, and the organization
-quarantine prohibits newer conflicting mutations. The explicit one-shot recovery
+uncertain cache count. Until reconciliation the global pending count rejects all checks, lists and
+readiness, including on other replicas. Replaying an attempted journal adds
+conservative debt even if the original cache marker may never have committed. The explicit one-shot recovery
 command clears both quarantine and cache debt only after pending jobs are
 reconciled and the operator has confirmed backend/proxy drain. Organization
 revisions and cache generation are incremented in the same committed reset.
@@ -139,9 +146,13 @@ hashes and revoked on logout. Password work runs in the blocking pool with bound
 concurrency; per-username attempts are rate limited in PostgreSQL. Browser tokens
 stay in memory, and account changes clear protected content immediately.
 
-Seeding runs only with explicit DEMO_SEED and creates initial rows without
+Bootstrap creates an empty store and pins the model; it does not import a JSON
+tuple dump. Seeding runs only with explicit DEMO_SEED and creates initial SQL rows without
 reinstating revoked membership/grant metadata on restart. Existing credentials,
-owner transfers, role changes and lifecycle tombstones are preserved. Startup
+owner transfers, role changes and lifecycle tombstones are preserved. Explicit
+DEMO_MIGRATE (or the migration CLI) freezes and validates the SQL snapshot,
+checkpoints its graph import, and checks exact tuples and independent allow/deny
+decisions before activation. Active reruns never replay old grants. Startup
 and bootstrap both verify the model fingerprint before using the new scenario.
 Applied migration files remain unchanged, and previous-domain data are retained
 without old routes or implicit data conversion. Use an isolated new store for

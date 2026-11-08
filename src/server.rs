@@ -1,16 +1,19 @@
-use crate::application::{App, Authorizer};
+use crate::application::{App, AuthorizationTarget, Authorizer};
 use crate::infrastructure::DenyAll;
 #[cfg(feature = "grpc")]
 use crate::infrastructure::OpenFgaGrpc as OpenFga;
 #[cfg(all(feature = "http", not(feature = "grpc")))]
 use crate::infrastructure::OpenFgaHttp as OpenFga;
-use crate::{cached_authorizer, configuration, http, infrastructure, metrics, operations};
-use serde_json::Value;
-use sha2::{Digest, Sha256};
+use crate::{
+    authorization_migration, cached_authorizer, configuration, http, infrastructure, metrics,
+    operations,
+};
 use sqlx::postgres::PgPoolOptions;
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+type RunResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+pub async fn run() -> RunResult {
     tracing_subscriber::fmt::init();
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let after_backend_drain = match arguments.as_slice() {
@@ -18,86 +21,109 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         [flag] if flag == "--recover-authorization-after-backend-drain" => true,
         _ => return Err("usage: app [--recover-authorization-after-backend-drain]".into()),
     };
-    if after_backend_drain && std::env::var("AUTHZ_MODE").as_deref() == Ok("deny") {
+    // Configuration errors must not seed or modify SQL as a side effect.
+    let openfga = match std::env::var("AUTHZ_MODE").as_deref() {
+        Ok("openfga") | Err(std::env::VarError::NotPresent) => true,
+        Ok("deny") => false,
+        _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
+    };
+    if after_backend_drain && !openfga {
         return Err("authorization recovery requires the real backend".into());
     }
-    let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
-    let config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let config_path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let model_path = std::env::var("FGA_MODEL").unwrap_or_else(|_| "fga/model.json".into());
-    let model_hash = Sha256::digest(std::fs::read(model_path)?)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    if config["model_sha256"].as_str() != Some(&model_hash) {
-        return Err(
-            "model changed; explicit migration is required before starting the application".into(),
-        );
-    }
-    let database = configuration::secret("DATABASE_URL")?;
-    let db = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&database)
-        .await?;
-    let migrations = std::env::var("MIGRATIONS_DIR").unwrap_or_else(|_| "migrations".into());
-    sqlx::migrate::Migrator::new(std::path::Path::new(&migrations))
-        .await?
-        .run(&db)
-        .await?;
-    if std::env::var("DEMO_SEED").as_deref() == Ok("true") {
+    let migration_url = std::env::var("FGA_HTTP_URL").unwrap_or_else(|_| {
+        #[cfg(feature = "grpc")]
+        {
+            "http://openfga:8080".into()
+        }
+        #[cfg(not(feature = "grpc"))]
+        {
+            std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into())
+        }
+    });
+    let validated = if openfga {
+        let (target, model) = authorization_migration::validate_configuration(
+            Path::new(&config_path),
+            Path::new(&model_path),
+        )?;
+        authorization_migration::validate_backend(&migration_url, &target, &model).await?;
+        Some(target)
+    } else {
+        None
+    };
+    let authorization_target = validated.as_ref().map(|target| AuthorizationTarget {
+        store: target.store_id.clone(),
+        model: target.model_id.clone(),
+        model_sha256: target.model_sha256.clone(),
+    });
+    let auth: Arc<dyn Authorizer> = if let Some(target) = &validated {
+        #[cfg(feature = "grpc")]
+        {
+            let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8081".into());
+            Arc::new(OpenFga::connect(url, &target.store_id, &target.model_id).await?)
+        }
+        #[cfg(all(feature = "http", not(feature = "grpc")))]
+        {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(2))
+                .build()?;
+            let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
+            Arc::new(OpenFga {
+                client,
+                url,
+                store: target.store_id.clone(),
+                model: target.model_id.clone(),
+            })
+        }
+        #[cfg(not(any(feature = "grpc", feature = "http")))]
+        {
+            let _ = target;
+            return Err("enable grpc or http feature".into());
+        }
+    } else {
+        Arc::new(DenyAll)
+    };
+    let demo_password = if std::env::var("DEMO_SEED").as_deref() == Ok("true") {
         let password = configuration::secret("DEMO_PASSWORD")?;
         if password.len() < 12 {
             return Err("DEMO_PASSWORD must have at least 12 bytes".into());
         }
+        Some(password)
+    } else {
+        None
+    };
+    let database = configuration::secret("DATABASE_URL")?;
+    let db = PgPoolOptions::new()
+        .max_connections(10)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(&database)
+        .await?;
+    let migrations = std::env::var("MIGRATIONS_DIR").unwrap_or_else(|_| "migrations".into());
+    sqlx::migrate::Migrator::new(Path::new(&migrations))
+        .await?
+        .run(&db)
+        .await?;
+    if let Some(password) = demo_password {
         infrastructure::seed(&db, &password).await?;
     }
-    let val = |k: &str| -> Result<String, Box<dyn std::error::Error>> {
-        config[k]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .ok_or_else(|| format!("missing {k}").into())
-    };
-    let auth: Arc<dyn Authorizer> = match std::env::var("AUTHZ_MODE").as_deref() {
-        Ok("deny") => Arc::new(DenyAll),
-        Ok("openfga") | Err(std::env::VarError::NotPresent) => {
-            #[cfg(feature = "grpc")]
-            {
-                let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8081".into());
-                let store = val("store_id")?;
-                let model = val("model_id")?;
-                Arc::new(OpenFga::connect(url, &store, &model).await?)
-            }
-            #[cfg(all(feature = "http", not(feature = "grpc")))]
-            {
-                let client = reqwest::Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .timeout(Duration::from_secs(2))
-                    .build()?;
-                let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
-                let store = val("store_id")?;
-                let model = val("model_id")?;
-                Arc::new(OpenFga {
-                    client,
-                    url,
-                    store,
-                    model,
-                })
-            }
-            #[cfg(not(any(feature = "grpc", feature = "http")))]
-            {
-                return Err("enable grpc or http feature".into());
-            }
-        }
-        _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
-    };
-    let readiness = operations::Readiness::new(db.clone(), auth.clone());
+    if openfga && std::env::var("DEMO_MIGRATE").as_deref() == Ok("true") {
+        authorization_migration::migrate(
+            &db,
+            &migration_url,
+            Path::new(&config_path),
+            Path::new(&model_path),
+        )
+        .await?;
+    }
     let metrics = metrics::Metrics::new()?;
     let mut auth = auth;
     let mut authz_coordinator = db.clone();
-    if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
-        // Domain mutations can hold a connection from the main pool while
-        // checking authorization. Keep revision queries on a separate pool.
+    if let Some(target) = &authorization_target {
+        // Domain mutations hold a main-pool transaction while independently
+        // committing the durable attempt marker and global cache fence.
         authz_coordinator = PgPoolOptions::new()
             .max_connections(4)
             .acquire_timeout(Duration::from_secs(2))
@@ -108,22 +134,38 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             authz_coordinator.clone(),
             metrics.authz_cache.clone(),
         ));
-        infrastructure::recover_pending(
+        let active = authorization_migration::ensure_active(
             &db,
-            &authz_coordinator,
-            auth.as_ref(),
-            after_backend_drain,
+            &target.store,
+            &target.model,
+            &target.model_sha256,
         )
-        .await?;
+        .await
+        .is_ok();
+        if after_backend_drain && !active {
+            return Err("activate the verified Openlane migration before drained recovery".into());
+        }
+        if active {
+            // Replaying acknowledged intent does not clear earlier uncertainty.
+            // Wrapped readiness may remain false; the server still listens so
+            // health/operations can report the durable fence to an operator.
+            infrastructure::recover_pending(
+                &db,
+                &authz_coordinator,
+                auth.as_ref(),
+                after_backend_drain,
+            )
+            .await?;
+        }
     }
     if after_backend_drain {
         tracing::info!("authorization recovery completed after operator-confirmed backend drain");
         return Ok(());
     }
+    let readiness =
+        operations::Readiness::new(db.clone(), auth.clone(), authorization_target.clone());
     let address = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
     let listener = tokio::net::TcpListener::bind(address).await?;
-    // Unknown usernames still execute password verification, using a value
-    // generated for this process and unrelated to configured accounts.
     let dummy_password_hash: Arc<str> =
         infrastructure::hash_password(&uuid::Uuid::new_v4().to_string())?.into();
     println!("Listening on {}", listener.local_addr()?);
@@ -136,8 +178,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,
             metrics,
+            authorization_target,
         })
-        .merge(operations::router(readiness)),
+        .merge(operations::router(readiness))
+        .layer(axum::middleware::from_fn(http::security_headers)),
     )
     .await?;
     Ok(())

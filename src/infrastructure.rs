@@ -10,7 +10,9 @@ use sqlx::PgPool;
 pub(crate) fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
-pub(crate) fn hash_password(password: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn hash_password(
+    password: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
@@ -53,8 +55,36 @@ use serde::Deserialize;
 #[cfg(feature = "http")]
 use serde_json::json;
 
-pub(crate) async fn seed(db: &PgPool, password: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn seed(
+    db: &PgPool,
+    password: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = db.begin().await?;
+    // Serialize competing demo starters. Do not lock the journal before source
+    // tables: migration and statement triggers acquire those locks first.
+    // A race with import is rejected by the source-freeze triggers.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('openlane-demo-seed', 0))")
+        .execute(&mut *tx)
+        .await?;
+    let migration: String =
+        sqlx::query_scalar("SELECT status FROM openlane_authorization_migration WHERE singleton")
+            .fetch_one(&mut *tx)
+            .await?;
+    let catalog_source: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog_projects) OR EXISTS(SELECT 1 FROM legacy_resource_grants) OR EXISTS(SELECT 1 FROM authorization_migration WHERE source_sha256 IS NOT NULL OR status <> 'pending')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if catalog_source {
+        return Err("Openlane demo setup requires an isolated source; existing Lakekeeper data or authorization binding needs an explicit cutover".into());
+    }
+    let existing_source: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations)")
+        .fetch_one(&mut *tx)
+        .await?;
+    if migration != "pending" || existing_source {
+        tx.rollback().await?;
+        return Ok(());
+    }
     for (id, name) in [
         ("alice", "Alice"),
         ("bob", "Bob"),
@@ -168,7 +198,7 @@ pub(crate) async fn recover_pending(
     coordinator: &PgPool,
     auth: &dyn Authorizer,
     after_backend_drain: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     crate::authorization::recover(db, coordinator, auth, after_backend_drain).await?;
     Ok(())
 }
@@ -176,102 +206,185 @@ pub(crate) async fn recover_pending(
 #[cfg(feature = "http")]
 mod openfga_http {
     use super::*;
+    use reqwest::{RequestBuilder, StatusCode, header::CONTENT_TYPE};
+    use serde::de::DeserializeOwned;
+    use std::time::Duration;
+
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+    const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
     pub struct OpenFgaHttp {
+        /// Use a client with redirects disabled. Response URLs are also checked
+        /// so a followed redirect cannot be mistaken for backend confirmation.
         pub client: reqwest::Client,
         pub url: String,
         pub store: String,
         pub model: String,
     }
+
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct Check {
         allowed: bool,
+        #[serde(default, rename = "resolution")]
+        _resolution: Option<String>,
     }
     #[derive(Deserialize)]
     struct Health {
         status: String,
     }
     #[derive(Deserialize)]
+    struct Store {
+        id: String,
+    }
+    #[derive(Deserialize)]
+    struct ModelResponse {
+        authorization_model: Store,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct WriteResponse {}
+    #[derive(Deserialize)]
     struct ReadTuple {
         key: Tuple,
     }
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct ReadResponse {
         #[serde(default)]
         tuples: Vec<ReadTuple>,
+        #[serde(default)]
+        continuation_token: String,
     }
+
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct ListObjectsResponse {
         #[serde(default)]
         objects: Vec<String>,
     }
+
+    fn protocol_error(operation: &'static str, reason: &'static str) -> AuthError {
+        tracing::warn!(operation, reason, "invalid OpenFGA HTTP response");
+        AuthError
+    }
+
+    // Validate the complete response. reqwest::error_for_status accepts 3xx,
+    // and receiving headers alone does not confirm a completed write or Check.
+    // Bound bodies even if the caller supplies a client without a timeout.
+    async fn send_json<T: DeserializeOwned>(
+        builder: RequestBuilder,
+        operation: &'static str,
+    ) -> Result<T, AuthError> {
+        tokio::time::timeout(REQUEST_TIMEOUT, async {
+            let (client, request) = builder.build_split();
+            let request = request.map_err(|_| protocol_error(operation, "request construction"))?;
+            let expected_url = request.url().clone();
+            let mut response = client
+                .execute(request)
+                .await
+                .map_err(|_| protocol_error(operation, "transport failure"))?;
+            if response.status() != StatusCode::OK || response.url() != &expected_url {
+                tracing::warn!(operation, status = %response.status(), "OpenFGA HTTP response did not confirm success");
+                return Err(AuthError);
+            }
+            let json_content = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(';').next())
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"));
+            if !json_content {
+                return Err(protocol_error(operation, "expected JSON content type"));
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+            {
+                return Err(protocol_error(operation, "response body too large"));
+            }
+            let mut body = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|_| protocol_error(operation, "incomplete response body"))?
+            {
+                if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+                    return Err(protocol_error(operation, "response body too large"));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            // serde can deserialize a struct from a positional JSON array.
+            // OpenFGA response messages must be objects: in particular `[]`
+            // must never count as a confirmed empty Write response.
+            if body.iter().copied().find(|byte| !byte.is_ascii_whitespace()) != Some(b'{') {
+                return Err(protocol_error(operation, "expected JSON object response"));
+            }
+            serde_json::from_slice(&body)
+                .map_err(|_| protocol_error(operation, "invalid JSON response schema"))
+        })
+        .await
+        .map_err(|_| protocol_error(operation, "response deadline exceeded"))?
+    }
+
     #[async_trait]
     impl Authorizer for OpenFgaHttp {
         #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
         async fn ensure_available(&self) -> Result<(), AuthError> {
-            let health = self
-                .client
-                .get(format!("{}/healthz", self.url))
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .json::<Health>()
-                .await
-                .map_err(|_| AuthError)?;
+            let health: Health =
+                send_json(self.client.get(format!("{}/healthz", self.url)), "health").await?;
             if health.status != "SERVING" {
-                return Err(AuthError);
+                return Err(protocol_error("health", "backend is not serving"));
             }
-            // A healthy server may host a soft-deleted store. Cached allows
-            // must probe the configured store, matching the gRPC adapter.
-            self.client
-                .get(format!("{}/stores/{}", self.url, self.store))
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .bytes()
-                .await
-                .map_err(|_| AuthError)?;
+            // A healthy service may still have a deleted or different store.
+            let store: Store = send_json(
+                self.client
+                    .get(format!("{}/stores/{}", self.url, self.store)),
+                "get_store",
+            )
+            .await?;
+            if store.id != self.store {
+                return Err(protocol_error("get_store", "store identity mismatch"));
+            }
             Ok(())
         }
+
         async fn ensure_ready(&self) -> Result<(), AuthError> {
             self.ensure_available().await?;
-            self.client
-                .get(format!(
+            let model: ModelResponse = send_json(
+                self.client.get(format!(
                     "{}/stores/{}/authorization-models/{}",
                     self.url, self.store, self.model
-                ))
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .bytes()
-                .await
-                .map_err(|_| AuthError)?;
+                )),
+                "get_model",
+            )
+            .await?;
+            if model.authorization_model.id != self.model {
+                return Err(protocol_error("get_model", "model identity mismatch"));
+            }
             Ok(())
         }
+
         #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
         async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
-            let response = self
-                .client
-                .post(format!("{}/stores/{}/check", self.url, self.store))
-                .json(
-                    &json!({"authorization_model_id":self.model,"consistency":"HIGHER_CONSISTENCY",
-                "tuple_key":{"user":format!("user:{user}"),"relation":relation,"object":object}}),
-                )
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .json::<Check>()
-                .await
-                .map_err(|_| AuthError)?;
+            let response: Check = send_json(
+                self.client
+                    .post(format!("{}/stores/{}/check", self.url, self.store))
+                    .json(&json!({
+                        "authorization_model_id": self.model,
+                        "consistency": "HIGHER_CONSISTENCY",
+                        "tuple_key": {
+                            "user": format!("user:{user}"),
+                            "relation": relation,
+                            "object": object,
+                        },
+                    })),
+                "check",
+            )
+            .await?;
             Ok(response.allowed)
         }
+
         #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
         async fn list_objects(
             &self,
@@ -279,26 +392,22 @@ mod openfga_http {
             relation: &str,
             object_type: &str,
         ) -> Result<Vec<String>, AuthError> {
-            let response: ListObjectsResponse = self
-                .client
-                .post(format!("{}/stores/{}/list-objects", self.url, self.store))
-                .json(&json!({
-                    "authorization_model_id": self.model,
-                    "consistency": "HIGHER_CONSISTENCY",
-                    "user": format!("user:{user}"),
-                    "relation": relation,
-                    "type": object_type
-                }))
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .json()
-                .await
-                .map_err(|_| AuthError)?;
+            let response: ListObjectsResponse = send_json(
+                self.client
+                    .post(format!("{}/stores/{}/list-objects", self.url, self.store))
+                    .json(&json!({
+                        "authorization_model_id": self.model,
+                        "consistency": "HIGHER_CONSISTENCY",
+                        "user": format!("user:{user}"),
+                        "relation": relation,
+                        "type": object_type,
+                    })),
+                "list_objects",
+            )
+            .await?;
             Ok(response.objects)
         }
+
         #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
         async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
             if add {
@@ -307,58 +416,61 @@ mod openfga_http {
                 self.change(&[], tuples).await
             }
         }
+
+        #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.change")]
         async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
             if writes.is_empty() && deletes.is_empty() {
                 return Ok(());
             }
-            let mut data = json!({"authorization_model_id":self.model});
+            let mut data = json!({"authorization_model_id": self.model});
             if !writes.is_empty() {
-                data["writes"] = json!({"tuple_keys":writes,"on_duplicate":"ignore"});
+                data["writes"] = json!({"tuple_keys": writes, "on_duplicate": "ignore"});
             }
             if !deletes.is_empty() {
-                data["deletes"] = json!({"tuple_keys":deletes,"on_missing":"ignore"});
+                data["deletes"] = json!({"tuple_keys": deletes, "on_missing": "ignore"});
             }
-            self.client
-                .post(format!("{}/stores/{}/write", self.url, self.store))
-                .json(&data)
-                .send()
-                .await
-                .map_err(|_| AuthError)?
-                .error_for_status()
-                .map_err(|_| AuthError)?
-                .bytes()
-                .await
-                .map_err(|_| AuthError)?;
+            let _: WriteResponse = send_json(
+                self.client
+                    .post(format!("{}/stores/{}/write", self.url, self.store))
+                    .json(&data),
+                "write",
+            )
+            .await?;
             Ok(())
         }
+
         #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
         async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
-            // Re-read the first page after every deletion: continuation tokens do
-            // not give a stable snapshot while the underlying tuples are removed.
+            // Re-read the first page after every deletion: continuation tokens
+            // are not a snapshot while the underlying tuples are removed.
             for _ in 0..1000 {
-                let page = self
-                    .client
-                    .post(format!("{}/stores/{}/read", self.url, self.store))
-                    .json(&json!({"tuple_key":{"object":object}, "page_size":100,
-                    "consistency":"HIGHER_CONSISTENCY"}))
-                    .send()
-                    .await
-                    .map_err(|_| AuthError)?
-                    .error_for_status()
-                    .map_err(|_| AuthError)?
-                    .json::<ReadResponse>()
-                    .await
-                    .map_err(|_| AuthError)?;
+                let page: ReadResponse = send_json(
+                    self.client
+                        .post(format!("{}/stores/{}/read", self.url, self.store))
+                        .json(&json!({
+                            "tuple_key": {"object": object},
+                            "page_size": 100,
+                            "consistency": "HIGHER_CONSISTENCY",
+                        })),
+                    "read",
+                )
+                .await?;
                 if page.tuples.is_empty() {
-                    return Ok(());
+                    return if page.continuation_token.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(protocol_error("read", "empty page is not terminal"))
+                    };
                 }
                 let tuples: Vec<_> = page.tuples.into_iter().map(|entry| entry.key).collect();
-                if tuples.iter().any(|tuple| tuple.object != object) {
-                    return Err(AuthError);
+                if tuples.iter().any(|tuple| {
+                    tuple.object != object || tuple.user.is_empty() || tuple.relation.is_empty()
+                }) {
+                    return Err(protocol_error("read", "unexpected tuple key"));
                 }
                 self.write(&tuples, false).await?;
             }
-            Err(AuthError)
+            Err(protocol_error("read", "deletion page limit exceeded"))
         }
     }
 }

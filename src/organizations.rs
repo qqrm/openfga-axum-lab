@@ -3,7 +3,7 @@
 use crate::application::{App, Member, Organization};
 use crate::authorization::{self, Projection, lock_organization, require_user, stage, tuple};
 use crate::domain;
-use crate::use_cases::{Error, Result};
+use crate::use_cases::{Error, MAX_ENUMERATED_OBJECTS, Result};
 use sqlx::Row;
 
 impl App {
@@ -11,10 +11,14 @@ impl App {
         for _ in 0..3 {
             let before = self.organization_snapshot().await?;
             let rows =
-                sqlx::query("SELECT id,name,owner_id,authz_pending,authz_uncertain FROM organizations ORDER BY id")
+                sqlx::query("SELECT id,name,owner_id,authz_pending,authz_uncertain FROM organizations ORDER BY id LIMIT $1")
+                    .bind(MAX_ENUMERATED_OBJECTS + 1)
                     .fetch_all(&self.db)
                     .await
                     .map_err(|_| Error::Unavailable)?;
+            if rows.len() > MAX_ENUMERATED_OBJECTS as usize {
+                return Err(Error::Unavailable);
+            }
             let mut organizations = Vec::new();
             for row in rows {
                 if row.get::<bool, _>("authz_pending") {
@@ -59,8 +63,8 @@ impl App {
             let owner: String = row.get("owner_id");
             let version: i64 = row.get("authorization_version");
             let rows = if allowed {
-                sqlx::query("SELECT m.user_id,u.display_name,m.role FROM organization_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=$1 ORDER BY m.user_id")
-                    .bind(id).fetch_all(&self.db).await.map_err(|_| Error::Unavailable)?
+                sqlx::query("SELECT m.user_id,u.display_name,m.role FROM organization_members m JOIN users u ON u.id=m.user_id WHERE m.organization_id=$1 ORDER BY m.user_id LIMIT $2")
+                    .bind(id).bind(MAX_ENUMERATED_OBJECTS + 1).fetch_all(&self.db).await.map_err(|_| Error::Unavailable)?
             } else {
                 Vec::new()
             };
@@ -69,6 +73,9 @@ impl App {
             }
             if !allowed {
                 return Err(Error::Forbidden);
+            }
+            if rows.len() > MAX_ENUMERATED_OBJECTS as usize {
+                return Err(Error::Unavailable);
             }
             return Ok(rows
                 .into_iter()

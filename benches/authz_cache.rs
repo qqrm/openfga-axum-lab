@@ -10,25 +10,39 @@ use std::env;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
-async fn checked_request(auth: &dyn Authorizer) -> bool {
+async fn checked_request(
+    auth: &dyn Authorizer,
+    user: &str,
+    relation: &str,
+    object: &str,
+    expected: bool,
+) -> bool {
     let allowed = auth
-        .check("alice", "can_view", "task:access-review")
+        .check(user, relation, object)
         .await
         .expect("OpenFGA check failed; benchmark is invalid");
-    assert!(
-        allowed,
-        "OpenFGA denied the seeded task; benchmark is invalid"
+    assert_eq!(
+        allowed, expected,
+        "OpenFGA returned an unexpected decision; benchmark is invalid"
     );
     allowed
 }
 
 fn benchmark(c: &mut Criterion, runtime: &Runtime, name: &str, auth: &dyn Authorizer) {
+    let user = env::var("BENCH_USER").unwrap_or_else(|_| "alice".into());
+    let relation = env::var("BENCH_RELATION").unwrap_or_else(|_| "can_view".into());
+    let object = env::var("BENCH_OBJECT").unwrap_or_else(|_| "task:access-review".into());
+    let expected: bool = env::var("BENCH_EXPECT_ALLOWED")
+        .unwrap_or_else(|_| "true".into())
+        .parse()
+        .expect("BENCH_EXPECT_ALLOWED must be true or false");
     runtime
         .block_on(auth.ensure_ready())
         .expect("OpenFGA store/model is unavailable; benchmark is invalid");
-    runtime.block_on(checked_request(auth));
+    runtime.block_on(checked_request(auth, &user, &relation, &object, expected));
     c.bench_function(name, |b| {
-        b.to_async(runtime).iter(|| checked_request(auth));
+        b.to_async(runtime)
+            .iter(|| checked_request(auth, &user, &relation, &object, expected));
     });
 }
 

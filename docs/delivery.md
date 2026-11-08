@@ -28,8 +28,8 @@ docker pull "$image"
 docker run --rm --user "$(id -u):$(id -g)" --env-file images.env \
   -v "$PWD:/work" -w /work --entrypoint /usr/local/bin/lab-tool \
   "$image" init-env local "$image"
-docker compose -p petlab-local --env-file local/environment.env -f compose.release.yaml up -d --wait app
-docker compose -p petlab-local --env-file local/environment.env -f compose.release.yaml run --rm acceptance
+docker compose -p authzlab-local --env-file local/environment.env -f compose.release.yaml up -d --wait app
+docker compose -p authzlab-local --env-file local/environment.env -f compose.release.yaml run --rm acceptance
 ```
 
 Пример предполагает, что имя архива заменено фактическим. UI слушает только
@@ -52,8 +52,8 @@ version tags зависимостей и не обещает побитовог�
 Не копируйте `secrets/` между ними. Запуск из корня распакованного bundle:
 
 ```sh
-APP_PORT=3001 docker compose -p petlab-staging --env-file staging/environment.env -f compose.release.yaml up -d --wait app
-APP_PORT=3000 docker compose -p petlab-stable --env-file stable/environment.env -f compose.release.yaml up -d --wait app
+APP_PORT=3001 docker compose -p authzlab-staging --env-file staging/environment.env -f compose.release.yaml up -d --wait app
+APP_PORT=3000 docker compose -p authzlab-stable --env-file stable/environment.env -f compose.release.yaml up -d --wait app
 ```
 
 Разделены Compose project, сети, оба тома, обе базы, FGA store/model и пароли.
@@ -95,20 +95,20 @@ Checksums проверяют целостность, не заменяют до�
 ## Предпосылки реального deployment
 
 Нужен выделенный доверенный Linux x86_64 runner с метками
-`self-hosted, linux, x64, petlab-deploy`, Docker Compose v2, `gh`, `jq`, `curl`
-и доступом к `/srv/petlab`. На нём **не выполняются PR jobs**. Repo variable
-`PETLAB_REMOTE_DEPLOY_ENABLED=true` включается владельцем только после
+`self-hosted, linux, x64, authzlab-deploy`, Docker Compose v2, `gh`, `jq`, `curl`
+и доступом к `/srv/authzlab`. На нём **не выполняются PR jobs**. Repo variable
+`AUTHZLAB_REMOTE_DEPLOY_ENABLED=true` включается владельцем только после
 подготовки; без него hosted preflight падает до постановки задачи на этот runner.
 
 В Environments `staging`, `stable`: protected branches only; у stable ещё
-required reviewer. Каждый задаёт `PETLAB_URL` — фактический ограниченный
+required reviewer. Каждый задаёт `AUTHZLAB_URL` — фактический ограниченный
 HTTPS-адрес без credentials в URL. Reverse proxy/TLS и контроль доступа
 настраиваются владельцем хоста, не имитируются в этом PR. Установите блокировку
 доступа из публичного интернета либо внешний аутентифицированный доступ;
 демо не рассчитано на произвольных посетителей.
 
-На хосте отдельно создайте `/srv/petlab/staging/state` и
-`/srv/petlab/stable/state` через `lab-tool init-env` выбранного образа. Секреты
+На хосте отдельно создайте `/srv/authzlab/staging/state` и
+`/srv/authzlab/stable/state` через `lab-tool init-env` выбранного образа. Секреты
 должны быть независимыми; предварительно создайте родительские каталоги и
 права для оператора. Deployment требует уже существующий `state/environment.env`
 и не генерирует новые пароли поверх существующих БД. Внешняя root директория
@@ -124,7 +124,7 @@ Deployment сохраняет bundle в `releases/<tag>`, а последнюю 
 
 Перед обновлением остановите приём запросов и всех писателей; остановите app
 и OpenFGA **нужного окружения**, но оставьте PostgreSQL доступным для dump.
-Согласованно сохраните обе базы (`petlab`, `openfga`), `/data/config.json` из
+Согласованно сохраните обе базы (`authzlab`, `openfga`), `/data/config.json` из
 тома `fga-state`, точный manifest/digests и секреты в отдельное защищённое
 хранилище. SQL dumps содержат персональные данные и хэши сессий — не загружайте
 их как публичные GitHub artifacts. Не копируйте физические файлы активной БД.

@@ -30,6 +30,8 @@ struct WireState {
     reads: Mutex<VecDeque<ReadResponse>>,
     stall_trailers: bool,
     fail_operation: Mutex<Option<&'static str>>,
+    store_response: Mutex<Option<GetStoreResponse>>,
+    model_response: Mutex<Option<ReadAuthorizationModelResponse>>,
 }
 
 struct Stub {
@@ -97,16 +99,30 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
             allowed: true,
             ..Default::default()
         }),
-        "GetStore" => frame(GetStoreResponse {
-            id: "store".to_owned(),
-            ..Default::default()
-        }),
-        "ReadAuthorizationModel" => frame(ReadAuthorizationModelResponse {
-            authorization_model: Some(AuthorizationModel {
-                id: "model".to_owned(),
-                ..Default::default()
-            }),
-        }),
+        "GetStore" => frame(
+            state
+                .store_response
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| GetStoreResponse {
+                    id: "store".to_owned(),
+                    ..Default::default()
+                }),
+        ),
+        "ReadAuthorizationModel" => frame(
+            state
+                .model_response
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| ReadAuthorizationModelResponse {
+                    authorization_model: Some(AuthorizationModel {
+                        id: "model".to_owned(),
+                        ..Default::default()
+                    }),
+                }),
+        ),
         "ListObjects" => frame(ListObjectsResponse {
             objects: vec![
                 "task:access-review".to_owned(),
@@ -300,7 +316,16 @@ async fn deletion_restarts_first_page_after_each_write() -> TestResult {
 
 #[tokio::test]
 async fn deletion_rejects_malformed_or_unrelated_tuples_before_writing() -> TestResult {
-    for invalid in [FgaTuple::default(), fga_tuple("task:unrelated")] {
+    let mut empty_user = fga_tuple("task:vendor-review");
+    empty_user.key.as_mut().unwrap().user.clear();
+    let mut empty_relation = fga_tuple("task:vendor-review");
+    empty_relation.key.as_mut().unwrap().relation.clear();
+    for invalid in [
+        FgaTuple::default(),
+        fga_tuple("task:unrelated"),
+        empty_user,
+        empty_relation,
+    ] {
         let stub = Stub::start(
             vec![ReadResponse {
                 tuples: vec![fga_tuple("task:vendor-review"), invalid],
@@ -433,5 +458,33 @@ async fn list_objects_does_not_return_objects_before_successful_trailers() -> Te
             .len(),
         1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn readiness_rejects_store_or_model_identity_mismatches() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    *stub.state.store_response.lock().await = Some(GetStoreResponse {
+        id: "another-store".into(),
+        ..Default::default()
+    });
+    assert!(auth.ensure_available().await.is_err());
+    assert!(auth.ensure_ready().await.is_err());
+    *stub.state.store_response.lock().await = None;
+    for model in [
+        None,
+        Some(AuthorizationModel {
+            id: "another-model".into(),
+            ..Default::default()
+        }),
+    ] {
+        *stub.state.model_response.lock().await = Some(ReadAuthorizationModelResponse {
+            authorization_model: model,
+        });
+        assert!(auth.ensure_ready().await.is_err());
+    }
+    *stub.state.model_response.lock().await = None;
+    auth.ensure_ready().await?;
     Ok(())
 }

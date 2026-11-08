@@ -1,7 +1,8 @@
 use crate::application::{App, CreateTask, Identity, TaskInput};
+use crate::domain::{OrganizationId, TaskId, UserId};
 use axum::{
     Json, Router,
-    extract::{MatchedPath, Path, Request, State},
+    extract::{DefaultBodyLimit, MatchedPath, Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
@@ -14,11 +15,25 @@ mod auth;
 pub(crate) use auth::guard;
 
 pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .filter(|v| !v.is_empty() && v.len() <= 256)
+    let mut values = headers.get_all(AUTHORIZATION).iter();
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let (scheme, token) = value.to_str().ok()?.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer")
+        || token.len() != 64
+        || !token.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some(token)
+}
+
+fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
+    let mut values = headers.get_all("idempotency-key").iter();
+    let value = values.next()?.to_str().ok()?;
+    (values.next().is_none() && crate::domain::valid_idempotency_key(value)).then_some(value)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,7 +88,7 @@ async fn list(
 async fn task(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(id): Path<String>,
+    Path(id): Path<TaskId>,
 ) -> Response {
     match app.get_task(&identity.0, &id).await {
         Ok(task) => Json(task).into_response(),
@@ -86,10 +101,9 @@ async fn create(
     headers: HeaderMap,
     Json(input): Json<CreateTask>,
 ) -> Response {
-    let key = headers
-        .get("idempotency-key")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    let Some(key) = idempotency_key(&headers) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     match app.create_task(&identity.0, key, &input).await {
         Ok(id) => (StatusCode::CREATED, Json(json!({"id":id}))).into_response(),
         Err(error) => error_response(error),
@@ -98,7 +112,7 @@ async fn create(
 async fn edit(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(id): Path<String>,
+    Path(id): Path<TaskId>,
     Json(input): Json<TaskInput>,
 ) -> Response {
     mutation_response(app.edit_task(&identity.0, &id, &input).await)
@@ -106,14 +120,14 @@ async fn edit(
 async fn delete_task(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(id): Path<String>,
+    Path(id): Path<TaskId>,
 ) -> Response {
     mutation_response(app.delete_task(&identity.0, &id).await)
 }
 async fn relation(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path((id, relation, subject)): Path<(String, String, String)>,
+    Path((id, relation, subject)): Path<(TaskId, String, UserId)>,
     method: Method,
 ) -> Response {
     mutation_response(
@@ -133,7 +147,7 @@ async fn organizations(
 async fn members(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(id): Path<String>,
+    Path(id): Path<OrganizationId>,
 ) -> Response {
     match app.organization_members(&identity.0, &id).await {
         Ok(members) => Json(members).into_response(),
@@ -148,7 +162,7 @@ struct MemberRole {
 async fn put_member(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path((id, subject)): Path<(String, String)>,
+    Path((id, subject)): Path<(OrganizationId, UserId)>,
     Json(input): Json<MemberRole>,
 ) -> Response {
     mutation_response(
@@ -159,20 +173,20 @@ async fn put_member(
 async fn delete_member(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path((id, subject)): Path<(String, String)>,
+    Path((id, subject)): Path<(OrganizationId, UserId)>,
 ) -> Response {
     mutation_response(app.set_member(&identity.0, &id, &subject, None).await)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Ownership {
-    expected_owner: String,
-    new_owner: String,
+    expected_owner: UserId,
+    new_owner: UserId,
 }
 async fn transfer_owner(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path(id): Path<String>,
+    Path(id): Path<OrganizationId>,
     Json(input): Json<Ownership>,
 ) -> Response {
     mutation_response(
@@ -183,7 +197,7 @@ async fn transfer_owner(
 async fn organization_permission(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
-    Path((id, relation, subject)): Path<(String, String, String)>,
+    Path((id, relation, subject)): Path<(OrganizationId, String, UserId)>,
     method: Method,
 ) -> Response {
     mutation_response(
@@ -252,8 +266,27 @@ pub(crate) fn router(app: App) -> Router {
             }),
         )
         .route("/healthz", get(|| async { "ok" }))
+        .route(
+            "/model",
+            get(|| async {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    include_str!("../../fga/provenance.json"),
+                )
+            }),
+        )
+        .route(
+            "/model/schema",
+            get(|| async {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    include_str!("../../fga/model.json"),
+                )
+            }),
+        )
         .route("/metrics", get(metrics))
         .route("/session", axum::routing::post(login).delete(logout))
+        .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn_with_state(app.clone(), observe_request))
         .with_state(app)
@@ -298,7 +331,7 @@ async fn observe_request(State(app): State<App>, request: Request, next: Next) -
         .observe(start.elapsed().as_secs_f64());
     response
 }
-async fn security_headers(request: Request, next: Next) -> Response {
+pub(crate) async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(axum::http::header::CONTENT_SECURITY_POLICY,
@@ -316,4 +349,97 @@ async fn security_headers(request: Request, next: Next) -> Response {
         axum::http::HeaderValue::from_static("no-store"),
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bearer_rejects_duplicate_headers_and_combined_or_ambiguous_tokens() {
+        let token = "a".repeat(64);
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+        assert_eq!(bearer(&headers), Some(token.as_str()));
+        headers.append(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+        assert_eq!(bearer(&headers), None);
+        for value in [
+            format!("Bearer {token}, Bearer {token}"),
+            format!("Bearer  {token}"),
+            format!("Bearer {token} "),
+            format!("Basic {token}"),
+            format!("Bearer {}", "x".repeat(64)),
+        ] {
+            headers.clear();
+            headers.insert(AUTHORIZATION, value.parse().unwrap());
+            assert_eq!(bearer(&headers), None);
+        }
+        headers.clear();
+        headers.insert(AUTHORIZATION, format!("bearer {token}").parse().unwrap());
+        assert_eq!(bearer(&headers), Some(token.as_str()));
+    }
+
+    #[test]
+    fn idempotency_rejects_duplicate_and_combined_keys() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(idempotency_key(&headers), None);
+        headers.insert("idempotency-key", "request-123".parse().unwrap());
+        assert_eq!(idempotency_key(&headers), Some("request-123"));
+        headers.append("idempotency-key", "request-456".parse().unwrap());
+        assert_eq!(idempotency_key(&headers), None);
+        for value in [
+            "request-123, request-456",
+            "request-123 ",
+            "short",
+            "user:alice",
+        ] {
+            headers.clear();
+            headers.insert("idempotency-key", value.parse().unwrap());
+            assert_eq!(idempotency_key(&headers), None);
+        }
+    }
+
+    #[test]
+    fn request_dtos_reject_identity_and_privilege_smuggling() {
+        for field in ["assigner_id", "owner_id", "can_edit", "relations"] {
+            let mut value = json!({"organization_id":"acme","title":"Review access","description":"","status":"todo"});
+            value[field] = json!("alice");
+            assert!(serde_json::from_value::<CreateTask>(value).is_err());
+        }
+        assert!(
+            serde_json::from_value::<TaskInput>(json!({
+                "title":"Review access","description":"","status":"todo","organization_id":"other"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<Ownership>(json!({
+                "expected_owner":"alice","new_owner":"bob","actor":"alice"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn typed_identifiers_refuse_fga_syntax() {
+        for value in [
+            "user:alice",
+            "bob#owner",
+            "*",
+            "../other",
+            "",
+            "task/review",
+        ] {
+            assert!(serde_json::from_value::<UserId>(json!(value)).is_err());
+            assert!(serde_json::from_value::<TaskId>(json!(value)).is_err());
+            assert!(serde_json::from_value::<OrganizationId>(json!(value)).is_err());
+            assert!(
+                serde_json::from_value::<Ownership>(json!({
+                    "expected_owner":"alice","new_owner":value
+                }))
+                .is_err()
+            );
+        }
+        assert!(serde_json::from_value::<OrganizationId>(json!("acme-123")).is_ok());
+    }
 }

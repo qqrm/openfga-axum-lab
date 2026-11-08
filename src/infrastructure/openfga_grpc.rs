@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Native gRPC adapter with the same consistency and retry contract as HTTP.
 pub struct OpenFgaGrpc {
-    pub client: OpenFgaClient<Channel>,
+    client: OpenFgaClient<Channel>,
 }
 
 impl OpenFgaGrpc {
@@ -43,25 +43,32 @@ async fn bounded<T, E>(request: impl Future<Output = Result<T, E>>) -> Result<T,
 impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
-        // Cache hits must still prove that the real authorization store responds.
-        bounded(self.client.client().get_store(GetStoreRequest {
+        let store = bounded(self.client.client().get_store(GetStoreRequest {
             store_id: self.client.store_id().to_owned(),
         }))
-        .await?;
+        .await?
+        .into_inner();
+        if store.id != self.client.store_id() {
+            return Err(AuthError);
+        }
         Ok(())
     }
 
     async fn ensure_ready(&self) -> Result<(), AuthError> {
         self.ensure_available().await?;
-        bounded(
-            self.client
-                .client()
-                .read_authorization_model(ReadAuthorizationModelRequest {
-                    store_id: self.client.store_id().to_owned(),
-                    id: self.client.authorization_model_id().to_owned(),
-                }),
-        )
-        .await?;
+        let model = bounded(self.client.client().read_authorization_model(
+            ReadAuthorizationModelRequest {
+                store_id: self.client.store_id().to_owned(),
+                id: self.client.authorization_model_id().to_owned(),
+            },
+        ))
+        .await?
+        .into_inner()
+        .authorization_model
+        .ok_or(AuthError)?;
+        if model.id != self.client.authorization_model_id() {
+            return Err(AuthError);
+        }
         Ok(())
     }
 
@@ -168,7 +175,7 @@ impl Authorizer for OpenFgaGrpc {
                 .into_iter()
                 .map(|tuple| {
                     let key = tuple.key.ok_or(AuthError)?;
-                    if key.object != object {
+                    if key.object != object || key.user.is_empty() || key.relation.is_empty() {
                         return Err(AuthError);
                     }
                     Ok(Tuple {

@@ -105,7 +105,7 @@ impl Stand {
                 "postgres",
                 "psql",
                 "-U",
-                "petlab",
+                "authzlab",
                 "-d",
                 database,
                 "-v",
@@ -248,7 +248,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     // Quiesce both systems before backing up. Dumps and session hashes stay in memory.
     stage.run(&["stop", "-t", "2", "app", "openfga"]).await?;
     let mut dumps = Vec::new();
-    for database in ["petlab", "openfga"] {
+    for database in ["authzlab", "openfga"] {
         dumps.push((
             database,
             stage
@@ -258,7 +258,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
                     "postgres",
                     "pg_dump",
                     "-U",
-                    "petlab",
+                    "authzlab",
                     "-d",
                     database,
                     "--clean",
@@ -276,9 +276,9 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
             "postgres",
             "psql",
             "-U",
-            "petlab",
+            "authzlab",
             "-d",
-            "petlab",
+            "authzlab",
             "-v",
             "ON_ERROR_STOP=1",
             "-c",

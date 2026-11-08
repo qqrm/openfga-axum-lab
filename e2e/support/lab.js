@@ -8,6 +8,9 @@ if (!PASSWORD) {
 
 async function login(page, username) {
   await page.goto("/");
+  return signIn(page, username);
+}
+async function signIn(page, username) {
   await page.selectOption("#who", username);
   await page.fill("#password", PASSWORD);
   const [response] = await Promise.all([
@@ -35,10 +38,10 @@ async function api(request, method, path, token, data, status = 204) {
   expect(response.status(), method + " " + path).toBe(status);
   return response;
 }
-async function createTask(request, token, title = "E2E access review") {
+async function createTask(request, token, title = "E2E access review", description = "Disposable browser verification task.") {
   const response = await request.post("/tasks", {
     headers: { ...headers(token), "Idempotency-Key": randomUUID() },
-    data: { organization_id: "acme", title, description: "Disposable browser verification task.", status: "todo" },
+    data: { organization_id: "acme", title, description, status: "todo" },
   });
   expect(response.status()).toBe(201);
   return (await response.json()).id;
@@ -99,4 +102,4 @@ async function expectTaskEditable(page, editable) {
     else await expect(page.locator(selector)).toBeDisabled();
   }
 }
-module.exports = { PASSWORD, login, apiToken, headers, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds, expectTaskEditable };
+module.exports = { PASSWORD, login, signIn, apiToken, headers, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds, expectTaskEditable };

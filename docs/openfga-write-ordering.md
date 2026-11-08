@@ -1,9 +1,9 @@
-# Why ambiguous writes quarantine later mutations
+# Why ambiguous writes keep authorization closed
 
 An atomic OpenFGA Write and an idempotent retry do not establish ordering
 between separate requests. A successful replay cannot prove that an older
 request has stopped or will never arrive. The laboratory therefore preserves
-a read-only recovery state after replaying an attempted authorization job.
+a durable global authorization fence after replaying an attempted job.
 
 ## Verified upstream contract
 
@@ -65,12 +65,13 @@ the organization row lock. Consequently, process cancellation or a lost
 acknowledgement cannot erase the evidence that a remote write may exist.
 
 Recovery can replay that same durable, idempotent operation. Once acknowledged,
-the pending fence can be released for reads, while `authz_uncertain` keeps the
-organization's later mutations quarantined. Only the same operation may still
-arrive, so it cannot conflict with a newer graph change. All mutation routes
-must honor this state, including ownership, roles, grants, task creation,
-editing and deletion. Capabilities displayed to the user reflect the same
-restriction.
+the organization journal is finalized, but `authz_uncertain` and global cache
+debt remain. Every check, list, mutation and readiness probe stays closed until
+backend-drained recovery. Replaying an attempted job explicitly adds global
+debt even if the original process died before the cache's own marker committed.
+The same rule applies to a previously attempted SQL migration import batch.
+This stronger policy preserves the global fail-closed behavior introduced on
+main and prevents a later conflicting grant/revoke from crossing the fence.
 
 A reconstructed legacy lifecycle job has no durable evidence that it was never
 attempted. It must be treated conservatively as a replay as well.

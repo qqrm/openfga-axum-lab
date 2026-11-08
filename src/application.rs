@@ -31,6 +31,12 @@ pub trait Authorizer: Send + Sync {
     async fn delete_object(&self, object: &str) -> Result<(), AuthError>;
 }
 #[derive(Clone)]
+pub(crate) struct AuthorizationTarget {
+    pub(crate) store: String,
+    pub(crate) model: String,
+    pub(crate) model_sha256: String,
+}
+#[derive(Clone)]
 pub(crate) struct App {
     pub(crate) db: PgPool,
     pub(crate) authz_coordinator: PgPool,
@@ -38,6 +44,7 @@ pub(crate) struct App {
     pub(crate) login_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) dummy_password_hash: Arc<str>,
     pub(crate) metrics: crate::metrics::Metrics,
+    pub(crate) authorization_target: Option<AuthorizationTarget>,
 }
 #[derive(Clone, derive_more::Deref)]
 pub(crate) struct Identity(pub(crate) String);

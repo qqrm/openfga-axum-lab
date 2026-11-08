@@ -38,7 +38,7 @@ jobs:
           fallback: none
       - name: Require reviewed environment and successful exact-SHA checks
         run: |
-          registry_config=$(mktemp -d "$RUNNER_TEMP/petlab-registry.XXXXXX")
+          registry_config=$(mktemp -d "$RUNNER_TEMP/authzlab-registry.XXXXXX")
           echo "DOCKER_CONFIG=$registry_config" >> "$GITHUB_ENV"
           mkdir -p artifacts
           cargo +1.99.0 build --locked --bin lab-tool
@@ -55,13 +55,13 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then echo 'Release already exists; refusing replacement'; exit 1; fi
       - name: Build once and resolve dependency identities
         run: |
-          docker build --build-arg APP_REVISION="$GITHUB_SHA" -t petlab-release:ci .
+          docker build --build-arg APP_REVISION="$GITHUB_SHA" -t authzlab-release:ci .
           docker pull postgres:17-bookworm
           docker pull openfga/openfga:v1.10.3
           {
             echo "POSTGRES_IMAGE=$(docker image inspect postgres:17-bookworm --format '{{index .RepoDigests 0}}')"
             echo "OPENFGA_IMAGE=$(docker image inspect openfga/openfga:v1.10.3 --format '{{index .RepoDigests 0}}')"
-            echo "DELIVERY_IMAGE=$(docker image inspect petlab-release:ci --format '{{.Id}}')"
+            echo "DELIVERY_IMAGE=$(docker image inspect authzlab-release:ci --format '{{.Id}}')"
           } >> "$GITHUB_ENV"
       - name: Test the actual candidate image
         run: cargo +1.99.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
@@ -69,10 +69,10 @@ jobs:
         run: |
           image_tag="ghcr.io/${GITHUB_REPOSITORY,,}:candidate-$GITHUB_RUN_ID"
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag petlab-release:ci "$image_tag"
+          docker tag authzlab-release:ci "$image_tag"
           docker push "$image_tag"
           image=$(docker image inspect "$image_tag" --format '{{index .RepoDigests 0}}')
-          docker image rm "$image_tag" petlab-release:ci
+          docker image rm "$image_tag" authzlab-release:ci
           docker pull "$image"
           test "$(docker image inspect "$image" --format '{{.Id}}')" = "$DELIVERY_IMAGE"
           {

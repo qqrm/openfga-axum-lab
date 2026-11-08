@@ -112,7 +112,7 @@ impl Stack {
         compose.run(&["up", "-d", "openfga"]).await?;
         let postgres = compose.address("postgres", "5432").await?;
         let database = format!(
-            "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
+            "postgres://authzlab:{}@{postgres}/authzlab?sslmode=disable",
             compose.password
         );
         let fga_http_url = format!("http://{}", compose.address("openfga", "8080").await?);
@@ -173,10 +173,6 @@ impl Stack {
                 "FGA_MODEL",
                 concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
             )
-            .env(
-                "FGA_TUPLES",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/legacy.json"),
-            )
             .kill_on_drop(true);
         command
     }
@@ -193,7 +189,7 @@ impl Stack {
         Ok(())
     }
 
-    fn app_command(&self, fga_url: &str) -> Command {
+    pub fn app_command(&self, fga_url: &str) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
         command
             .env("DATABASE_URL", &self.database)
@@ -202,6 +198,7 @@ impl Stack {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
             )
             .env("FGA_URL", fga_url)
+            .env("FGA_HTTP_URL", &self.fga_http_url)
             .env("FGA_CONFIG", self.config_path())
             .env(
                 "FGA_MODEL",
@@ -209,6 +206,7 @@ impl Stack {
             )
             .env("AUTHZ_MODE", "openfga")
             .env("DEMO_SEED", "true")
+            .env("DEMO_MIGRATE", "true")
             .env("DEMO_PASSWORD", &self.password)
             .env("LISTEN_ADDR", "127.0.0.1:0")
             .env("RUST_LOG", "off")
@@ -237,8 +235,44 @@ impl Stack {
         Ok(())
     }
 
+    pub fn migration_command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lab-tool"));
+        command
+            .arg("migrate-authorization")
+            .env("DATABASE_URL", &self.database)
+            .env(
+                "MIGRATIONS_DIR",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
+            )
+            .env("FGA_URL", &self.fga_http_url)
+            .env("FGA_CONFIG", self.config_path())
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
+            .kill_on_drop(true);
+        command
+    }
+
+    pub async fn pool(&self) -> TestResult<sqlx::PgPool> {
+        Ok(sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&self.database)
+            .await?)
+    }
+
     pub async fn app(&self, fga_url: &str) -> TestResult<App> {
-        let mut child = self.app_command(fga_url).spawn()?;
+        Self::spawn_app(self.app_command(fga_url)).await
+    }
+
+    pub async fn app_unmigrated(&self, fga_url: &str) -> TestResult<App> {
+        let mut command = self.app_command(fga_url);
+        command.env("DEMO_MIGRATE", "false");
+        Self::spawn_app(command).await
+    }
+
+    pub async fn spawn_app(mut command: Command) -> TestResult<App> {
+        let mut child = command.spawn()?;
         let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let address = timeout(Duration::from_secs(60), async {
             while let Some(line) = stdout.next_line().await? {
@@ -253,6 +287,13 @@ impl Stack {
             return Err("test API is not bound to loopback".into());
         }
         tokio::spawn(async move { while matches!(stdout.next_line().await, Ok(Some(_))) {} });
+        // A durable authorization fence intentionally keeps /readyz at 503.
+        // Process startup is proved by listening and health, not readiness.
+        let health = client()?
+            .get(format!("http://{address}/healthz"))
+            .send()
+            .await?;
+        assert_eq!(health.status(), StatusCode::OK);
         Ok(App {
             url: format!("http://{address}"),
             child,
@@ -385,7 +426,7 @@ impl Stack {
         // Docker may assign different ephemeral host ports after a stop/start.
         let postgres = self.compose.address("postgres", "5432").await?;
         self.database = format!(
-            "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
+            "postgres://authzlab:{}@{postgres}/authzlab?sslmode=disable",
             self.compose.password
         );
         self.fga_http_url = format!("http://{}", self.compose.address("openfga", "8080").await?);

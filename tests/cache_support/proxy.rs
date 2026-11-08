@@ -82,6 +82,8 @@ struct Upstream {
     #[cfg(feature = "grpc")]
     client: Http2Client<HttpConnector, Body>,
     gate: Arc<Mutex<Option<Gate>>>,
+    #[cfg(not(feature = "grpc"))]
+    rejection: Arc<Mutex<Option<(&'static str, StatusCode)>>>,
     active: Arc<AtomicUsize>,
     idle: Arc<Notify>,
     unacknowledged_writes: Arc<AtomicUsize>,
@@ -125,6 +127,8 @@ impl Proxy {
             url,
             client,
             gate: Arc::new(Mutex::new(None)),
+            #[cfg(not(feature = "grpc"))]
+            rejection: Arc::new(Mutex::new(None)),
             active: Arc::new(AtomicUsize::new(0)),
             idle: Arc::new(Notify::new()),
             unacknowledged_writes: Arc::new(AtomicUsize::new(0)),
@@ -149,6 +153,18 @@ impl Proxy {
             upstream,
             task,
         })
+    }
+
+    // This module is also included by system.rs, which does not use this fault.
+    #[cfg(not(feature = "grpc"))]
+    #[allow(dead_code)]
+    pub async fn reject_once(&self, operation: &'static str, status: StatusCode) {
+        let mut rejection = self.upstream.rejection.lock().await;
+        assert!(
+            rejection.is_none(),
+            "Previous proxy rejection was not consumed"
+        );
+        *rejection = Some((operation, status));
     }
 
     pub async fn pause(&self, operation: &'static str, fail: bool) -> Pause {
@@ -263,6 +279,22 @@ async fn forward_request(
     body: Bytes,
 ) -> Result<Response, StatusCode> {
     let operation = uri.path().rsplit('/').next().unwrap_or_default();
+    let rejection = {
+        let mut rejection = upstream.rejection.lock().await;
+        if rejection
+            .as_ref()
+            .is_some_and(|(target, _)| *target == operation)
+        {
+            rejection.take().map(|(_, status)| status)
+        } else {
+            None
+        }
+    };
+    if let Some(status) = rejection {
+        // Reject before forwarding or counting an upstream write. The real
+        // graph must retain its tuple while the application remains fenced.
+        return Ok((status, [(header::CONTENT_TYPE, "application/json")], "{}").into_response());
+    }
     gate_operation(
         &upstream,
         operation,
@@ -353,6 +385,7 @@ async fn forward_grpc_request(
         "/openfga.v1.OpenFGAService/GetStore" => "healthz",
         "/openfga.v1.OpenFGAService/Check" => "check",
         "/openfga.v1.OpenFGAService/Write" => "write",
+        "/openfga.v1.OpenFGAService/ListObjects" => "list-objects",
         _ => "other",
     };
     let (parts, body) = request.into_parts();

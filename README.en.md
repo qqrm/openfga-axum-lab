@@ -14,8 +14,8 @@ Upstream `blocked` excludes reads and ordinary edits, but does not override
 `can_delete` or its `can_edit` branch. Removing one direct grant leaves any
 independent inherited path intact. Ownership transfer is owner-only, requires
 a current member and atomically replaces one owner tuple. A durable PostgreSQL
-journal fences pending changes. An uncertain replay restores reads but keeps
-writes quarantined until explicit backend-drain recovery; replay alone does not
+journal fences pending changes. An uncertain replay reconciles the graph but
+keeps reads, mutations and readiness closed until explicit backend-drained recovery; replay alone does not
 order a delayed old request against a newer transfer.
 
 The old schema/data are retained without exposing the former API. Existing
@@ -68,6 +68,12 @@ Russian version: [README.md](README.md).
 The manifests in `k8s/` use the application image and Rust `lab-tool` for
 bootstrap. They have not been deployed or validated in a cluster by this CI.
 Use Compose or the private Codespaces lab for the verified installation path.
+The sample Kubernetes database and model-config volumes use `emptyDir` and are
+disposable. Replacing only the application Pod loses its pinned config while
+SQL can retain the old binding; bootstrap then creates a different store and
+startup correctly refuses that mismatch. A persistent installation must retain
+both databases and the config together. The app's readiness probe uses `/readyz`
+so an authorization fence cannot be reported as a ready service.
 
 ## OpenFGA transport
 
@@ -81,21 +87,37 @@ two-second request deadlines. CI exercises the real stack, cache races and
 recovery scenarios separately for both transports. `/readyz` probes PostgreSQL,
 the selected transport, the store and the configured model without cached decisions.
 
-Compose builds gRPC by default. For HTTP, set both the build feature and endpoint:
+Compose builds HTTP by default. For gRPC, set both the build feature and endpoint:
 
 ```sh
-FGA_TRANSPORT=http FGA_APP_URL=http://openfga:8080 docker compose up --build
+FGA_TRANSPORT=grpc FGA_APP_URL=http://openfga:8081 docker compose up --build
 ```
 
 The earlier timing comparison used different consistency settings and cannot
 support performance claims. See the [diagnostic benchmark instructions](README.md#backend-diagnostic-benchmark)
-for rerunning the corrected tool, which aborts on authorization errors or denials.
+for rerunning the corrected tool, which aborts on errors or unexpected decisions/sets.
 
 ## Verified delivery and private browser labs
 
 The [delivery guide](docs/delivery.md) describes image-only installation,
 isolated environments, acceptance checks, recovery and release promotion.
 The [browser lab guide](docs/live-lab.md) covers private Codespaces and bounded
-Actions sessions. Delivery uses gRPC images by default; an explicitly built HTTP
-image also needs `FGA_APP_URL=http://openfga:8080` in its Compose environment.
+Actions sessions. Delivery uses HTTP images by default; an explicitly built gRPC
+image also needs `FGA_APP_URL=http://openfga:8081` in its Compose environment.
 Bootstrap always uses OpenFGA's HTTP API on port 8080.
+
+## Authorization cutover and runtime boundaries
+
+Bootstrap provisions an empty store and the pinned model. The demo explicitly
+opts into SQL seeding and verified migration; an ordinary installation requires
+[the SQL cutover procedure](docs/migration.md). Migration freezes/binds its source,
+checkpoints import and verifies exact tuples plus independent positive/negative
+decisions before activation. Active reruns do not regrant revoked permissions.
+
+Every allow uses a live Check; only denials are cached. The task API enumerates
+a complete SQL candidate set within a 256-object budget and returns 503 if that
+budget is exceeded. The lab does not present a partial ListObjects result as a
+complete list or claim production pagination. Typed HTTP IDs, unique bearer and
+idempotency headers, a 16 KiB body bound, no-store and CSP protect request and
+browser boundaries. `/model` and `/model/schema` expose provenance and the
+executable model without protected application data.

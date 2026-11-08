@@ -47,6 +47,45 @@ pub fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
+// The browser compiles the pure lifecycle module directly with rustc. HTTP
+// identifiers use serde only in the server build; raw OpenFGA syntax is never
+// accepted as an application identifier.
+#[cfg(not(target_arch = "wasm32"))]
+mod identifiers {
+    macro_rules! identifier {
+        ($name:ident) => {
+            #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+            #[serde(transparent)]
+            pub struct $name(String);
+
+            impl std::ops::Deref for $name {
+                type Target = str;
+                fn deref(&self) -> &str {
+                    &self.0
+                }
+            }
+
+            impl<'de> serde::Deserialize<'de> for $name {
+                fn deserialize<D: serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> Result<Self, D::Error> {
+                    let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+                    if super::valid_id(&value) {
+                        Ok(Self(value))
+                    } else {
+                        Err(serde::de::Error::custom("invalid identifier"))
+                    }
+                }
+            }
+        };
+    }
+    identifier!(OrganizationId);
+    identifier!(TaskId);
+    identifier!(UserId);
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub use identifiers::{OrganizationId, TaskId, UserId};
+
 pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
     !title.trim().is_empty()
         && title.len() <= 160

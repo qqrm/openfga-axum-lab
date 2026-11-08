@@ -26,3 +26,16 @@ the Rust/Axum application policies are local to this laboratory.
 The original repository contained no NOTICE file at the pinned revision.
 This attribution does not imply Openlane endorsement or affiliation.
 Further provenance and policy details are in docs/openlane-model.md.
+
+Retained historical Lakekeeper model
+
+The unchanged retired model in fga/upstream/lakekeeper-model.json comes from
+Lakekeeper v4.15, revision b73d5f8083a690ca4f533559e6ef3cbc6fbc13d6. It is retained
+for provenance and compatibility review; the application uses Openlane.
+Its original Apache-2.0 license and NOTICE are preserved verbatim in
+fga/upstream/lakekeeper.LICENSE and fga/upstream/lakekeeper.NOTICE.
+
+Lakekeeper
+Copyright 2024-2026 Vakamo Inc.
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/)

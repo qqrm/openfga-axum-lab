@@ -538,8 +538,12 @@ async fn uncertain_owner_transfer_fences_the_organization_and_replays_after_rest
                 )
                 .await?;
             }
-            // The fence is local to the affected organization.
-            expect(other_api.call(M::GET, "/tasks/other-review", &erin), S::OK).await?;
+            // A write whose outcome is unknown fences every replica/scope.
+            expect(
+                other_api.call(M::GET, "/tasks/other-review", &erin),
+                S::SERVICE_UNAVAILABLE,
+            )
+            .await?;
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
         }
     );
@@ -552,15 +556,14 @@ async fn uncertain_owner_transfer_fences_the_organization_and_replays_after_rest
     assert!(!stack.authorization_pending("acme").await?);
     stack.assert_single_owner(&client, "acme", "bob").await?;
     for api in [&other_api, &recovered_api] {
-        expect(
-            api.call(M::GET, "/tasks/access-review", &alice),
-            S::FORBIDDEN,
-        )
-        .await?;
-        let task = expect(api.call(M::GET, "/tasks/access-review", &bob), S::OK).await?;
-        assert_eq!(task["can_delete"], false);
-        assert_eq!(task["can_edit"], false);
-        assert_eq!(task["recovery_required"], true);
+        for token in [&alice, &bob] {
+            expect(
+                api.call(M::GET, "/tasks/access-review", token),
+                S::SERVICE_UNAVAILABLE,
+            )
+            .await?;
+        }
+        expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     }
     expect(
         api_transfer(
@@ -579,7 +582,7 @@ async fn uncertain_owner_transfer_fences_the_organization_and_replays_after_rest
     let restarted_api = Api::new(client.clone(), &restarted);
     expect(
         restarted_api.call(M::GET, "/tasks/access-review", &alice),
-        S::FORBIDDEN,
+        S::SERVICE_UNAVAILABLE,
     )
     .await?;
     stack.assert_single_owner(&client, "acme", "bob").await?;
@@ -600,6 +603,16 @@ async fn uncertain_owner_transfer_fences_the_organization_and_replays_after_rest
     stack.recover_after_backend_drain(&stack.fga_url).await?;
     let drained = stack.app(&stack.fga_url).await?;
     let drained_api = Api::new(client.clone(), &drained);
+    expect(
+        drained_api.call(M::GET, "/tasks/access-review", &alice),
+        S::FORBIDDEN,
+    )
+    .await?;
+    expect(
+        drained_api.call(M::GET, "/tasks/access-review", &bob),
+        S::OK,
+    )
+    .await?;
     expect(
         api_transfer(
             &drained_api,
@@ -646,9 +659,12 @@ async fn buffered_old_write_cannot_cross_quarantine_into_a_new_owner_transfer() 
     let recovered = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &recovered);
     stack.assert_single_owner(&client, "acme", "bob").await?;
-    let task = expect(api.call(M::GET, "/tasks/access-review", &bob), S::OK).await?;
-    assert_eq!(task["recovery_required"], true);
-    assert_eq!(task["can_delete"], false);
+    expect(
+        api.call(M::GET, "/tasks/access-review", &bob),
+        S::SERVICE_UNAVAILABLE,
+    )
+    .await?;
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     expect(
         api_transfer(&api, "/organizations/acme/owner", &bob, "bob", "carol"),
         S::SERVICE_UNAVAILABLE,
@@ -729,6 +745,17 @@ async fn uncertain_creation_replays_without_duplicate_tasks_or_authority() -> Te
     drop(pause);
     captured?;
     creation?;
+    // The exact original request may reconcile its durable intent immediately,
+    // but it must not report 201 while the uncertain-write fence remains.
+    expect(
+        api.call(M::POST, "/tasks", &bob)
+            .header("Idempotency-Key", &key)
+            .json(&create_input("acme")),
+        S::SERVICE_UNAVAILABLE,
+    )
+    .await?;
+    assert!(!stack.authorization_pending("acme").await?);
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     app.stop().await?;
     let app = stack.app(&proxy.url).await?;
     let api = Api::new(client.clone(), &app);
@@ -740,18 +767,12 @@ async fn uncertain_creation_replays_without_duplicate_tasks_or_authority() -> Te
         S::SERVICE_UNAVAILABLE,
     )
     .await?;
-    let tasks = expect(api.call(M::GET, "/tasks", &bob), S::OK).await?;
-    assert!(
-        tasks
-            .as_array()
-            .ok_or("task list")?
-            .iter()
-            .all(|task| task["recovery_required"] == true && task["can_delete"] == false)
-    );
+    expect(api.call(M::GET, "/tasks", &bob), S::SERVICE_UNAVAILABLE).await?;
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     app.stop().await?;
     proxy.wait_idle().await?;
     stack.recover_after_backend_drain(&stack.fga_url).await?;
-    let app = stack.app(&stack.fga_url).await?;
+    let app = stack.app(&proxy.url).await?;
     let api = Api::new(client.clone(), &app);
     let first = expect(
         api.call(M::POST, "/tasks", &bob)
@@ -782,8 +803,26 @@ async fn uncertain_creation_replays_without_duplicate_tasks_or_authority() -> Te
             .count(),
         1
     );
-    expect(api.call(M::DELETE, &path, &bob), S::NO_CONTENT).await?;
+    let mut deletion_pause = proxy.pause("write", false).await;
+    let (deletion, captured) = tokio::join!(
+        expect(api.call(M::DELETE, &path, &bob), S::SERVICE_UNAVAILABLE),
+        deletion_pause.captured(),
+    );
+    captured?;
+    deletion?;
+    drop(deletion_pause);
+    // The same actor's exact delete retry reconciles the tombstone, but must
+    // remain 503 until the explicit drain procedure clears global uncertainty.
+    expect(api.call(M::DELETE, &path, &bob), S::SERVICE_UNAVAILABLE).await?;
+    assert!(!stack.authorization_pending("acme").await?);
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     stack.assert_no_tuples(&client, id).await?;
+    app.stop().await?;
+    proxy.wait_idle().await?;
+    stack.recover_after_backend_drain(&stack.fga_url).await?;
+    let app = stack.app(&stack.fga_url).await?;
+    let api = Api::new(client.clone(), &app);
+    expect(api.call(M::DELETE, &path, &bob), S::NO_CONTENT).await?;
     expect(
         api.call(M::POST, "/tasks", &bob)
             .header("Idempotency-Key", &key)
