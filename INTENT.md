@@ -1,9 +1,11 @@
-# Intent: first-class engineering for a small pet project
+# Intent: first-class engineering for a focused authorization laboratory
 
-Build an understandable pet-shelter service that demonstrates production-minded
-Rust engineering using realistic authorization, persistence and failures. The
-people, animals and local credentials are fictional. The goal is credible,
-reviewable engineering, not a claim of production certification.
+Build an understandable organization/task service adapted from the real
+Openlane OpenFGA model. Demonstrate Rust engineering with object authorization,
+ownership transfer, assignment, inherited permissions, persistence and failures.
+Retain the upstream provenance/license and describe local application policies.
+The example accounts, organizations and local credentials are demonstration
+data. The goal is credible, reviewable engineering, not production certification.
 
 ## What the project should demonstrate
 

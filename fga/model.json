@@ -1,49 +1,411 @@
 {
   "schema_version": "1.1",
   "type_definitions": [
-    {"type": "user"},
     {
-      "type": "shelter",
-      "relations": {
-        "admin": {"this": {}},
-        "staff": {"this": {}},
-        "can_create": {"union": {"child": [{"computedUserset": {"relation": "admin"}}, {"computedUserset": {"relation": "staff"}}]}},
-        "can_view": {"union": {"child": [{"computedUserset": {"relation": "admin"}}, {"computedUserset": {"relation": "staff"}}]}}
-      },
-      "metadata": {"relations": {
-        "admin": {"directly_related_user_types": [{"type": "user"}]},
-        "staff": {"directly_related_user_types": [{"type": "user"}]}
-      }}
+      "type": "user",
+      "metadata": {
+        "source_info": {
+          "file": "fga/model.fga"
+        }
+      }
     },
     {
-      "type": "pet",
+      "type": "organization",
       "relations": {
-        "shelter": {"this": {}},
-        "owner": {"this": {}},
-        "viewer": {"this": {}},
-        "caregiver": {"this": {}},
-        "can_view": {"union": {"child": [
-          {"computedUserset": {"relation": "owner"}},
-          {"computedUserset": {"relation": "viewer"}},
-          {"computedUserset": {"relation": "caregiver"}},
-          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "can_view"}}}
-        ]}},
-        "can_edit": {"union": {"child": [
-          {"computedUserset": {"relation": "owner"}},
-          {"computedUserset": {"relation": "caregiver"}},
-          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "admin"}}}
-        ]}},
-        "can_manage": {"union": {"child": [
-          {"computedUserset": {"relation": "owner"}},
-          {"tupleToUserset": {"tupleset": {"relation": "shelter"}, "computedUserset": {"relation": "admin"}}}
-        ]}}
+        "owner": {
+          "this": {}
+        },
+        "admin": {
+          "this": {}
+        },
+        "member": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "admin"
+                }
+              }
+            ]
+          }
+        },
+        "full_access": {
+          "computedUserset": {
+            "relation": "owner"
+          }
+        },
+        "can_delete": {
+          "computedUserset": {
+            "relation": "owner"
+          }
+        },
+        "can_edit": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "admin"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "can_view": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "member"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "admin"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "can_edit"
+                }
+              }
+            ]
+          }
+        },
+        "can_view_task": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "can_edit_task"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "full_access"
+                }
+              }
+            ]
+          }
+        },
+        "can_edit_task": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "can_delete_task"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "full_access"
+                }
+              }
+            ]
+          }
+        },
+        "can_delete_task": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "full_access"
+                }
+              }
+            ]
+          }
+        },
+        "can_create_task": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "can_edit"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "can_edit_task"
+                }
+              }
+            ]
+          }
+        }
       },
-      "metadata": {"relations": {
-        "shelter": {"directly_related_user_types": [{"type": "shelter"}]},
-        "owner": {"directly_related_user_types": [{"type": "user"}]},
-        "viewer": {"directly_related_user_types": [{"type": "user"}]},
-        "caregiver": {"directly_related_user_types": [{"type": "user"}]}
-      }}
+      "metadata": {
+        "source_info": {
+          "file": "fga/model.fga"
+        },
+        "relations": {
+          "owner": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "admin": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "can_view_task": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "can_edit_task": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "can_delete_task": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "task",
+      "relations": {
+        "parent_context": {
+          "this": {}
+        },
+        "assigner": {
+          "this": {}
+        },
+        "assignee": {
+          "this": {}
+        },
+        "parent_viewer": {
+          "tupleToUserset": {
+            "tupleset": {
+              "relation": "parent_context"
+            },
+            "computedUserset": {
+              "relation": "can_view_task"
+            }
+          }
+        },
+        "parent_editor": {
+          "tupleToUserset": {
+            "tupleset": {
+              "relation": "parent_context"
+            },
+            "computedUserset": {
+              "relation": "can_edit_task"
+            }
+          }
+        },
+        "parent_deleter": {
+          "tupleToUserset": {
+            "tupleset": {
+              "relation": "parent_context"
+            },
+            "computedUserset": {
+              "relation": "can_delete_task"
+            }
+          }
+        },
+        "deleter": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "assigner"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "parent_editor"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "parent_deleter"
+                }
+              }
+            ]
+          }
+        },
+        "editor": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "parent_editor"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "assignee"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "assigner"
+                }
+              }
+            ]
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "editor"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "parent_viewer"
+                }
+              }
+            ]
+          }
+        },
+        "blocked": {
+          "this": {}
+        },
+        "can_view": {
+          "difference": {
+            "base": {
+              "computedUserset": {
+                "relation": "viewer"
+              }
+            },
+            "subtract": {
+              "computedUserset": {
+                "relation": "blocked"
+              }
+            }
+          }
+        },
+        "can_edit": {
+          "union": {
+            "child": [
+              {
+                "difference": {
+                  "base": {
+                    "computedUserset": {
+                      "relation": "editor"
+                    }
+                  },
+                  "subtract": {
+                    "computedUserset": {
+                      "relation": "blocked"
+                    }
+                  }
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "can_delete"
+                }
+              }
+            ]
+          }
+        },
+        "can_delete": {
+          "computedUserset": {
+            "relation": "deleter"
+          }
+        }
+      },
+      "metadata": {
+        "source_info": {
+          "file": "fga/model.fga"
+        },
+        "relations": {
+          "parent_context": {
+            "directly_related_user_types": [
+              {
+                "type": "organization"
+              }
+            ]
+          },
+          "assigner": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "assignee": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "editor": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "blocked": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
     }
   ]
 }

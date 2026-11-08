@@ -1,6 +1,6 @@
 //! Pure domain decisions. Persistence and authorization are external effects.
 
-/// Persisted lifecycle of a pet; only [`Lifecycle::Active`] is visible.
+/// Persisted lifecycle of a task; only [`Lifecycle::Active`] is visible.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lifecycle {
     /// The record exists, but authorization provisioning has not completed.
@@ -25,14 +25,14 @@ impl Lifecycle {
     }
 }
 
-/// A completed application action that can advance a pet's lifecycle.
+/// A completed application action that can advance a task's lifecycle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
     /// The required authorization tuples have been provisioned.
     Provisioned,
     /// An authorized actor has started deletion.
     BeginDeletion,
-    /// All authorization tuples belonging to the pet have been removed.
+    /// All authorization tuples belonging to the task have been removed.
     TuplesRemoved,
 }
 
@@ -67,15 +67,41 @@ pub fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-/// Validates nonblank name/species and UTF-8 byte limits of 100/50/2000.
+/// Validates a nonblank title (at most 160 UTF-8 bytes), a description of at
+/// most 4000 bytes, and the task status `todo`, `in_progress` or `done`.
 ///
-/// The biography may be empty. This function does not modify or trim input.
-pub fn valid_pet(name: &str, species: &str, biography: &str) -> bool {
-    !name.trim().is_empty()
-        && name.len() <= 100
-        && !species.trim().is_empty()
-        && species.len() <= 50
-        && biography.len() <= 2000
+/// This function does not modify or trim input; the description may be empty.
+pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
+    !title.trim().is_empty()
+        && title.len() <= 160
+        && description.len() <= 4000
+        && matches!(status, "todo" | "in_progress" | "done")
+}
+
+/// Accepts an 8–128 byte ASCII letter/digit/hyphen/underscore request key.
+///
+/// Keys scope retries of task creation; they are not authentication tokens.
+pub fn valid_idempotency_key(key: &str) -> bool {
+    (8..=128).contains(&key.len())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Accepts mutable task relations; the assigner and computed permissions
+/// cannot be granted through the generic relation API.
+pub fn valid_task_relation(relation: &str) -> bool {
+    matches!(relation, "viewer" | "editor" | "assignee" | "blocked")
+}
+
+/// Accepts explicit task permission grants at the organization level.
+///
+/// Ownership and membership use separate, guarded operations.
+pub fn valid_organization_permission(relation: &str) -> bool {
+    matches!(
+        relation,
+        "can_view_task" | "can_edit_task" | "can_delete_task"
+    )
 }
 
 #[cfg(test)]
@@ -94,11 +120,20 @@ mod tests {
     }
     #[test]
     fn validates_identifiers_and_input() {
-        assert!(valid_id("fox-123"));
-        assert!(!valid_id("pet:fox"));
+        assert!(valid_id("access-review-123"));
+        assert!(!valid_id("task:review"));
         assert!(!valid_id(""));
         assert!(!valid_id(&"x".repeat(65)));
-        assert!(!valid_pet("", "fox", ""));
+        assert!(!valid_task("", "", "todo"));
+        assert!(valid_task(
+            "Review access",
+            "Evidence required",
+            "in_progress"
+        ));
+        assert!(!valid_task("Review access", "", "active"));
+        assert!(!valid_task_relation("assigner"));
+        assert!(!valid_task_relation("can_delete"));
+        assert!(!valid_organization_permission("owner"));
     }
 }
 

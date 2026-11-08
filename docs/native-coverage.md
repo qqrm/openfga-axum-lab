@@ -25,8 +25,11 @@ cargo llvm-cov report --show-missing-lines
 ```
 
 The first run executes ordinary native tests; the second explicitly runs the
-seven ignored system scenarios and the two-replica cache/fault scenario against
-real PostgreSQL and OpenFGA. Instrumentation also applies to the ordinary
+ignored system scenarios, including organization/owner transitions, and
+the multi-replica cache/fault scenarios against
+real PostgreSQL and OpenFGA over the default HTTP adapter. The independent
+release integration matrix still verifies HTTP and gRPC; this coverage report
+does not claim to measure gRPC execution. Instrumentation also applies to the ordinary
 `CARGO_BIN_EXE_openfga-axum-lab` and `CARGO_BIN_EXE_lab-tool` executables built by
 Cargo, not just to test harnesses. `--no-report` accumulates both runs after an
 explicit clean. Do not run the instrumented commands inside an independently
@@ -41,7 +44,7 @@ Docker-built application images, OpenFGA/PostgreSQL internals, the separate
 browser/WASM package and doctest executions are **outside this measurement**.
 The original release-mode integration, Compose image, latency, browser,
 formal and security jobs remain required. Instrumented timings are not used as
-performance evidence; the Criterion benchmark from PR #8 is not selected.
+performance evidence; the separate Criterion benchmarks are not selected.
 
 ## Child process and profile integrity
 
@@ -56,8 +59,8 @@ containing a UUID, `%p` (PID) and `%m` (instrumented module). It stays beside th
 test profiles in cargo-llvm-cov's target directory. After normal exit, the test
 requires that child's profile to exist and be nonempty. Cargo-llvm-cov merges
 the profiles with its default strict failure mode. CI also requires executed
-functions from main, HTTP, authentication, authorization cache, infrastructure
-and use-case source files, so client-only coverage cannot pass.
+functions from main/server, HTTP/authentication, authorization cache,
+infrastructure, task/organization use cases and durable authorization source files, so client-only coverage cannot pass.
 
 The `native-rust-coverage` artifact retains HTML, LLVM JSON, LCOV, annotated
 source, summary/missing lines, both JUnit reports, environment metadata, raw

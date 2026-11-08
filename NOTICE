@@ -1,0 +1,41 @@
+Openlane authorization model attribution
+
+Portions of fga/model.fga and its JSON representation fga/model.json are
+derived from the Openlane core authorization model.
+
+Copyright 2026 theopenlane, Inc.
+Licensed under the Apache License, Version 2.0.
+The complete license is in LICENSES/Apache-2.0-Openlane.txt.
+
+Source: https://github.com/theopenlane/core
+Pinned revision: 1c38df0a53530c8c39eb0784862b06eaa3e26f58
+
+Source files:
+  fga/model/base/organization.fga
+  fga/model/base/task.fga
+  fga/model/roles/roles.fga
+  fga/model/generated/crud.fga
+
+MODIFIED for qqrm/openfga-axum-lab: flattened a users-only subset of the
+organization and task modules from schema 1.2 into schema 1.1. Removed
+services, groups, specialized roles, conditions, organization hierarchy,
+task templates, other parent types, and unrelated compliance objects.
+Preserved the upstream blocked/edit/delete precedence. Demo records and
+the Rust/Axum application policies are local to this laboratory.
+
+The original repository contained no NOTICE file at the pinned revision.
+This attribution does not imply Openlane endorsement or affiliation.
+Further provenance and policy details are in docs/openlane-model.md.
+
+Retained historical Lakekeeper model
+
+The unchanged retired model in fga/upstream/lakekeeper-model.json comes from
+Lakekeeper v4.15, revision b73d5f8083a690ca4f533559e6ef3cbc6fbc13d6. It is retained
+for provenance and compatibility review; the application uses Openlane.
+Its original Apache-2.0 license and NOTICE are preserved verbatim in
+fga/upstream/lakekeeper.LICENSE and fga/upstream/lakekeeper.NOTICE.
+
+Lakekeeper
+Copyright 2024-2026 Vakamo Inc.
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/)

@@ -1,2 +1,2 @@
-INSERT INTO pets(id,name,species,biography,owner_id,status)
-VALUES ('recovery-fixture','Luna','cat','Recovery fixture','carol','pending');
+INSERT INTO tasks(id,organization_id,title,description,task_status,assigner_id,status)
+VALUES ('recovery-fixture','acme','Recovery control','Recovery fixture','todo','carol','pending');

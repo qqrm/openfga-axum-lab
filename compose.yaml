@@ -2,14 +2,14 @@ services:
   postgres:
     image: postgres:17-bookworm
     environment:
-      POSTGRES_USER: petlab
-      POSTGRES_PASSWORD: petlab-local-only
-      POSTGRES_DB: petlab
+      POSTGRES_USER: authzlab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: authzlab
     volumes:
       - database:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/01-create-openfga.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U petlab -d petlab"]
+      test: ["CMD-SHELL", "pg_isready -U authzlab -d authzlab"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -21,7 +21,7 @@ services:
         condition: service_healthy
     environment: &fga-db
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_URI: postgres://authzlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/openfga?sslmode=disable
     command: migrate
     networks: [lab]
   openfga:
@@ -33,7 +33,10 @@ services:
     command: run
     networks: [lab]
   bootstrap:
-    build: .
+    build:
+      context: .
+      args:
+        FGA_TRANSPORT: ${FGA_TRANSPORT:-http}
     image: openfga-axum-lab:local
     depends_on: [openfga]
     # Only initialization writes the shared configuration volume.
@@ -48,14 +51,19 @@ services:
       - fga-config:/data
     networks: [lab]
   app:
-    build: .
+    build:
+      context: .
+      args:
+        FGA_TRANSPORT: ${FGA_TRANSPORT:-http}
     image: openfga-axum-lab:local
     environment:
-      DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
-      FGA_URL: http://openfga:8080
+      DATABASE_URL: postgres://authzlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/authzlab?sslmode=disable
+      FGA_URL: ${FGA_APP_URL:-http://openfga:8080}
       FGA_CONFIG: /data/config.json
       DEMO_SEED: "true"
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
+      DEMO_MIGRATE: "true"
+      FGA_HTTP_URL: http://openfga:8080
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?set DEMO_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

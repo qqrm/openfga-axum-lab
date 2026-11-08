@@ -25,6 +25,7 @@ pub struct Stack {
     database: String,
     password: String,
     pub fga_url: String,
+    pub fga_http_url: String,
 }
 
 struct Compose {
@@ -46,6 +47,9 @@ impl Compose {
         command
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("CACHE_TEST_PASSWORD", &self.password)
+            .env("POSTGRES_PASSWORD", &self.password)
+            // Compose interpolates every service, including the unused app.
+            .env("DEMO_PASSWORD", &self.password)
             .args([
                 "compose",
                 "-p",
@@ -102,22 +106,29 @@ impl Drop for Compose {
 impl Stack {
     pub async fn start(client: &Client) -> TestResult<Self> {
         let compose = Compose {
-            project: format!("petlab-test-{}", Uuid::new_v4()),
+            project: format!("openlane-test-{}", Uuid::new_v4()),
             password: Uuid::new_v4().to_string(),
         };
         compose.run(&["up", "-d", "openfga"]).await?;
         let postgres = compose.address("postgres", "5432").await?;
         let database = format!(
-            "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
+            "postgres://authzlab:{}@{postgres}/authzlab?sslmode=disable",
             compose.password
         );
-        let fga_url = format!("http://{}", compose.address("openfga", "8080").await?);
+        let fga_http_url = format!("http://{}", compose.address("openfga", "8080").await?);
+        let port = if cfg!(feature = "grpc") {
+            "8081"
+        } else {
+            "8080"
+        };
+        let fga_url = format!("http://{}", compose.address("openfga", port).await?);
         let stack = Self {
             compose,
             config_dir: tempfile::tempdir()?,
             database,
             password: Uuid::new_v4().to_string(),
             fga_url,
+            fga_http_url,
         };
         stack.wait_ready(client).await?;
         stack.bootstrap().await?;
@@ -127,7 +138,10 @@ impl Stack {
     async fn wait_ready(&self, client: &Client) -> TestResult {
         timeout(Duration::from_secs(60), async {
             loop {
-                if let Ok(response) = client.get(format!("{}/healthz", self.fga_url)).send().await
+                if let Ok(response) = client
+                    .get(format!("{}/healthz", self.fga_http_url))
+                    .send()
+                    .await
                     && response.status() == StatusCode::OK
                     && let Ok(body) = response.json::<Value>().await
                     && body["status"] == "SERVING"
@@ -153,15 +167,11 @@ impl Stack {
         let mut command = Command::new(env!("CARGO_BIN_EXE_lab-tool"));
         command
             .arg("bootstrap")
-            .env("FGA_URL", &self.fga_url)
+            .env("FGA_URL", &self.fga_http_url)
             .env("FGA_CONFIG", self.config_path())
             .env(
                 "FGA_MODEL",
                 concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
-            )
-            .env(
-                "FGA_TUPLES",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/legacy.json"),
             )
             .kill_on_drop(true);
         command
@@ -179,7 +189,7 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
+    pub fn app_command(&self, fga_url: &str) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
         command
             .env("DATABASE_URL", &self.database)
@@ -188,14 +198,80 @@ impl Stack {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
             )
             .env("FGA_URL", fga_url)
+            .env("FGA_HTTP_URL", &self.fga_http_url)
             .env("FGA_CONFIG", self.config_path())
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
             .env("AUTHZ_MODE", "openfga")
             .env("DEMO_SEED", "true")
+            .env("DEMO_MIGRATE", "true")
             .env("DEMO_PASSWORD", &self.password)
             .env("LISTEN_ADDR", "127.0.0.1:0")
             .env("RUST_LOG", "off")
             .stdout(Stdio::piped())
             .kill_on_drop(true);
+        command
+    }
+
+    /// The caller must stop every test application and prove the test proxy has
+    /// completed all captured writes before invoking this explicit operator step.
+    pub async fn recover_after_backend_drain(&self, fga_url: &str) -> TestResult {
+        let output = timeout(
+            Duration::from_secs(60),
+            self.app_command(fga_url)
+                .arg("--recover-authorization-after-backend-drain")
+                .output(),
+        )
+        .await??;
+        if !output.status.success() {
+            return Err(format!(
+                "drained authorization recovery failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    pub fn migration_command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lab-tool"));
+        command
+            .arg("migrate-authorization")
+            .env("DATABASE_URL", &self.database)
+            .env(
+                "MIGRATIONS_DIR",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
+            )
+            .env("FGA_URL", &self.fga_http_url)
+            .env("FGA_CONFIG", self.config_path())
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
+            .kill_on_drop(true);
+        command
+    }
+
+    pub async fn pool(&self) -> TestResult<sqlx::PgPool> {
+        Ok(sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&self.database)
+            .await?)
+    }
+
+    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
+        Self::spawn_app(self.app_command(fga_url)).await
+    }
+
+    pub async fn app_unmigrated(&self, fga_url: &str) -> TestResult<App> {
+        let mut command = self.app_command(fga_url);
+        command.env("DEMO_MIGRATE", "false");
+        Self::spawn_app(command).await
+    }
+
+    pub async fn spawn_app(mut command: Command) -> TestResult<App> {
         // Keep profiles in cargo-llvm-cov's directory, but give this child a
         // distinct prefix so a test-client profile cannot satisfy its check.
         let coverage_profile = std::env::var_os("LLVM_PROFILE_FILE").map(|pattern| {
@@ -219,6 +295,13 @@ impl Stack {
             return Err("test API is not bound to loopback".into());
         }
         tokio::spawn(async move { while matches!(stdout.next_line().await, Ok(Some(_))) {} });
+        // A durable authorization fence intentionally keeps /readyz at 503.
+        // Process startup is proved by listening and health, not readiness.
+        let health = client()?
+            .get(format!("http://{address}/healthz"))
+            .send()
+            .await?;
+        assert_eq!(health.status(), StatusCode::OK);
         Ok(App {
             url: format!("http://{address}"),
             child,
@@ -241,7 +324,7 @@ impl Stack {
             .to_owned())
     }
 
-    pub async fn sql(&self, statement: &str) -> TestResult {
+    pub async fn sql(&self, statement: &'static str) -> TestResult {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&self.database)
@@ -249,6 +332,98 @@ impl Stack {
         let result = sqlx::query(statement).execute(&pool).await;
         pool.close().await;
         result?;
+        Ok(())
+    }
+
+    pub async fn task_row_is_locked(&self, id: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        // This independent autocommit probe releases any acquired lock before
+        // returning, including when it discovers a missing mutation lock.
+        let result =
+            sqlx::query_scalar::<_, String>("SELECT id FROM tasks WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(id)
+                .fetch_optional(&pool)
+                .await;
+        pool.close().await;
+        match result {
+            Ok(Some(_)) => Ok(false),
+            Ok(None) => Err("task lock probe requires an existing task".into()),
+            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
+                Ok(true)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub async fn organization_row_is_locked(&self, id: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        let result = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM organizations WHERE id=$1 FOR UPDATE NOWAIT",
+        )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await;
+        pool.close().await;
+        match result {
+            Ok(Some(_)) => Ok(false),
+            Ok(None) => Err("organization lock probe requires an existing organization".into()),
+            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
+                Ok(true)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub async fn authorization_pending(&self, organization: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        let result =
+            sqlx::query_scalar::<_, bool>("SELECT authz_pending FROM organizations WHERE id=$1")
+                .bind(organization)
+                .fetch_one(&pool)
+                .await;
+        pool.close().await;
+        Ok(result?)
+    }
+
+    pub async fn assert_single_owner(
+        &self,
+        client: &Client,
+        organization: &str,
+        owner: &str,
+    ) -> TestResult {
+        let config = self.config()?;
+        let store = config["store_id"].as_str().ok_or("missing store id")?;
+        let response: TuplePage = client
+            .post(format!("{}/stores/{store}/read", self.fga_http_url))
+            .json(&json!({
+                "tuple_key": {"object": format!("organization:{organization}"), "relation": "owner"},
+                "page_size": 100,
+                "consistency": "HIGHER_CONSISTENCY"
+            }))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert!(
+            response.continuation_token.is_empty(),
+            "unexpected additional owners"
+        );
+        assert_eq!(
+            response.tuples.len(),
+            1,
+            "organization must have exactly one owner tuple"
+        );
+        assert_eq!(response.tuples[0]["key"]["user"], format!("user:{owner}"));
         Ok(())
     }
 
@@ -260,10 +435,16 @@ impl Stack {
         // Docker may assign different ephemeral host ports after a stop/start.
         let postgres = self.compose.address("postgres", "5432").await?;
         self.database = format!(
-            "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
+            "postgres://authzlab:{}@{postgres}/authzlab?sslmode=disable",
             self.compose.password
         );
-        self.fga_url = format!("http://{}", self.compose.address("openfga", "8080").await?);
+        self.fga_http_url = format!("http://{}", self.compose.address("openfga", "8080").await?);
+        let port = if cfg!(feature = "grpc") {
+            "8081"
+        } else {
+            "8080"
+        };
+        self.fga_url = format!("http://{}", self.compose.address("openfga", port).await?);
         self.wait_ready(client).await
     }
 
@@ -272,12 +453,12 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn assert_no_tuples(&self, client: &Client, pet: &str) -> TestResult {
+    pub async fn assert_no_tuples(&self, client: &Client, task: &str) -> TestResult {
         let config = self.config()?;
         let store = config["store_id"].as_str().ok_or("missing store id")?;
         let response: TuplePage = client
-            .post(format!("{}/stores/{store}/read", self.fga_url))
-            .json(&json!({"tuple_key": {"object": format!("pet:{pet}")},
+            .post(format!("{}/stores/{store}/read", self.fga_http_url))
+            .json(&json!({"tuple_key": {"object": format!("task:{task}")},
                 "consistency": "HIGHER_CONSISTENCY"}))
             .send()
             .await?
@@ -286,7 +467,7 @@ impl Stack {
             .await?;
         assert!(
             response.tuples.is_empty() && response.continuation_token.is_empty(),
-            "deleted pet still has authorization tuples"
+            "deleted task still has authorization tuples"
         );
         Ok(())
     }

@@ -8,3 +8,10 @@ docs
 scripts
 compose*.yaml
 *.md
+dist
+staging
+stable
+local
+.lab
+**/environment.env
+**/secrets

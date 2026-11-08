@@ -2,13 +2,12 @@
 
 This increment implements the documentation/browser/toolchain portion of
 [#11](https://github.com/qqrm/openfga-axum-lab/issues/11). It does not complete
-the domain-type, dispatch, allocation or sanitizer work. The separate
-[native coverage increment](native-coverage.md) measures the real Axum children.
+the domain-type, dispatch, allocation, coverage or sanitizer work.
 
 ## Toolchain and update policy
 
 Development, explicit CI Rust installations, Pages builds and the Docker
-builder use Rust **1.99.1**. Nextest installations use **0.9.151**. The upstream
+builder and devcontainer use Rust **1.99.1**. Nextest installations use **0.9.151**. The upstream
 release announcements and official Docker image definition were checked on
 2026-11-07:
 
@@ -37,7 +36,9 @@ remain open items in #11; no second dependency-management service is added.
 
 `src/lib.rs` contains four examples covering lifecycle progression, rejection
 of invalid transitions, identifier boundaries and UTF-8 byte limits. Public
-library items require documentation. CI builds rustdoc with warnings denied
+pure-domain items and the scalar browser ABI require documentation. Server
+modules remain visible for the real integration and benchmark harnesses; this
+increment does not pretend all server interfaces have complete API docs. CI builds rustdoc with warnings denied
 and executes examples separately from nextest:
 
 ```sh
@@ -88,16 +89,16 @@ existing JS interface; the size-oriented settings are expressed in Cargo's
 `wasm` profile rather than a hand-written rustc invocation.
 
 CI uploads browser JUnit and HTML as `browser-cargo-results`. It retains the
-normal `rust`, `integration`, `shell`, `formal`, `browser-demo` requirements
-of `ci-gate`, adds native `coverage`, and keeps the `workflow_dispatch` entry
-point. A/A remains separately
+normal `rust`, `integration`, `shell`, `formal`, `browser-demo`, `browser-e2e`, `coverage` dependency list
+of `ci-gate` and the `workflow_dispatch` entry point. A/A remains separately
 manual. Neither Pages publication nor release publication is run by this PR.
 
 ## Scope boundaries
 
 No authorization decisions, wire/storage formats, cache consistency protocol,
 cryptography, SQL behavior or runtime abstraction have been changed here.
-Property/mutation tests, applicable sanitizers, semantic newtypes,
-dispatch/allocation changes and custom harness
-simplification still require separate implementation and execution evidence.
+[Native Axum child-process coverage](native-coverage.md) is implemented in a
+separate required job. Property/mutation tests, applicable sanitizers, further
+semantic newtypes, dispatch/allocation changes and custom harness simplification
+still require separate implementation and execution evidence.
 No performance improvement is asserted by adding Cargo or documentation checks.
