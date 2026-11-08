@@ -19,6 +19,22 @@ impl Deployment {
         command
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("APP_PORT", "0")
+            .env(
+                "FGA_TRANSPORT",
+                if cfg!(feature = "grpc") {
+                    "grpc"
+                } else {
+                    "http"
+                },
+            )
+            .env(
+                "FGA_APP_URL",
+                if cfg!(feature = "grpc") {
+                    "http://openfga:8081"
+                } else {
+                    "http://openfga:8080"
+                },
+            )
             .env("DEMO_PASSWORD", &self.password)
             .env("POSTGRES_PASSWORD", &self.password)
             .args(["compose", "-p", &self.project, "-f", "compose.yaml"]);
@@ -87,6 +103,11 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         }
     })
     .await?;
+    assert_eq!(
+        client.get(format!("{base}/readyz")).send().await?.status(),
+        StatusCode::OK,
+        "the packaged image must probe its selected transport and model"
+    );
     let session: Value = client
         .post(format!("{base}/session"))
         .json(&json!({"username": "alice", "password": deployment.password}))

@@ -1,5 +1,4 @@
 use crate::application::{App, Identity, PetInput};
-use crate::use_cases::Error;
 use axum::{
     Json, Router,
     extract::{MatchedPath, Path, Request, State},
@@ -11,7 +10,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-fn bearer(headers: &HeaderMap) -> Option<&str> {
+mod auth;
+pub(crate) use auth::guard;
+
+pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -44,47 +46,9 @@ async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
         Err(error) => error_response(error),
     }
 }
-async fn guard(State(app): State<App>, mut request: Request, next: Next) -> Response {
-    let Some(token) = bearer(request.headers()) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let who = match app.authenticate(token).await {
-        Ok(Some(user)) => user,
-        Ok(None) => return StatusCode::UNAUTHORIZED.into_response(),
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-    };
-    let path = request
-        .extensions()
-        .get::<MatchedPath>()
-        .map(MatchedPath::as_str)
-        .unwrap_or("");
-    let id = request.uri().path().split('/').nth(2).unwrap_or("");
-    let decision = match (request.method(), path) {
-        (&Method::GET, "/pets") => Ok(()),
-        (&Method::POST, "/pets") => app.authorize_shelter_creation(&who).await,
-        (&Method::GET, "/pets/{id}") => app.authorize_pet(&who, id, "can_view").await,
-        (&Method::PATCH | &Method::DELETE, "/pets/{id}")
-        | (&Method::PUT | &Method::DELETE, "/pets/{id}/relations/{relation}/{subject}") => {
-            // Mutations authorize under the use case's pet row lock. An earlier
-            // check here could race deletion or changes to that same pet.
-            if openfga_axum_lab::domain::valid_id(id) {
-                Ok(())
-            } else {
-                Err(Error::Invalid)
-            }
-        }
-        _ => Err(Error::Forbidden),
-    };
-    match decision {
-        Ok(()) => {
-            request.extensions_mut().insert(Identity(who));
-            next.run(request).await
-        }
-        Err(error) => error_response(error),
-    }
-}
 
-fn error_response(error: Error) -> Response {
+fn error_response(error: crate::use_cases::Error) -> Response {
+    use crate::use_cases::Error;
     match error {
         Error::Invalid => StatusCode::BAD_REQUEST,
         Error::NotFound => StatusCode::NOT_FOUND,
@@ -172,7 +136,7 @@ pub(crate) fn router(app: App) -> Router {
         .route_layer(middleware::from_fn_with_state(app.clone(), guard))
         .route(
             "/",
-            get(|| async { Html(include_str!("../assets/index.html")) }),
+            get(|| async { Html(include_str!("../../assets/index.html")) }),
         )
         .route(
             "/assets/app.js",
@@ -182,7 +146,7 @@ pub(crate) fn router(app: App) -> Router {
                         axum::http::header::CONTENT_TYPE,
                         "text/javascript; charset=utf-8",
                     )],
-                    include_str!("../assets/app.js"),
+                    include_str!("../../assets/app.js"),
                 )
             }),
         )
@@ -191,7 +155,7 @@ pub(crate) fn router(app: App) -> Router {
             get(|| async {
                 (
                     [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
-                    include_str!("../assets/app.css"),
+                    include_str!("../../assets/app.css"),
                 )
             }),
         )

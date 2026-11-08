@@ -1,63 +1,27 @@
-//! Operational probes are not part of the authorization decision/cache path.
+//! Operational probes use the raw adapter, outside the authorization cache path.
+use crate::application::Authorizer;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
-use reqwest::Client;
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub(crate) struct Readiness {
     db: PgPool,
-    client: Client,
-    url: String,
-    store: String,
-    model: String,
-    enabled: bool,
+    backend: Arc<dyn Authorizer>,
 }
 impl Readiness {
-    pub(crate) fn new(db: PgPool, config: &Value) -> Result<Self, Box<dyn std::error::Error>> {
-        let field = |name: &str| {
-            config[name]
-                .as_str()
-                .filter(|v| !v.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| format!("missing {name}"))
-        };
-        Ok(Self {
-            db,
-            client: Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(Duration::from_secs(2))
-                .build()?,
-            url: std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into()),
-            store: field("store_id")?,
-            model: field("model_id")?,
-            enabled: std::env::var("AUTHZ_MODE").as_deref() != Ok("deny"),
-        })
-    }
-    async fn backend(&self) -> Result<(), reqwest::Error> {
-        // A model may remain readable after a soft-deleted store. Check both.
-        for path in [
-            "healthz".to_owned(),
-            format!("stores/{}", self.store),
-            format!("stores/{}/authorization-models/{}", self.store, self.model),
-        ] {
-            self.client
-                .get(format!("{}/{}", self.url, path))
-                .send()
-                .await?
-                .error_for_status()?
-                .bytes()
-                .await?;
-        }
-        Ok(())
+    pub(crate) fn new(db: PgPool, backend: Arc<dyn Authorizer>) -> Self {
+        Self { db, backend }
     }
 }
 async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
     let result = tokio::time::timeout(Duration::from_secs(3), async {
-        let (db, fga) = tokio::join!(sqlx::query("SELECT 1").execute(&state.db), state.backend());
-        state.enabled && db.is_ok() && fga.is_ok()
+        let (db, fga) = tokio::join!(
+            sqlx::query("SELECT 1").execute(&state.db),
+            state.backend.ensure_ready()
+        );
+        db.is_ok() && fga.is_ok()
     })
     .await
     .unwrap_or(false);

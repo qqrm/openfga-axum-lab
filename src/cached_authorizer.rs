@@ -85,10 +85,16 @@ impl CachedAuthorizer {
 
 #[async_trait]
 impl Authorizer for CachedAuthorizer {
+    #[tracing::instrument(skip(self), name = "authz_cache.ensure_available")]
     async fn ensure_available(&self) -> Result<(), AuthError> {
         self.inner.ensure_available().await
     }
 
+    async fn ensure_ready(&self) -> Result<(), AuthError> {
+        self.inner.ensure_ready().await
+    }
+
+    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "authz_cache.check")]
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         for _ in 0..3 {
             let before = self.revision().await?;
@@ -134,10 +140,12 @@ impl Authorizer for CachedAuthorizer {
         Err(AuthError)
     }
 
+    #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "authz_cache.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         self.mutate(self.inner.write(tuples, add)).await
     }
 
+    #[tracing::instrument(skip(self), fields(object = %object), name = "authz_cache.delete_object")]
     async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
         self.mutate(self.inner.delete_object(object)).await
     }

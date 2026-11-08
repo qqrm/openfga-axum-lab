@@ -12,7 +12,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
-          toolchain: '1.98.0'
+          toolchain: '1.99.0'
           components: rustfmt, clippy
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037
         with:
@@ -20,9 +20,9 @@ jobs:
           fallback: none
       - name: Validate source and tools
         run: |
-          cargo +1.98.0 fmt --all -- --check
-          cargo +1.98.0 clippy --locked --all-targets --all-features -- -D warnings
-          cargo +1.98.0 nextest run --locked --profile ci
+          cargo +1.99.0 fmt --all -- --check
+          cargo +1.99.0 clippy --locked --all-targets --all-features -- -D warnings
+          cargo +1.99.0 nextest run --locked --profile ci
       - name: Build candidate once
         run: |
           mkdir -p artifacts
@@ -31,12 +31,12 @@ jobs:
           echo "DELIVERY_IMAGE=$image" >> "$GITHUB_ENV"
           docker image inspect petlab-candidate:ci --format '{{.Id}} {{.Config.User}} {{json .Config.Labels}}' > artifacts/image.txt
       - name: Test packaged image on two disposable stands
-        run: cargo +1.98.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
+        run: cargo +1.99.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Record environment
         if: always()
         run: |
           mkdir -p artifacts
-          rustc +1.98.0 -Vv > artifacts/rustc.txt
+          rustc +1.99.0 -Vv > artifacts/rustc.txt
           docker version > artifacts/docker.txt
           git rev-parse HEAD > artifacts/commit.txt
           sha256sum Cargo.lock Dockerfile compose.release.yaml > artifacts/inputs.sha256

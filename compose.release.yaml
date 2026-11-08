@@ -53,7 +53,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/database-url
       DEMO_PASSWORD_FILE: /run/secrets/demo-password
       DEMO_SEED: "true"
-      FGA_URL: http://openfga:8080
+      FGA_URL: ${FGA_APP_URL:-http://openfga:8081}
       FGA_CONFIG: /data/config.json
     secrets: [database-url, demo-password]
     depends_on:

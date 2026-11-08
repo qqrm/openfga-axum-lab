@@ -33,7 +33,10 @@ services:
     command: run
     networks: [lab]
   bootstrap:
-    build: .
+    build:
+      context: .
+      args:
+        FGA_TRANSPORT: ${FGA_TRANSPORT:-grpc}
     image: openfga-axum-lab:local
     depends_on: [openfga]
     # Only initialization writes the shared configuration volume.
@@ -48,11 +51,14 @@ services:
       - fga-config:/data
     networks: [lab]
   app:
-    build: .
+    build:
+      context: .
+      args:
+        FGA_TRANSPORT: ${FGA_TRANSPORT:-grpc}
     image: openfga-axum-lab:local
     environment:
       DATABASE_URL: postgres://petlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/petlab?sslmode=disable
-      FGA_URL: http://openfga:8080
+      FGA_URL: ${FGA_APP_URL:-http://openfga:8081}
       FGA_CONFIG: /data/config.json
       DEMO_SEED: "true"
       DEMO_PASSWORD: ${DEMO_PASSWORD:?set DEMO_PASSWORD}

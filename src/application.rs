@@ -3,17 +3,21 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub(crate) struct AuthError;
+#[derive(Debug, thiserror::Error)]
+#[error("authorization backend unavailable")]
+pub struct AuthError;
 #[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct Tuple {
-    pub(crate) user: String,
-    pub(crate) relation: String,
-    pub(crate) object: String,
+pub struct Tuple {
+    pub user: String,
+    pub relation: String,
+    pub object: String,
 }
 #[async_trait]
-pub(crate) trait Authorizer: Send + Sync {
+pub trait Authorizer: Send + Sync {
     async fn ensure_available(&self) -> Result<(), AuthError>;
+    /// Probe the live transport, store and configured model for operational readiness.
+    /// This must not use cached authorization decisions.
+    async fn ensure_ready(&self) -> Result<(), AuthError>;
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError>;
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError>;
     async fn delete_object(&self, object: &str) -> Result<(), AuthError>;
@@ -26,7 +30,7 @@ pub(crate) struct App {
     pub(crate) dummy_password_hash: Arc<str>,
     pub(crate) metrics: crate::metrics::Metrics,
 }
-#[derive(Clone)]
+#[derive(Clone, derive_more::Deref)]
 pub(crate) struct Identity(pub(crate) String);
 #[derive(Serialize)]
 pub(crate) struct Pet {

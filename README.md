@@ -116,8 +116,8 @@ cargo nextest run --locked --release --profile ci --run-ignored all \
   -E 'not test(paired_aa_calibration) and not binary(delivery)' --success-output immediate
 ```
 
-В Codespace установлен Rust 1.98; для фиксированной версии используйте
-`cargo +1.98.0`. Nextest устанавливается приведённой командой, не скрытым
+В Codespace установлен Rust 1.99; для фиксированной версии используйте
+`cargo +1.99.0`. Nextest устанавливается приведённой командой, не скрытым
 скачиванием при каждом запуске лабы.
 
 | Workflow | Проверки и результаты |
@@ -157,3 +157,122 @@ OpenFGA errors закрывают доступ с 503, а не становят�
 собственных секретов, TLS, ограничения доступа и backup. Actions-лаборатория —
 не круглосуточный хостинг, не автоматически продлевается и не хранит данные
 между сеансами. Изменения идут через рабочую ветку и PR, без прямых push в main.
+
+## Инженерия и проверки
+
+[INTENT.md](INTENT.md) фиксирует цель, [AGENTS.md](AGENTS.md) — инструкции.
+Доменное ядро использует чистые функции и явные типы; Axum служит HTTP-слоем,
+а сценарии и интеграции вынесены отдельно. Свойства жизненного цикла проверены
+Kani в ограниченной модели. Прохождение модели не является доказательством
+всего распределённого сервиса.
+
+CI включает форматирование, Clippy, nextest, cargo-audit/deny/machete,
+ShellCheck, actionlint, zizmor, Kani и контейнерные сценарии с отказами.
+Намеренно ошибочные примеры проверяют чувствительность ряда инструментов.
+Rust-тест контракта запрещает возврат Python-исходников и Python-вызовов в
+workflows/Compose и проверяет наличие интеграционных наборов в ручном CI.
+Таблица покрытия и пробелов: [проверки](docs/verification.md).
+
+GitHub Dependabot использует расписание из пользовательского шаблона.
+Автослияние дополнительно проверяет защиту основной ветки и не включается,
+если требуемая защита отсутствует. Проверка подписей и авторства коммитов
+реализована в `lab-tool dependency-policy`; workflow с правом записи по-прежнему
+не извлекает и не выполняет код PR. CodeQL анализирует публичный репозиторий.
+
+В Cargo.lock присутствует необязательная MySQL-зависимость `rsa` из SQLx с
+RUSTSEC-2023-0071. Аудит допускает только это предупреждение и сначала требует,
+чтобы `rsa` отсутствовала в разрешённом графе для всех целей; появление
+зависимости в графе блокирует проверку.
+
+## Производительность и браузер
+
+Интерактивная версия в `browser-demo/` работает целиком в браузере: выбор
+роли и данные имитируются, а жизненный цикл использует то же доменное ядро
+Rust, собранное в WebAssembly. Настоящие Axum, OpenFGA и PostgreSQL в этой
+версии не запускаются. Для локальной сборки установите цель Rust
+`wasm32-unknown-unknown` и выполните `bash scripts/build-browser-demo.sh`,
+затем раздайте каталог `browser-output` любым HTTP-сервером. Ручной workflow
+`Browser preview` публикует этот вариант на GitHub Pages.
+
+Rust-тест `diagnostic_latency` фиксирует сырые задержки, ошибки и окружение.
+Отдельный ручной workflow выполняет рандомизированную A/A-калибровку.
+На виртуальном runner это диагностика, а не доказательство регрессии или
+ёмкости системы: [протокол](docs/performance.md).
+
+[Варианты запуска в браузере](docs/browser-feasibility.md) рассматриваются
+отдельно. Compose-стенд, эмуляция контейнеров и статическая демонстрация имеют
+разные гарантии. Настоящая контейнерная лаборатория проверяется отдельно
+workflow `Browser lab verification`.
+
+## Just-команды
+
+Установите [just](https://github.com/casey/just), затем:
+
+```sh
+just build
+just check
+just start
+just logs
+just test
+just stop
+```
+
+Необязательный Playwright-набор (`just e2e`) использует экспортированный
+`DEMO_PASSWORD` работающего локального стенда. Текущий CI этот набор не запускает.
+
+Английская версия: [README.en.md](README.en.md).
+
+## Kubernetes: экспериментальный путь
+
+Манифесты в `k8s/` используют тот же образ приложения и Rust `lab-tool` для
+инициализации. Сборка, применение в кластере и проверка сервиса в Kubernetes
+не входят в подтверждённые CI-проверки; этот путь пока не проверен в кластере.
+Для воспроизводимого стенда используйте описанный выше Compose или Codespaces.
+
+## OpenFGA transport
+
+The default `grpc` feature uses OpenFGA's native gRPC port 8081. The optional
+`http` feature uses port 8080. Bootstrap and test fixture inspection always use
+HTTP, independently of the application's selected transport. If both features
+are enabled, the application selects gRPC.
+
+```sh
+cargo build --locked
+cargo build --locked --no-default-features --features http
+```
+
+Both adapters request `HIGHER_CONSISTENCY`, tolerate duplicate grants and
+missing revocations, and bound authorization requests to two seconds. CI runs
+the real authorization, cache race, restart, recovery and Docker deployment
+suites separately for each transport. `/readyz` independently verifies PostgreSQL,
+the selected transport, the store and the configured authorization model. It
+never relies on an authorization cache hit.
+
+Compose builds gRPC by default. To build and run the HTTP variant, set both the
+build feature and the application's endpoint (bootstrap keeps using HTTP):
+
+```sh
+FGA_TRANSPORT=http FGA_APP_URL=http://openfga:8080 docker compose up --build
+```
+
+The image-only `compose.release.yaml` expects a gRPC image by default. If you
+explicitly build an HTTP image, also set `FGA_APP_URL=http://openfga:8080` for
+that environment. Bootstrap continues to use HTTP in either case.
+
+## Backend diagnostic benchmark
+
+`backend_bench` requires `FGA_URL`, `FGA_STORE` and `FGA_MODEL` for an existing
+isolated lab. `BACKEND` defaults to the enabled transport; `ITERS` defaults to
+1000 and must be positive. Any failed or denied authorization, including during
+warmup, aborts without publishing timings.
+
+```sh
+cargo run --locked --release --bin backend_bench
+cargo run --locked --release --no-default-features --features http --bin backend_bench
+```
+
+The previous gRPC/HTTP timing table was invalid: the adapters used different
+consistency settings and the runner counted failed checks as samples. Those
+numbers do not establish a performance difference. The current tool is a
+single-threaded diagnostic, not a capacity or SLO measurement; use repeated,
+paired runs with correctness and noise checks before making performance claims.

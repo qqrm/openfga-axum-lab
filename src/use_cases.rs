@@ -2,19 +2,27 @@
 //! PostgreSQL is deliberately a concrete dependency here: transactional row
 //! locks are part of the consistency contract rather than a generic CRUD port.
 use crate::application::{App, Pet, PetInput, Tuple};
-use openfga_axum_lab::domain::{self, Event, Lifecycle};
+use crate::domain::{self, Event, Lifecycle};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum Error {
+    #[error("invalid request")]
     Invalid,
+    #[error("not found")]
     NotFound,
+    #[error("conflict")]
     Conflict,
+    #[error("gone")]
     Gone,
+    #[error("service unavailable")]
     Unavailable,
+    #[error("forbidden")]
     Forbidden,
+    #[error("unauthenticated")]
     Unauthenticated,
+    #[error("too many requests")]
     Throttled,
 }
 type Result<T> = std::result::Result<T, Error>;

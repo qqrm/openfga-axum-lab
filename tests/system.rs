@@ -407,15 +407,33 @@ async fn pending_deletion_recovers_and_removes_all_tuples() -> TestResult {
 async fn openfga_outage_fails_closed_even_with_warm_allows() -> TestResult {
     let client = client()?;
     let stack = Stack::start(&client).await?;
-    let app = stack.app(&stack.fga_url).await?;
+    let proxy = proxy::Proxy::start(client.clone(), stack.fga_url.clone()).await?;
+    let app = stack.app(&proxy.url).await?;
     let api = Api::new(client.clone(), &app);
+    expect(api.request(M::GET, "/readyz"), S::OK).await?;
     let alice = stack.login(&client, &app, "alice").await?;
     for _ in 0..2 {
         for path in ["/pets/fox", "/pets"] {
             expect(api.call(M::GET, path, &alice), S::OK).await?;
         }
     }
+    // The real backend is healthy, but the application's selected transport fails.
+    // Readiness must see that failure instead of using a warm authorization result.
+    let mut pause = proxy.pause("healthz", true).await;
+    let (ready, upstream) = tokio::join!(
+        expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE),
+        async {
+            pause.captured().await?;
+            expect(client.get(format!("{}/healthz", stack.fga_http_url)), S::OK).await?;
+            drop(pause);
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        }
+    );
+    upstream?;
+    ready?;
+    expect(api.request(M::GET, "/readyz"), S::OK).await?;
     stack.stop_fga().await?;
+    expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
     for path in ["/pets/fox", "/pets"] {
         expect(api.call(M::GET, path, &alice), S::SERVICE_UNAVAILABLE).await?;
     }
@@ -442,7 +460,7 @@ async fn bootstrap_reuses_state_and_refuses_implicit_resets() -> TestResult {
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     client
-        .delete(format!("{}/stores/{store}", stack.fga_url))
+        .delete(format!("{}/stores/{store}", stack.fga_http_url))
         .send()
         .await?
         .error_for_status()?;
