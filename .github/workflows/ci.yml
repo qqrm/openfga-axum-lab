@@ -2,6 +2,9 @@ name: CI
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   shell:
     runs-on: ubuntu-latest
@@ -22,9 +25,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1
+      - uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
         with:
-          kani-version: '0.67.0'
+          kani-version: '0.68.0'
           args: '--lib'
       - run: bash scripts/kani-negative.sh
   browser-demo:
@@ -86,6 +89,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --locked --tests --benches
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo clippy --locked --all-targets --no-default-features --features http -- -D warnings
       - name: Build domain documentation and execute examples
         env:
           RUSTDOCFLAGS: -D warnings
@@ -100,7 +104,9 @@ jobs:
             cargo-deny@0.20.2
             cargo-machete@0.9.2
           fallback: none
-      - run: cargo nextest run --locked --profile ci
+      - run: cargo nextest run --locked --all-features --profile ci
+      - name: Verify the Openlane model and both adapters against pinned OpenFGA
+        run: bash scripts/test-openlane-model.sh
       - run: bash scripts/audit-dependencies.sh
       - run: bash scripts/audit-negative.sh
       - run: cargo deny check advisories bans sources
@@ -120,6 +126,10 @@ jobs:
           path: target/doc/
           if-no-files-found: ignore
   integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [grpc, http]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -134,9 +144,12 @@ jobs:
           tool: cargo-nextest@0.9.151
           fallback: none
       - name: Run real-stack scenarios, cache races, deployment and latency in Rust
+        env:
+          FGA_TRANSPORT: ${{ matrix.transport }}
         run: >-
           cargo nextest run --locked --release --profile ci
-          --test system --test cache_replicas --test compose_deployment --test performance
+          --no-default-features --features "$FGA_TRANSPORT"
+          --test system --test cache_replicas --test authorization_migration --test compose_deployment --test performance
           --run-ignored only -E 'not test(paired_aa_calibration)'
           --success-output immediate
       - name: Record Docker engine
@@ -147,14 +160,58 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: integration-nextest-results
+          name: integration-nextest-results-${{ matrix.transport }}
           path: |
             artifacts/
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
+  browser-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - transport: grpc
+            port: 8081
+          - transport: http
+            port: 8080
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      FGA_TRANSPORT: ${{ matrix.transport }}
+      FGA_APP_URL: http://openfga:${{ matrix.port }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Generate credentials for this disposable test stack
+        run: |
+          POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          DEMO_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$DEMO_PASSWORD"
+          {
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "DEMO_PASSWORD=$DEMO_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Install the locked browser test dependencies
+        working-directory: e2e
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
+      - name: Run browser scenarios against real Axum, PostgreSQL and OpenFGA
+        run: bash scripts/browser-e2e.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: browser-e2e-${{ matrix.transport }}
+          path: |
+            artifacts/browser-*
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
   ci-gate:
     if: always()
-    needs: [rust, integration, shell, formal, browser-demo]
+    needs: [rust, integration, shell, formal, browser-demo, browser-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks
@@ -164,9 +221,11 @@ jobs:
           SHELL_RESULT: ${{ needs.shell.result }}
           FORMAL_RESULT: ${{ needs.formal.result }}
           BROWSER_RESULT: ${{ needs.browser-demo.result }}
+          BROWSER_E2E_RESULT: ${{ needs.browser-e2e.result }}
         run: |
           test "$RUST_RESULT" = success
           test "$INTEGRATION_RESULT" = success
           test "$SHELL_RESULT" = success
           test "$FORMAL_RESULT" = success
           test "$BROWSER_RESULT" = success
+          test "$BROWSER_E2E_RESULT" = success

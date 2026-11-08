@@ -1,29 +1,52 @@
 "use strict";
-const pets = [
-  {id:"cat",name:"Pixel",species:"Кот",icon:"🐱",owner:"alice",viewers:["dave"],description:"Любит долгий сон и мурчит громче всех."},
-  {id:"dog",name:"Rex",species:"Собака",icon:"🐶",owner:"bob",viewers:[],description:"Обожает прогулки и новых друзей."},
-  {id:"fox",name:"Mika",species:"Лиса",icon:"🦊",owner:"carol",viewers:[],description:"Любопытная лиса с любовью к тишине."}
-];
+
+// This page deliberately does not reimplement OpenFGA in JavaScript. Only the
+// production lifecycle functions are executable here; the role table is prose.
 async function start() {
   const response = await fetch("domain.wasm");
-  if (!response.ok) throw new Error("Не удалось загрузить доменную модель.");
-  const {instance} = await WebAssembly.instantiate(await response.arrayBuffer());
-  if(instance.exports.next_state(1,1)!==2 || instance.exports.is_visible(2)!==0) throw new Error("Проверка модели не прошла.");
-  function draw() {
-    const user=document.getElementById("user").value, cards=document.getElementById("cards");
-    cards.replaceChildren();
-    for (const pet of pets) {
-      // Deliberate fixture simulation, not an OpenFGA decision.
-      if (!instance.exports.is_visible(1) || !(user==="alice" || user==="bob" || user===pet.owner || pet.viewers.includes(user))) continue;
-      const card=document.createElement("article"); card.className="card";
-      const portrait=document.createElement("div"); portrait.className="portrait"; portrait.textContent=pet.icon;
-      const content=document.createElement("div"); content.className="content";
-      const name=document.createElement("h3"); name.textContent=pet.name;
-      const description=document.createElement("p"); description.textContent=pet.description;
-      const species=document.createElement("span"); species.className="chip"; species.textContent=pet.species;
-      content.append(name,description,species); card.append(portrait,content); cards.append(card);
-    }
+  if (!response.ok) throw new Error("Не удалось загрузить Rust-модуль жизненного цикла.");
+  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer());
+  const { is_visible, next_state } = instance.exports;
+  if (next_state(1, 1) !== 2 || is_visible(2) !== 0 || next_state(3, 0) !== -1) {
+    throw new Error("Проверка Rust-модуля не прошла. Интерактивная часть отключена.");
   }
-  document.getElementById("user").addEventListener("change",draw); draw();
+  let state = 0;
+  const advance = document.getElementById("advance");
+  const restart = document.getElementById("restart");
+  function draw() {
+    for (const item of document.querySelectorAll("[data-state]")) {
+      const current = Number(item.dataset.state) === state;
+      item.classList.toggle("current", current);
+      if (current) item.setAttribute("aria-current", "step");
+      else item.removeAttribute("aria-current");
+    }
+    const visible = is_visible(state) === 1;
+    document.getElementById("lifecycle-result").textContent = visible
+      ? "active: объект можно передать на проверку прав OpenFGA; это ещё не разрешение доступа."
+      : ["pending: объект скрыт до подтверждения связей.", "", "deleting: объект уже скрыт, даже если удаление связей ещё не завершено.", "deleted: объект скрыт навсегда. Переход обратно в active запрещён."][state];
+    advance.textContent = ["Подтвердить создание", "Начать удаление", "Подтвердить удаление связей", "Удаление завершено"][state];
+    advance.disabled = state === 3;
+    restart.disabled = state === 0;
+  }
+  advance.addEventListener("click", () => {
+    const next = next_state(state, state);
+    if (next < 0) {
+      document.getElementById("error").textContent = "Rust отклонил переход состояния.";
+      advance.disabled = true;
+      return;
+    }
+    state = next;
+    draw();
+  });
+  restart.addEventListener("click", () => {
+    // A separate fixture, not resurrection of the deleted object.
+    state = 0;
+    draw();
+  });
+  document.getElementById("wasm-status").textContent = "Rust / WASM загружен";
+  draw();
 }
-start().catch(error=>{document.getElementById("error").textContent=error.message});
+start().catch((error) => {
+  document.getElementById("wasm-status").textContent = "WASM недоступен";
+  document.getElementById("error").textContent = error.message;
+});

@@ -9,4 +9,8 @@ cargo build --locked --offline \
   --target-dir "$repo_root/target/browser-demo"
 cp "$repo_root/target/browser-demo/wasm32-unknown-unknown/wasm/openfga_axum_browser_demo.wasm" "$output_dir/domain.wasm"
 cp "$repo_root/browser-demo/index.html" "$repo_root/browser-demo/style.css" "$repo_root/browser-demo/app.js" "$output_dir/"
+cp "$repo_root/fga/model.json" "$repo_root/fga/provenance.json" "$output_dir/"
+cp "$repo_root/NOTICE" "$output_dir/"
+mkdir -p "$output_dir/LICENSES"
+cp "$repo_root/LICENSES/Apache-2.0-Openlane.txt" "$output_dir/LICENSES/"
 printf 'Browser demo built in %s\n' "$output_dir"

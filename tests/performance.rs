@@ -52,7 +52,7 @@ fn percentile(values: &[u64], numerator: usize, denominator: usize) -> Option<u6
 
 async fn one(client: &Client, url: &str, token: &str, index: usize) -> Sample {
     let request = client
-        .get(format!("{url}/pets/fox"))
+        .get(format!("{url}/tasks/access-review"))
         .bearer_auth(token)
         .header(reqwest::header::CONNECTION, "close");
     let start = Instant::now();
@@ -61,7 +61,7 @@ async fn one(client: &Client, url: &str, token: &str, index: usize) -> Sample {
         let response = request.send().await?;
         status = Some(response.status().as_u16());
         let body: Value = response.json().await?;
-        if status != Some(200) || body["id"] != "fox" {
+        if status != Some(200) || body["id"] != "access-review" {
             return Err("unexpected response".into());
         }
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
@@ -167,10 +167,10 @@ fn environment() -> TestResult<Value> {
             "reported_unit": "nanoseconds", "hardware_resolution": "not measured"},
         "client_process_cpu_ns": null,
         "cpu_measurement": "not collected by the portable Rust client",
-        "app_sha256": format!("{:x}", Sha256::digest(&binary)),
-        "benchmark_sha256": format!("{:x}", Sha256::digest(include_bytes!("performance.rs"))),
+        "app_sha256": Sha256::digest(&binary).iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+        "benchmark_sha256": Sha256::digest(include_bytes!("performance.rs")).iter().map(|b| format!("{:02x}", b)).collect::<String>(),
         "load_model": "closed-loop fixed concurrency, one HTTP connection per request",
-        "operation": "GET /pets/fox",
+        "operation": "GET /tasks/access-review",
         "timeout_seconds": 5,
         "retries": 0
     }))

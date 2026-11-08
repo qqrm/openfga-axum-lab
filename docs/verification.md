@@ -23,13 +23,13 @@
 `tests/system.rs` covers authorization and sessions, normalized metrics without
 credentials, idempotent grants/revokes, six concurrent creates with one key,
 conflicting payloads, deleted-key reuse, an eight-operation delete/grant race,
-and direct checks that deleted pets have no remaining OpenFGA tuples.
+and direct checks that deleted tasks have no remaining OpenFGA tuples.
 
 Persistence stops Axum, OpenFGA and PostgreSQL, then restarts them without
 removing volumes. It checks saved data and relations, reuses the **old sessions**,
 and verifies that a subsequent revoke takes effect. Separate creation and
 deletion recovery tests apply the original SQL fixtures before restarting Axum.
-The outage test warms allows first, then requires 503 for both single-pet and
+The outage test first completes successful live checks, then requires 503 for both single-task and
 list requests after OpenFGA is stopped.
 
 Each test owns a fresh Compose project and temporary configuration. Published
@@ -48,16 +48,49 @@ Run the ordinary full suite with Docker, including explicitly ignored tests:
 
 ```sh
 cargo nextest run --locked --release --profile ci --run-ignored all \
-  -E 'not test(paired_aa_calibration)' --success-output immediate
+  -E 'not test(paired_aa_calibration) and not binary(fga_model)' --success-output immediate
 ```
 
 The CI integration job explicitly selects `system`, `cache_replicas`,
-`compose_deployment` and `performance` with `--run-ignored only`. A normal
+`authorization_migration`, `compose_deployment` and `performance` with
+`--run-ignored only`. A normal
 nextest invocation without that option does **not** establish integration
 coverage. A/A calibration remains a separate manual workflow. The CI profile
 uses no retries, bounds test duration, serializes Docker-intensive tests and
 writes JUnit. RAII cleanup handles normal exits and panic; forced termination
 can leave containers/volumes on a local engine. Hosted CI runners are disposable.
+
+## Openlane scenario coverage
+
+`bash scripts/test-openlane-model.sh` runs the pinned native OpenFGA model
+matrix and HTTP/gRPC wire tests; CI includes it in the Rust job. Native tests
+are excluded from the Docker-only command above because they have their own
+binary requirements.
+
+`tests/scenarios/openlane.rs` is included in the real-stack `system` binary.
+It covers organization isolation, exact upstream blocked precedence, assignee
+limits, direct and inherited grants, role changes, owner-only transfer,
+competing transfers, cached denials and live allows, lost mutation responses,
+buffered old requests, startup journal replay and explicit drained recovery.
+It requires the global fence to block reads/readiness until recovery. Typed IDs,
+duplicate auth/idempotency headers, body limits and oversized enumeration are
+covered in the same real-stack binary. The existing HTTP/gRPC integration matrix selects it.
+
+`e2e/tests/` exercises the actual browser UI and API against a disposable
+PostgreSQL/OpenFGA stack. CI defines both transport jobs and includes them in
+`ci-gate`; merely collecting Playwright tests is not an E2E pass. The 18 cases
+include a genuinely delayed API response across identity switching, literal
+untrusted text and security headers/provenance.
+
+`tests/authorization_migration.rs` runs the real CLI, PostgreSQL and OpenFGA
+and checks SQL source validation/freezing, exact graph and independent decision
+equivalence, resumed checkpoints, immutable target binding and active reruns
+that do not restore revoked grants. Initial migration and uncertain-write
+fences are separate readiness gates. `tests/model_provenance.rs` verifies the
+active Openlane digest/license and retained historical model attribution.
+
+Record executed commands and unavailable environments in
+[the migration validation report](openlane-migration.md).
 
 ## Formal and tooling boundaries
 

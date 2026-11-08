@@ -19,7 +19,24 @@ impl Deployment {
         command
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("APP_PORT", "0")
+            .env(
+                "FGA_TRANSPORT",
+                if cfg!(feature = "grpc") {
+                    "grpc"
+                } else {
+                    "http"
+                },
+            )
+            .env(
+                "FGA_APP_URL",
+                if cfg!(feature = "grpc") {
+                    "http://openfga:8081"
+                } else {
+                    "http://openfga:8080"
+                },
+            )
             .env("DEMO_PASSWORD", &self.password)
+            .env("POSTGRES_PASSWORD", &self.password)
             .args(["compose", "-p", &self.project, "-f", "compose.yaml"]);
         command
     }
@@ -42,7 +59,7 @@ impl Drop for Deployment {
 #[ignore = "requires Docker and builds the production images"]
 async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
     let deployment = Deployment {
-        project: format!("petlab-deployment-{}", uuid::Uuid::new_v4()),
+        project: format!("openlane-deployment-{}", uuid::Uuid::new_v4()),
         password: uuid::Uuid::new_v4().to_string(),
     };
     let output = timeout(
@@ -86,6 +103,11 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         }
     })
     .await?;
+    assert_eq!(
+        client.get(format!("{base}/readyz")).send().await?.status(),
+        StatusCode::OK,
+        "the packaged image must probe its selected transport and model"
+    );
     let session: Value = client
         .post(format!("{base}/session"))
         .json(&json!({"username": "alice", "password": deployment.password}))
@@ -95,14 +117,14 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         .json()
         .await?;
     let token = session["token"].as_str().ok_or("missing session token")?;
-    let pets: Vec<Value> = client
-        .get(format!("{base}/pets"))
+    let tasks: Vec<Value> = client
+        .get(format!("{base}/tasks"))
         .bearer_auth(token)
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
-    assert!(pets.iter().any(|pet| pet["id"] == "fox"));
+    assert!(tasks.iter().any(|task| task["id"] == "access-review"));
     Ok(())
 }

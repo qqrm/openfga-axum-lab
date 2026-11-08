@@ -1,293 +1,349 @@
-//! Application use cases. HTTP conversion stays in the delivery adapter.
-//! PostgreSQL is deliberately a concrete dependency here: transactional row
-//! locks are part of the consistency contract rather than a generic CRUD port.
-use crate::application::{App, Pet, PetInput, Tuple};
-use openfga_axum_lab::domain::{self, Event, Lifecycle};
+//! Task use cases. PostgreSQL row locks serialize mutations; reads validate a
+//! durable organization revision around remote checks without blocking revokes.
+use crate::application::{App, CreateTask, Relation, Task, TaskInput};
+use crate::authorization::{
+    self, Projection, creation_tuples, lock_organization, lock_organization_state, require_user,
+    stage, tuple,
+};
+use crate::domain::{self, Event, Lifecycle};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum Error {
+    #[error("invalid request")]
     Invalid,
+    #[error("not found")]
     NotFound,
+    #[error("conflict")]
     Conflict,
+    #[error("gone")]
     Gone,
+    #[error("service unavailable")]
     Unavailable,
+    #[error("forbidden")]
     Forbidden,
+    #[error("unauthenticated")]
     Unauthenticated,
+    #[error("too many requests")]
     Throttled,
 }
-type Result<T> = std::result::Result<T, Error>;
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
-fn pet_from_row(row: sqlx::postgres::PgRow) -> Pet {
-    Pet {
-        id: row.get("id"),
-        name: row.get("name"),
-        species: row.get("species"),
-        biography: row.get("biography"),
-    }
-}
+// This deliberately small lab returns complete lists within a fixed budget.
+// Larger datasets need a scoped pagination contract rather than a partial
+// ListObjects result presented as the full set of visible objects.
+pub(crate) const MAX_ENUMERATED_OBJECTS: i64 = 256;
 
 impl App {
-    pub(crate) async fn authorize_shelter_creation(&self, user: &str) -> Result<()> {
-        if self
-            .auth
-            .check(user, "can_create", "shelter:central")
+    pub(crate) async fn visible_tasks(&self, user: &str) -> Result<Vec<Task>> {
+        for _ in 0..3 {
+            let before = self.organization_snapshot().await?;
+            let ids: Vec<String> = sqlx::query_scalar(
+                "SELECT id FROM tasks WHERE status='active' ORDER BY id LIMIT $1",
+            )
+            .bind(MAX_ENUMERATED_OBJECTS + 1)
+            .fetch_all(&self.db)
             .await
-            .map_err(|_| Error::Unavailable)?
-        {
-            Ok(())
-        } else {
-            Err(Error::Forbidden)
+            .map_err(|_| Error::Unavailable)?;
+            if ids.len() > MAX_ENUMERATED_OBJECTS as usize {
+                return Err(Error::Unavailable);
+            }
+            let mut tasks = Vec::new();
+            for id in ids {
+                match self.get_task(user, &id).await {
+                    Ok(task) => tasks.push(task),
+                    Err(Error::Forbidden | Error::NotFound) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            if before == self.organization_snapshot().await? {
+                return Ok(tasks);
+            }
         }
+        Err(Error::Unavailable)
     }
-    pub(crate) async fn authorize_pet(
-        &self,
-        user: &str,
-        id: &str,
-        relation: &str,
-        deletion_retry: bool,
-    ) -> Result<()> {
+
+    pub(crate) async fn get_task(&self, user: &str, id: &str) -> Result<Task> {
         if !domain::valid_id(id) {
             return Err(Error::Invalid);
         }
-        let row = sqlx::query("SELECT status,delete_actor FROM pets WHERE id=$1")
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await
-            .map_err(|_| Error::Unavailable)?
-            .ok_or(Error::NotFound)?;
-        let status: String = row.get("status");
-        let actor: Option<String> = row.get("delete_actor");
-        let state = Lifecycle::from_storage(&status).ok_or(Error::Unavailable)?;
-        if !domain::is_visible(state) {
-            if deletion_retry
-                && matches!(state, Lifecycle::Deleting | Lifecycle::Deleted)
-                && actor.as_deref() == Some(user)
-            {
-                return Ok(());
+        for _ in 0..3 {
+            let row = sqlx::query("SELECT t.*,o.authorization_version,o.authz_pending,o.authz_uncertain FROM tasks t JOIN organizations o ON o.id=t.organization_id WHERE t.id=$1")
+                .bind(id).fetch_optional(&self.db).await.map_err(|_| Error::Unavailable)?
+                .ok_or(Error::NotFound)?;
+            if row.get::<bool, _>("authz_pending") {
+                return Err(Error::Unavailable);
             }
-            return Err(Error::NotFound);
-        }
-        if self
-            .auth
-            .check(user, relation, &format!("pet:{id}"))
-            .await
-            .map_err(|_| Error::Unavailable)?
-        {
-            Ok(())
-        } else {
-            Err(Error::Forbidden)
-        }
-    }
-    pub(crate) async fn visible_pets(&self, user: &str) -> Result<Vec<Pet>> {
-        let rows = sqlx::query(
-            "SELECT id,name,species,biography FROM pets WHERE status='active' ORDER BY id",
-        )
-        .fetch_all(&self.db)
-        .await
-        .map_err(|_| Error::Unavailable)?;
-        let mut pets = Vec::new();
-        for row in rows {
-            let pet = pet_from_row(row);
-            if self
-                .auth
-                .check(user, "can_view", &format!("pet:{}", pet.id))
-                .await
-                .map_err(|_| Error::Unavailable)?
-            {
-                pets.push(pet);
+            let state = Lifecycle::from_storage(row.get("status")).ok_or(Error::Unavailable)?;
+            if !domain::is_visible(state) {
+                return Err(Error::NotFound);
             }
+            let organization: String = row.get("organization_id");
+            let version: i64 = row.get("authorization_version");
+            let object = format!("task:{id}");
+            let view = self.allowed(user, "can_view", &object).await?;
+            let recovery_required: bool = row.get("authz_uncertain");
+            let mut task = Task {
+                id: id.into(),
+                organization_id: organization.clone(),
+                title: row.get("title"),
+                description: row.get("description"),
+                status: row.get("task_status"),
+                assigner_id: row.get("assigner_id"),
+                can_edit: false,
+                can_delete: false,
+                recovery_required,
+                relations: None,
+            };
+            if view {
+                task.can_edit =
+                    !recovery_required && self.allowed(user, "can_edit", &object).await?;
+                task.can_delete =
+                    !recovery_required && self.allowed(user, "can_delete", &object).await?;
+                if task.can_delete {
+                    let rows = sqlx::query("SELECT relation,user_id FROM task_relations WHERE task_id=$1 ORDER BY relation,user_id LIMIT $2")
+                        .bind(id).bind(MAX_ENUMERATED_OBJECTS + 1).fetch_all(&self.db).await.map_err(|_| Error::Unavailable)?;
+                    if rows.len() > MAX_ENUMERATED_OBJECTS as usize {
+                        return Err(Error::Unavailable);
+                    }
+                    let mut relations = vec![Relation {
+                        relation: "assigner".into(),
+                        user_id: task.assigner_id.clone(),
+                    }];
+                    relations.extend(rows.into_iter().map(|row| Relation {
+                        relation: row.get("relation"),
+                        user_id: row.get("user_id"),
+                    }));
+                    task.relations = Some(relations);
+                }
+            }
+            if !self.stable_organization(&organization, version).await? {
+                continue;
+            }
+            return if view {
+                Ok(task)
+            } else {
+                Err(Error::Forbidden)
+            };
         }
-        Ok(pets)
+        Err(Error::Unavailable)
     }
-    pub(crate) async fn get_pet(&self, id: &str) -> Result<Pet> {
-        sqlx::query("SELECT id,name,species,biography FROM pets WHERE id=$1 AND status='active'")
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await
-            .map_err(|_| Error::Unavailable)?
-            .map(pet_from_row)
-            .ok_or(Error::NotFound)
-    }
-    pub(crate) async fn create_pet(
+
+    pub(crate) async fn create_task(
         &self,
-        owner: &str,
+        actor: &str,
         key: &str,
-        input: &PetInput,
+        input: &CreateTask,
     ) -> Result<String> {
-        if !domain::valid_pet(&input.name, &input.species, &input.biography)
-            || !(8..=128).contains(&key.len())
-            || !key
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
+        if !domain::valid_id(&input.organization_id) {
             return Err(Error::Invalid);
         }
         let hash = Sha256::digest(serde_json::to_vec(input).map_err(|_| Error::Invalid)?).to_vec();
-        let candidate = uuid::Uuid::new_v4().to_string();
-        let inserted: Option<String> = sqlx::query_scalar("INSERT INTO pets (id,name,species,biography,owner_id,status,idempotency_key,request_hash) VALUES ($1,$2,$3,$4,$5,'pending',$6,$7) ON CONFLICT (owner_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id")
-            .bind(&candidate).bind(&input.name).bind(&input.species).bind(&input.biography).bind(owner)
-            .bind(key).bind(&hash).fetch_optional(&self.db).await.map_err(|_| Error::Unavailable)?;
-        let id = match inserted {
-            Some(id) => id,
-            None => {
-                let row = sqlx::query(
-                    "SELECT id,request_hash FROM pets WHERE owner_id=$1 AND idempotency_key=$2",
-                )
-                .bind(owner)
-                .bind(key)
-                .fetch_optional(&self.db)
-                .await
-                .map_err(|_| Error::Unavailable)?
-                .ok_or(Error::Unavailable)?;
-                let stored: Vec<u8> = row.get("request_hash");
-                if stored != hash {
-                    return Err(Error::Conflict);
-                }
-                row.get("id")
-            }
-        };
         let mut tx = self.db.begin().await.map_err(|_| Error::Unavailable)?;
-        let status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM pets WHERE id=$1 FOR UPDATE")
-                .bind(&id)
-                .fetch_optional(&mut *tx)
+        let organization = lock_organization_state(&mut tx, &input.organization_id).await?;
+        if organization.get::<bool, _>("authz_uncertain") {
+            return Err(Error::Unavailable);
+        }
+        if organization.get::<bool, _>("authz_pending") {
+            // Only the exact, already-authorized durable creation may resume
+            // through a fence. No fresh request is authorized against mixed state.
+            let pending = sqlx::query("SELECT t.id,t.request_hash FROM tasks t JOIN authorization_jobs j ON j.organization_id=t.organization_id AND j.activate_task_id=t.id WHERE t.organization_id=$1 AND t.assigner_id=$2 AND t.idempotency_key=$3 AND t.status='pending'")
+                .bind(&input.organization_id).bind(actor).bind(key).fetch_optional(&mut *tx).await.map_err(|_| Error::Unavailable)?
+                .ok_or(Error::Unavailable)?;
+            if pending.get::<Vec<u8>, _>("request_hash") != hash {
+                return Err(Error::Conflict);
+            }
+            let id: String = pending.get("id");
+            tx.rollback().await.map_err(|_| Error::Unavailable)?;
+            authorization::apply(
+                &self.db,
+                &self.authz_coordinator,
+                self.auth.as_ref(),
+                &input.organization_id,
+            )
+            .await?;
+            // Reconciliation may finish without proving that an older request
+            // has drained. Do not report success while global debt remains.
+            self.auth
+                .ensure_available()
                 .await
                 .map_err(|_| Error::Unavailable)?;
-        let state = status
-            .as_deref()
-            .and_then(Lifecycle::from_storage)
-            .ok_or(Error::Unavailable)?;
-        if state == Lifecycle::Active {
-            return Ok(id);
+            let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id=$1")
+                .bind(&id)
+                .fetch_one(&self.db)
+                .await
+                .map_err(|_| Error::Unavailable)?;
+            return if status == "active" {
+                Ok(id)
+            } else {
+                Err(Error::Gone)
+            };
         }
-        if domain::transition(state, Event::Provisioned) != Some(Lifecycle::Active) {
-            return Err(Error::Gone);
-        }
-        let object = format!("pet:{id}");
-        let tuples = [
-            Tuple {
-                user: format!("user:{owner}"),
-                relation: "owner".into(),
-                object: object.clone(),
-            },
-            Tuple {
-                user: "shelter:central".into(),
-                relation: "shelter".into(),
-                object,
-            },
-        ];
-        self.auth
-            .write(&tuples, true)
-            .await
-            .map_err(|_| Error::Unavailable)?;
-        sqlx::query("UPDATE pets SET status='active' WHERE id=$1 AND status='pending'")
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|_| Error::Unavailable)?;
-        tx.commit().await.map_err(|_| Error::Unavailable)?;
-        Ok(id)
-    }
-    pub(crate) async fn edit_pet(&self, actor: &str, id: &str, input: &PetInput) -> Result<()> {
-        if !domain::valid_pet(&input.name, &input.species, &input.biography) {
+        self.require(
+            actor,
+            "can_create_task",
+            &format!("organization:{}", input.organization_id),
+        )
+        .await?;
+        if !domain::valid_task(&input.title, &input.description, &input.status)
+            || !domain::valid_idempotency_key(key)
+        {
             return Err(Error::Invalid);
         }
+        if let Some(row) = sqlx::query("SELECT id,request_hash,status FROM tasks WHERE organization_id=$1 AND assigner_id=$2 AND idempotency_key=$3 FOR UPDATE")
+            .bind(&input.organization_id).bind(actor).bind(key).fetch_optional(&mut *tx).await.map_err(|_| Error::Unavailable)? {
+            if row.get::<Vec<u8>, _>("request_hash") != hash { return Err(Error::Conflict); }
+            return match row.get::<&str, _>("status") {
+                "active" => Ok(row.get("id")),
+                "pending" => Err(Error::Unavailable),
+                _ => Err(Error::Gone),
+            };
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query("INSERT INTO tasks (id,organization_id,title,description,task_status,assigner_id,status,idempotency_key,request_hash) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8)")
+            .bind(&id).bind(&input.organization_id).bind(&input.title).bind(&input.description)
+            .bind(&input.status).bind(actor).bind(key).bind(hash).execute(&mut *tx).await.map_err(|_| Error::Unavailable)?;
+        stage(
+            &mut tx,
+            &input.organization_id,
+            Projection {
+                writes: creation_tuples(&id, &input.organization_id, actor),
+                activate_task_id: Some(id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(|_| Error::Unavailable)?;
+        authorization::apply(
+            &self.db,
+            &self.authz_coordinator,
+            self.auth.as_ref(),
+            &input.organization_id,
+        )
+        .await?;
+        Ok(id)
+    }
+
+    /// Parent IDs are immutable. All writers take organization then task locks
+    /// so an inherited role revocation cannot interleave after authorization.
+    async fn task_organization(&self, id: &str) -> Result<String> {
+        if !domain::valid_id(id) {
+            return Err(Error::Invalid);
+        }
+        sqlx::query_scalar("SELECT organization_id FROM tasks WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await
+            .map_err(|_| Error::Unavailable)?
+            .ok_or(Error::NotFound)
+    }
+
+    pub(crate) async fn edit_task(&self, actor: &str, id: &str, input: &TaskInput) -> Result<()> {
+        let organization = self.task_organization(id).await?;
         let mut tx = self.db.begin().await.map_err(|_| Error::Unavailable)?;
-        let state: Option<String> =
-            sqlx::query_scalar("SELECT status FROM pets WHERE id=$1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(|_| Error::Unavailable)?;
-        if !state
-            .as_deref()
-            .and_then(Lifecycle::from_storage)
-            .is_some_and(domain::is_visible)
-        {
+        lock_organization(&mut tx, &organization).await?;
+        let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        if status != "active" {
             return Err(Error::NotFound);
         }
-        if !self
-            .auth
-            .check(actor, "can_edit", &format!("pet:{id}"))
-            .await
-            .map_err(|_| Error::Unavailable)?
-        {
-            return Err(Error::Forbidden);
+        self.require(actor, "can_edit", &format!("task:{id}"))
+            .await?;
+        if !domain::valid_task(&input.title, &input.description, &input.status) {
+            return Err(Error::Invalid);
         }
-        let changed = sqlx::query(
-            "UPDATE pets SET name=$2,species=$3,biography=$4 WHERE id=$1 AND status='active'",
-        )
-        .bind(id)
-        .bind(&input.name)
-        .bind(&input.species)
-        .bind(&input.biography)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| Error::Unavailable)?
-        .rows_affected();
-        if changed == 1 {
-            tx.commit().await.map_err(|_| Error::Unavailable)
-        } else {
-            Err(Error::NotFound)
-        }
+        sqlx::query("UPDATE tasks SET title=$2,description=$3,task_status=$4 WHERE id=$1 AND status='active'")
+            .bind(id).bind(&input.title).bind(&input.description).bind(&input.status)
+            .execute(&mut *tx).await.map_err(|_| Error::Unavailable)?;
+        tx.commit().await.map_err(|_| Error::Unavailable)
     }
-    pub(crate) async fn delete_pet(&self, id: &str, actor: &str) -> Result<()> {
+
+    pub(crate) async fn delete_task(&self, actor: &str, id: &str) -> Result<()> {
+        let organization = self.task_organization(id).await?;
         let mut tx = self.db.begin().await.map_err(|_| Error::Unavailable)?;
-        let row = sqlx::query("SELECT status,delete_actor FROM pets WHERE id=$1 FOR UPDATE")
+        let org = lock_organization_state(&mut tx, &organization).await?;
+        let row = sqlx::query("SELECT status,delete_actor FROM tasks WHERE id=$1 FOR UPDATE")
             .bind(id)
-            .fetch_optional(&mut *tx)
+            .fetch_one(&mut *tx)
             .await
-            .map_err(|_| Error::Unavailable)?
-            .ok_or(Error::NotFound)?;
-        let status: String = row.get("status");
-        let delete_actor: Option<String> = row.get("delete_actor");
-        let state = Lifecycle::from_storage(&status).ok_or(Error::Unavailable)?;
-        if state == Lifecycle::Active {
-            if !self
-                .auth
-                .check(actor, "can_manage", &format!("pet:{id}"))
-                .await
-                .map_err(|_| Error::Unavailable)?
+            .map_err(|_| Error::Unavailable)?;
+        let state = Lifecycle::from_storage(row.get("status")).ok_or(Error::Unavailable)?;
+        if org.get::<bool, _>("authz_uncertain") {
+            return Err(Error::Unavailable);
+        }
+        if org.get::<bool, _>("authz_pending") {
+            let pending: Option<String> = sqlx::query_scalar(
+                "SELECT delete_task_id FROM authorization_jobs WHERE organization_id=$1",
+            )
+            .bind(&organization)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+            if state != Lifecycle::Deleting
+                || pending.as_deref() != Some(id)
+                || row.get::<Option<String>, _>("delete_actor").as_deref() != Some(actor)
             {
-                return Err(Error::Forbidden);
-            }
-            if domain::transition(state, Event::BeginDeletion) != Some(Lifecycle::Deleting) {
                 return Err(Error::Unavailable);
             }
-            sqlx::query(
-                "UPDATE pets SET status='deleting',delete_actor=$2 WHERE id=$1 AND status='active'",
+            tx.rollback().await.map_err(|_| Error::Unavailable)?;
+            authorization::apply(
+                &self.db,
+                &self.authz_coordinator,
+                self.auth.as_ref(),
+                &organization,
             )
+            .await?;
+            return self
+                .auth
+                .ensure_available()
+                .await
+                .map_err(|_| Error::Unavailable);
+        }
+        if state == Lifecycle::Deleted
+            && row.get::<Option<String>, _>("delete_actor").as_deref() == Some(actor)
+        {
+            self.auth
+                .ensure_available()
+                .await
+                .map_err(|_| Error::Unavailable)?;
+            return Ok(());
+        }
+        if domain::transition(state, Event::BeginDeletion) != Some(Lifecycle::Deleting) {
+            return Err(Error::NotFound);
+        }
+        self.require(actor, "can_delete", &format!("task:{id}"))
+            .await?;
+        sqlx::query("UPDATE tasks SET status='deleting',delete_actor=$2 WHERE id=$1")
             .bind(id)
             .bind(actor)
             .execute(&mut *tx)
             .await
             .map_err(|_| Error::Unavailable)?;
-        } else if delete_actor.as_deref() != Some(actor) {
-            return Err(Error::NotFound);
-        }
+        stage(
+            &mut tx,
+            &organization,
+            Projection {
+                delete_object: Some(format!("task:{id}")),
+                delete_task_id: Some(id.into()),
+                ..Default::default()
+            },
+        )
+        .await?;
         tx.commit().await.map_err(|_| Error::Unavailable)?;
-        let state = if state == Lifecycle::Active {
-            Lifecycle::Deleting
-        } else {
-            state
-        };
-        if state == Lifecycle::Deleted {
-            return Ok(());
-        }
-        if domain::transition(state, Event::TuplesRemoved) != Some(Lifecycle::Deleted) {
-            return Err(Error::NotFound);
-        }
-        self.auth
-            .delete_object(&format!("pet:{id}"))
-            .await
-            .map_err(|_| Error::Unavailable)?;
-        sqlx::query("UPDATE pets SET status='deleted' WHERE id=$1 AND status='deleting' AND delete_actor=$2")
-            .bind(id).bind(actor).execute(&self.db).await.map_err(|_| Error::Unavailable)?;
-        Ok(())
+        authorization::apply(
+            &self.db,
+            &self.authz_coordinator,
+            self.auth.as_ref(),
+            &organization,
+        )
+        .await
     }
-    pub(crate) async fn set_relation(
+
+    pub(crate) async fn set_task_relation(
         &self,
         actor: &str,
         id: &str,
@@ -295,49 +351,57 @@ impl App {
         subject: &str,
         add: bool,
     ) -> Result<()> {
-        if !domain::valid_id(subject) || !matches!(relation, "viewer" | "caregiver") {
+        if !domain::valid_id(subject) || !domain::valid_task_relation(relation) {
             return Err(Error::Invalid);
         }
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
-            .bind(subject)
-            .fetch_one(&self.db)
-            .await
-            .map_err(|_| Error::Unavailable)?;
-        if !exists {
-            return Err(Error::NotFound);
-        }
+        let organization = self.task_organization(id).await?;
         let mut tx = self.db.begin().await.map_err(|_| Error::Unavailable)?;
-        let status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM pets WHERE id=$1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(|_| Error::Unavailable)?;
-        if !status
-            .as_deref()
-            .and_then(Lifecycle::from_storage)
-            .is_some_and(domain::is_visible)
-        {
-            return Err(Error::NotFound);
-        }
-        if !self
-            .auth
-            .check(actor, "can_manage", &format!("pet:{id}"))
-            .await
-            .map_err(|_| Error::Unavailable)?
-        {
-            return Err(Error::Forbidden);
-        }
-        let tuple = Tuple {
-            user: format!("user:{subject}"),
-            relation: relation.into(),
-            object: format!("pet:{id}"),
-        };
-        self.auth
-            .write(&[tuple], add)
+        lock_organization(&mut tx, &organization).await?;
+        let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|_| Error::Unavailable)?;
+        if status != "active" {
+            return Err(Error::NotFound);
+        }
+        // Local API policy: assigners and inherited deleters may manage grants;
+        // assignees and direct editors may not delegate their access.
+        self.require(actor, "can_delete", &format!("task:{id}"))
+            .await?;
+        require_user(&mut tx, subject).await?;
+        let query = if add {
+            "INSERT INTO task_relations (task_id,user_id,relation) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING"
+        } else {
+            "DELETE FROM task_relations WHERE task_id=$1 AND user_id=$2 AND relation=$3"
+        };
+        sqlx::query(query)
+            .bind(id)
+            .bind(subject)
+            .bind(relation)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        let relation_tuple = tuple(&format!("user:{subject}"), relation, &format!("task:{id}"));
+        let projection = if add {
+            Projection {
+                writes: vec![relation_tuple],
+                ..Default::default()
+            }
+        } else {
+            Projection {
+                deletes: vec![relation_tuple],
+                ..Default::default()
+            }
+        };
+        stage(&mut tx, &organization, projection).await?;
         tx.commit().await.map_err(|_| Error::Unavailable)?;
-        Ok(())
+        authorization::apply(
+            &self.db,
+            &self.authz_coordinator,
+            self.auth.as_ref(),
+            &organization,
+        )
+        .await
     }
 }
