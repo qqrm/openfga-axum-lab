@@ -19,7 +19,9 @@ fn make_grpc() -> Box<dyn Authorizer> {
     let model = env::var("FGA_MODEL").expect("FGA_MODEL");
     let rt = rt();
     rt.block_on(async {
-        let sc = openfga_client::client::OpenFgaServiceClient::connect(url).await.unwrap();
+        let sc = openfga_client::client::OpenFgaServiceClient::connect(url)
+            .await
+            .unwrap();
         let client = openfga_client::client::OpenFgaClient::new(sc, &store, &model);
         Box::new(OpenFgaGrpc { client }) as Box<dyn Authorizer>
     })
@@ -31,7 +33,10 @@ fn make_http() -> Box<dyn Authorizer> {
     let store = env::var("FGA_STORE").expect("FGA_STORE");
     let model = env::var("FGA_MODEL").expect("FGA_MODEL");
     Box::new(OpenFgaHttp {
-        client: reqwest::Client::builder().timeout(Duration::from_secs(2)).build().unwrap(),
+        client: reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap(),
         url,
         store,
         model,

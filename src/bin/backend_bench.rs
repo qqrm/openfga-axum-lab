@@ -15,9 +15,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = env::var("FGA_URL").expect("FGA_URL");
     let store = env::var("FGA_STORE").expect("FGA_STORE");
     let model = env::var("FGA_MODEL").expect("FGA_MODEL");
-    let iters: usize = env::var("ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
-    let conc: usize = env::var("CONC").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
-    let delay_ms: u64 = env::var("DELAY_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let iters: usize = env::var("ITERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+    let conc: usize = env::var("CONC")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let delay_ms: u64 = env::var("DELAY_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let user = env::var("BENCH_USER").unwrap_or_else(|_| "alice".into());
     let relation = env::var("BENCH_RELATION").unwrap_or_else(|_| "reader".into());
     let otype = env::var("BENCH_TYPE").unwrap_or_else(|_| "repo".into());
@@ -31,7 +40,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "http")]
         "http" => Arc::new(OpenFgaHttp {
-            client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build()?,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()?,
             url,
             store,
             model,
@@ -76,7 +87,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total = started.elapsed().as_secs_f64();
     println!(
         "backend={} mode={} conc={} iters={} total_ms={:.1} avg_ms={:.3} rps={:.1}",
-        backend, mode, conc, iters, total * 1000.0, total * 1000.0 / iters as f64, iters as f64 / total
+        backend,
+        mode,
+        conc,
+        iters,
+        total * 1000.0,
+        total * 1000.0 / iters as f64,
+        iters as f64 / total
     );
     Ok(())
 }

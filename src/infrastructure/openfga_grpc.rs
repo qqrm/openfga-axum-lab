@@ -106,7 +106,12 @@ impl Authorizer for OpenFgaGrpc {
     }
 
     #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
-    async fn list_objects(&self, user: &str, relation: &str, object_type: &str) -> Result<Vec<String>, AuthError> {
+    async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
         let response = bounded(self.client.list_objects(
             object_type.to_owned(),
             relation.to_owned(),

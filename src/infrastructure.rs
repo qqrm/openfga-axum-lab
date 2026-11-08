@@ -236,7 +236,12 @@ mod openfga_http {
             Ok(response.allowed)
         }
         #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
-        async fn list_objects(&self, user: &str, relation: &str, object_type: &str) -> Result<Vec<String>, AuthError> {
+        async fn list_objects(
+            &self,
+            user: &str,
+            relation: &str,
+            object_type: &str,
+        ) -> Result<Vec<String>, AuthError> {
             let response: ListObjectsResponse = self
                 .client
                 .post(format!("{}/stores/{}/list-objects", self.url, self.store))

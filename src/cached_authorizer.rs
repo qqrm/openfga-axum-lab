@@ -95,7 +95,12 @@ impl Authorizer for CachedAuthorizer {
     }
 
     #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "authz_cache.list_objects")]
-    async fn list_objects(&self, user: &str, relation: &str, object_type: &str) -> Result<Vec<String>, AuthError> {
+    async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
         self.inner.list_objects(user, relation, object_type).await
     }
 
