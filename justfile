@@ -71,3 +71,24 @@ e2e-install:
 
 e2e:
     cd e2e && npm test
+
+# Kubernetes via Kind
+kind-create:
+    kind create cluster --name openfga-axum-lab
+
+kind-load:
+    kind load docker-image openfga-axum-lab:local --name openfga-axum-lab
+
+kind-start:
+    just kind-create
+    just docker-build
+    just kind-load
+    just k8s-config
+    kubectl apply -f k8s/
+    kubectl -n openfga-axum-lab rollout status deployment/postgres --timeout=180s
+    kubectl -n openfga-axum-lab wait --for=condition=complete job/openfga-migrate --timeout=180s
+    kubectl -n openfga-axum-lab rollout status deployment/openfga --timeout=180s
+    kubectl -n openfga-axum-lab rollout status deployment/app --timeout=180s
+
+kind-stop:
+    kind delete cluster --name openfga-axum-lab
