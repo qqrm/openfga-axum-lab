@@ -203,8 +203,8 @@ Backend uses the native gRPC interface (port 8081) via openfga-client; HTTP (por
 
 ## OpenFGA transport features
 
-- Default:  (native gRPC, preferred high-performance backend).
-- Optional:  (legacy HTTP backend, explicit opt-in).
+- Default: `grpc` (native gRPC, preferred high-performance backend).
+- Optional: `http` (legacy HTTP backend, explicit opt-in).
 
 ```sh
 cargo build --features grpc
