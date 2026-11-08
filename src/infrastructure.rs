@@ -43,8 +43,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 /// Preferred, native gRPC backend. Higher performance and type-safe.
-pub(crate) struct OpenFgaGrpc {
-    pub(crate) client: openfga_client::client::OpenFgaClient<openfga_client::tonic::transport::Channel>,
+pub struct OpenFgaGrpc {
+    pub client: openfga_client::client::OpenFgaClient<openfga_client::tonic::transport::Channel>,
 }
 
 #[async_trait]
@@ -217,10 +217,10 @@ pub(crate) async fn recover_pending(
 mod openfga_http {
     use super::*;
 pub struct OpenFgaHttp {
-    pub(crate) client: reqwest::Client,
-    pub(crate) url: String,
-    pub(crate) store: String,
-    pub(crate) model: String,
+    pub client: reqwest::Client,
+    pub url: String,
+    pub store: String,
+    pub model: String,
 }
 #[derive(Deserialize)]
 struct Check {
@@ -331,4 +331,4 @@ impl Authorizer for OpenFgaHttp {
 }
 
 #[cfg(feature = "http")]
-pub(crate) use openfga_http::OpenFgaHttp;
+pub use openfga_http::OpenFgaHttp;

@@ -210,3 +210,12 @@ Backend uses the native gRPC interface (port 8081) via openfga-client; HTTP (por
 cargo build --features grpc
 cargo build --no-default-features --features http
 ```
+
+## Backend benchmark (check, 2000 iterations, localhost)
+
+| Backend | mean ms | p50 ms | p99 ms | RPS |
+| --- | ---: | ---: | ---: | ---: |
+| gRPC | 0.749 | 0.716 | 1.257 | 1335 |
+| HTTP | 0.790 | 0.754 | 1.349 | 1265 |
+
+Single-threaded closed-loop microbenchmark against the same OpenFGA instance; not a capacity/SLO result.

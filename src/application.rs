@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 #[error("authorization backend unavailable")]
-pub(crate) struct AuthError;
+pub struct AuthError;
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Tuple {
     pub(crate) user: String,
@@ -13,7 +13,7 @@ pub(crate) struct Tuple {
     pub(crate) object: String,
 }
 #[async_trait]
-pub(crate) trait Authorizer: Send + Sync {
+pub trait Authorizer: Send + Sync {
     async fn ensure_available(&self) -> Result<(), AuthError>;
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError>;
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError>;
