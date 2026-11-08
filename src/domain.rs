@@ -47,12 +47,29 @@ pub fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-pub fn valid_pet(name: &str, species: &str, biography: &str) -> bool {
-    !name.trim().is_empty()
-        && name.len() <= 100
-        && !species.trim().is_empty()
-        && species.len() <= 50
-        && biography.len() <= 2000
+pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
+    !title.trim().is_empty()
+        && title.len() <= 160
+        && description.len() <= 4000
+        && matches!(status, "todo" | "in_progress" | "done")
+}
+
+pub fn valid_idempotency_key(key: &str) -> bool {
+    (8..=128).contains(&key.len())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+pub fn valid_task_relation(relation: &str) -> bool {
+    matches!(relation, "viewer" | "editor" | "assignee" | "blocked")
+}
+
+pub fn valid_organization_permission(relation: &str) -> bool {
+    matches!(
+        relation,
+        "can_view_task" | "can_edit_task" | "can_delete_task"
+    )
 }
 
 #[cfg(test)]
@@ -71,11 +88,20 @@ mod tests {
     }
     #[test]
     fn validates_identifiers_and_input() {
-        assert!(valid_id("fox-123"));
-        assert!(!valid_id("pet:fox"));
+        assert!(valid_id("access-review-123"));
+        assert!(!valid_id("task:review"));
         assert!(!valid_id(""));
         assert!(!valid_id(&"x".repeat(65)));
-        assert!(!valid_pet("", "fox", ""));
+        assert!(!valid_task("", "", "todo"));
+        assert!(valid_task(
+            "Review access",
+            "Evidence required",
+            "in_progress"
+        ));
+        assert!(!valid_task("Review access", "", "active"));
+        assert!(!valid_task_relation("assigner"));
+        assert!(!valid_task_relation("can_delete"));
+        assert!(!valid_organization_permission("owner"));
     }
 }
 

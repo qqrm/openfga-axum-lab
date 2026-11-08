@@ -1,32 +1,64 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Лапки · интерактивная модель</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Openlane · модель доступа и жизненный цикл</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
 <body>
-<header><span class="logo">✳ Лапки</span><span class="badge">Интерактивная модель</span></header>
+<header><span class="brand">Openlane / Access Lab</span><span class="mode">Статическая иллюстрация</span></header>
 <main>
-<section class="hero">
-  <div><p class="eyebrow">НЕБОЛЬШОЙ МИР ЗАБОТЫ</p><h1>У каждой лапки<br>есть история<span>.</span></h1>
-  <p>Попробуйте роли в приюте и посмотрите, кто какие карточки видит.</p></div>
-  <div class="hero-art" aria-hidden="true"><span>🐈</span><span>🐕</span><span>🦊</span></div>
-</section>
-<aside class="notice"><strong>Демо в браузере.</strong> Жизненный цикл работает на том же Rust-коде, собранном в WASM. Данные и права здесь имитируются; Axum, OpenFGA и PostgreSQL запускаются в отдельном Compose-стенде.</aside>
-<section class="controls"><div><p class="eyebrow">ПРОВЕРКА ДОСТУПА</p><h2>Посмотреть как</h2></div><label>Роль
-<select id="user"><option value="alice">Алиса · администратор</option><option value="bob">Боб · сотрудник</option><option value="carol">Кэрол · владелец лисы</option><option value="dave">Дэйв · читатель кота</option></select></label></section>
-<p id="error" role="alert"></p><section id="cards" class="grid" aria-live="polite"></section>
-<section class="explain"><div><p class="eyebrow">ЧТО ЗДЕСЬ ПРОИСХОДИТ</p><h2>Маленький приют,<br>настоящие правила.</h2></div><p>Администратор и сотрудник видят всех. Владелец видит своего питомца, а читатель — только карточку, к которой ему дали доступ. Модель намеренно работает без персональных данных и сервера.</p></section>
+  <section class="intro">
+    <p class="eyebrow">Открытая модель объектной авторизации</p>
+    <h1>Организация. Задачи.<br>Проверяемые полномочия.</h1>
+    <p>Небольшой сценарий из настоящей модели Openlane: владение организацией, назначение задач и наследование доступа.</p>
+    <a class="button" href="https://github.com/qqrm/openfga-axum-lab#readme">Запустить полный стенд</a>
+  </section>
+  <aside class="notice"><strong>Это не работающий сервер авторизации.</strong> Таблица ниже — описание ожидаемых решений для отдельных ролей, а не вычисление прав. В браузере выполняется только чистый Rust-код жизненного цикла, собранный в WASM. Реальные вход, API, передача владения, кэш, PostgreSQL и OpenFGA проверяются в отдельном стенде.</aside>
+
+  <section class="panel" aria-labelledby="roles-heading">
+    <p class="eyebrow">Организация → задача через parent_context</p>
+    <h2 id="roles-heading">Роль не равна полному доступу</h2>
+    <p class="muted">Для каждой строки рассматривается только указанная связь, без других выдач и без blocked.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Связь пользователя</th><th>Чтение задачи</th><th>Редактирование</th><th>Удаление</th><th>Создание задач</th></tr></thead>
+      <tbody>
+        <tr><th>organization.owner</th><td class="yes">Да, через организацию</td><td class="yes">Да</td><td class="yes">Да</td><td class="yes">Да</td></tr>
+        <tr><th>organization.admin</th><td>Нет</td><td>Нет</td><td>Нет</td><td class="yes">Да</td></tr>
+        <tr><th>organization.member</th><td>Нет</td><td>Нет</td><td>Нет</td><td>Нет</td></tr>
+        <tr><th>task.assigner</th><td class="yes">Да</td><td class="yes">Да</td><td class="yes">Да</td><td>Не даёт этого права</td></tr>
+        <tr><th>task.assignee / editor</th><td class="yes">Да</td><td class="yes">Да</td><td>Нет</td><td>Не даёт этого права</td></tr>
+        <tr><th>task.viewer</th><td class="yes">Да</td><td>Нет</td><td>Нет</td><td>Не даёт этого права</td></tr>
+      </tbody>
+    </table></div>
+    <div class="notes-grid">
+      <div><h3>Отзыв и наследование</h3><p>Удаление прямого viewer не отменяет доступ через owner или другую связь. Выдача can_edit_task организации — широкое полномочие: в исходной модели оно даёт и удаление её задач.</p></div>
+      <div><h3>Особенность blocked</h3><p>В Openlane blocked исключает can_view. Но can_edit допускает путь через can_delete, а can_delete не вычитает blocked. Это ограничение чтения, а не универсальный запрет всех операций.</p></div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="lifecycle-heading">
+    <div class="section-heading"><div><p class="eyebrow">Тот же чистый Rust-код, что в приложении</p><h2 id="lifecycle-heading">Жизненный цикл задачи</h2></div><span id="wasm-status" class="mode">Загрузка WASM</span></div>
+    <p class="muted">Пошаговая иллюстрация защиты от показа незавершённых объектов. Никакие серверные данные здесь не меняются.</p>
+    <ol class="states" aria-label="Состояния жизненного цикла">
+      <li data-state="0"><strong>pending</strong><span>Данные записаны, связи ещё не подтверждены</span></li>
+      <li data-state="1"><strong>active</strong><span>Объект доступен для проверки can_view</span></li>
+      <li data-state="2"><strong>deleting</strong><span>Объект скрыт, связи удаляются</span></li>
+      <li data-state="3"><strong>deleted</strong><span>Удаление завершено; воскресить нельзя</span></li>
+    </ol>
+    <p id="lifecycle-result" role="status" aria-live="polite"></p>
+    <div class="button-row"><button id="advance" disabled>Подтвердить создание</button><button id="restart" class="secondary" disabled>Начать с новой задачей</button></div>
+    <p id="error" role="alert"></p>
+    <p class="hint">В состоянии active жизненный цикл лишь разрешает проверять доступ. Окончательное разрешение на чтение выдаёт OpenFGA в полном стенде.</p>
+  </section>
+
+  <section class="notes-grid outside">
+    <div><p class="eyebrow">Согласованность</p><h2>Владение передаётся отдельно</h2><p>У задачи нет выдуманного task.owner: используются assigner и assignee. Владелец есть у организации. Передача владения должна одновременно удалить прежнюю связь и добавить новую; сбой не должен оставлять двойные полномочия.</p></div>
+    <div><p class="eyebrow">Происхождение</p><h2>Адаптация Openlane</h2><p>Взята ограниченная часть опубликованной модели Openlane. Модули схемы 1.2 сведены к JSON-модели 1.1 для этого стенда. Полный домен compliance, сервисные аккаунты, группы и дополнительные роли не переносятся.</p><a href="https://github.com/theopenlane/core/tree/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga">Исходная модель на закреплённом коммите</a></div>
+  </section>
 </main>
-<footer>
-  <div>🐾 Лапки <span>Учебный проект · данные вымышлены</span></div>
-  <nav aria-label="Работа с проектом">
-    <a href="https://github.dev/qqrm/openfga-axum-lab">Редактор кода</a>
-    <a href="https://github.com/qqrm/openfga-axum-lab/actions/workflows/ci.yml">Проверки</a>
-    <a href="https://github.com/qqrm/openfga-axum-lab/actions/workflows/pages.yml">Публикация Pages</a>
-  </nav>
-</footer>
+<footer><span>Openlane / Access Lab · Apache-2.0 attribution</span><nav aria-label="Исходники"><a href="https://github.com/qqrm/openfga-axum-lab">Репозиторий стенда</a><a href="https://github.com/theopenlane/core/blob/1c38df0a53530c8c39eb0784862b06eaa3e26f58/LICENSE">Лицензия Openlane</a></nav></footer>
 </body>
 </html>

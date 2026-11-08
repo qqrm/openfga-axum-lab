@@ -77,8 +77,20 @@ impl Authorizer for OpenFgaGrpc {
 
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        let writes = add.then(|| {
-            tuples
+        if add {
+            self.change(tuples, &[]).await
+        } else {
+            self.change(&[], tuples).await
+        }
+    }
+
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.change")]
+    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        if writes.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
+        let writes = (!writes.is_empty()).then(|| {
+            writes
                 .iter()
                 .map(|tuple| TupleKey {
                     user: tuple.user.clone(),
@@ -88,8 +100,8 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
-        let deletes = (!add).then(|| {
-            tuples
+        let deletes = (!deletes.is_empty()).then(|| {
+            deletes
                 .iter()
                 .map(|tuple| TupleKeyWithoutCondition {
                     user: tuple.user.clone(),
@@ -98,6 +110,9 @@ impl Authorizer for OpenFgaGrpc {
                 })
                 .collect()
         });
+        // OpenFGA applies both sides of one Write atomically. In particular,
+        // transferring ownership must never be split into two RPCs. Do not
+        // retry an ambiguous transport result; recovery owns reconciliation.
         bounded(
             self.client
                 .write_with_options(writes, deletes, WriteOptions::new_idempotent()),
@@ -112,6 +127,8 @@ impl Authorizer for OpenFgaGrpc {
         relation: &str,
         object_type: &str,
     ) -> Result<Vec<String>, AuthError> {
+        // The SDK copies this client's pinned model and HigherConsistency
+        // setting into ListObjectsRequest, just as it does for Check.
         let response = bounded(self.client.list_objects(
             object_type.to_owned(),
             relation.to_owned(),

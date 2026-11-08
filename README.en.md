@@ -1,9 +1,27 @@
-# Paws — shelter and object authorization
+# Openlane Tasks — object authorization with Rust/Axum
 
-Small pet project with a real Rust/Axum API, PostgreSQL and OpenFGA. Animals,
-accounts and data are fictional. The project demonstrates an engineering
-approach to authorization and failures; it is not a production-ready public
-service.
+A focused Rust/Axum, PostgreSQL and OpenFGA laboratory adapted from the real
+[Openlane organization/task model](docs/openlane-model.md), with pinned
+Apache-2.0 provenance. Demo accounts and organizations are synthetic.
+Organization owners, administrators, assigners, assignees and direct/inherited
+grants demonstrate object authorization, transfer and failure recovery.
+
+## Important model behavior
+
+Owners inherit task permissions; admins can create tasks but need explicit
+grants to read others’ tasks. An assignee can edit, not delete or delegate.
+Upstream `blocked` excludes reads and ordinary edits, but does not override
+`can_delete` or its `can_edit` branch. Removing one direct grant leaves any
+independent inherited path intact. Ownership transfer is owner-only, requires
+a current member and atomically replaces one owner tuple. A durable PostgreSQL
+journal fences pending changes. An uncertain replay restores reads but keeps
+writes quarantined until explicit backend-drain recovery; replay alone does not
+order a delayed old request against a newer transfer.
+
+The old schema/data are retained without exposing the former API. Existing
+OpenFGA configuration deliberately fails the changed model fingerprint check;
+use an isolated Compose project or plan an explicit migration. No reset is
+automatic. [Migration and validation](docs/openlane-migration.md).
 
 ## Quick start
 
@@ -40,7 +58,9 @@ just clean        # stop and remove volumes
 ```
 
 The optional Playwright suite (`just e2e`) uses the exported `DEMO_PASSWORD`
-for the running local lab. Current CI does not execute that suite.
+for the running isolated lab. CI now defines a browser-e2e matrix for both
+HTTP and gRPC, using actual Axum/PostgreSQL/OpenFGA containers. A configuration
+is not evidence of a completed run; see [current validation](docs/openlane-migration.md).
 
 Russian version: [README.md](README.md).
 ## Kubernetes: experimental path
@@ -51,8 +71,8 @@ Use Compose or the private Codespaces lab for the verified installation path.
 
 ## OpenFGA transport
 
-The default `grpc` feature uses port 8081. Build the HTTP adapter with
-`cargo build --locked --no-default-features --features http` and use port 8080.
+The default `http` feature uses port 8080. Build the gRPC adapter with
+`cargo build --locked --no-default-features --features grpc` and use port 8081.
 When both features are enabled, the application selects gRPC. Bootstrap always
 uses HTTP independently of the application's transport.
 

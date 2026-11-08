@@ -1,1 +1,1 @@
-UPDATE pets SET status='deleting', delete_actor='bob' WHERE id='dog' AND status='active';
+UPDATE tasks SET status='deleting', delete_actor='bob' WHERE id='incident-response' AND status='active';

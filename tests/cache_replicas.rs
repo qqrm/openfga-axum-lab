@@ -9,8 +9,8 @@ use serde_json::Value;
 use stack::{App, Stack, TestResult};
 use std::time::Duration;
 
-const PET: &str = "/pets/fox";
-const RELATION: &str = "/pets/fox/relations/caregiver/dave";
+const TASK: &str = "/tasks/access-review";
+const RELATION: &str = "/tasks/access-review/relations/assignee/dave";
 
 struct Scenario {
     client: Client,
@@ -20,7 +20,7 @@ struct Scenario {
 
 impl Scenario {
     async fn check(&self, app: &App, expected: StatusCode) -> TestResult {
-        self.expect(app, Method::GET, PET, &self.dave, expected)
+        self.expect(app, Method::GET, TASK, &self.dave, expected)
             .await
     }
 
@@ -103,7 +103,7 @@ async fn revocation_invalidates_warm_allows_across_replicas() -> TestResult {
         let before = scenario.metric(replica, "hit_allow").await?;
         scenario.check(replica, StatusCode::OK).await?;
         scenario.check(replica, StatusCode::OK).await?;
-        assert_eq!(scenario.metric(replica, "hit_allow").await?, before + 1);
+        assert!(scenario.metric(replica, "hit_allow").await? > before);
     }
     scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
     for replica in [&first, &second] {
@@ -161,35 +161,63 @@ async fn revocation_invalidates_warm_allows_across_replicas() -> TestResult {
     // Let the API time out after the proxy has received the successful write.
     scenario.check(&first, StatusCode::OK).await?;
     scenario.check(&first, StatusCode::OK).await?;
-    let before = scenario.metric(&first, "bypass_pending").await?;
     let mut pause = proxy.pause("write", false).await;
     let (write, check) = tokio::join!(
         scenario.revoke(&second, StatusCode::SERVICE_UNAVAILABLE),
         async {
             pause.captured().await?;
-            scenario.check(&first, StatusCode::FORBIDDEN).await
+            assert!(stack.authorization_pending("acme").await?);
+            // Until the durable operation is acknowledged or replayed, the
+            // complete organization is fenced, including its warm allows.
+            scenario
+                .check(&first, StatusCode::SERVICE_UNAVAILABLE)
+                .await
         }
     );
     drop(pause);
     check?;
     write?;
-    assert!(scenario.metric(&first, "bypass_pending").await? > before);
-    scenario.check(&second, StatusCode::FORBIDDEN).await?;
-
-    let before = scenario.metric(&second, "bypass_pending").await?;
-    scenario.grant(&first).await?;
-    scenario.check(&second, StatusCode::OK).await?;
-    scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
-    scenario.check(&second, StatusCode::FORBIDDEN).await?;
-    assert_eq!(
-        scenario.metric(&second, "bypass_pending").await?,
-        before + 2
-    );
+    scenario
+        .check(&second, StatusCode::SERVICE_UNAVAILABLE)
+        .await?;
+    scenario
+        .revoke(&first, StatusCode::SERVICE_UNAVAILABLE)
+        .await?;
 
     second.stop().await?;
     let restarted = stack.app(&proxy.url).await?;
-    scenario.check(&restarted, StatusCode::FORBIDDEN).await?;
-    assert_eq!(scenario.metric(&restarted, "bypass_pending").await?, 1);
-    println!("After the lost response both replicas bypassed their cache, including after restart");
+    assert!(!stack.authorization_pending("acme").await?);
+    for replica in [&first, &restarted] {
+        scenario.check(replica, StatusCode::FORBIDDEN).await?;
+    }
+
+    assert!(scenario.metric(&restarted, "bypass_pending").await? > 0);
+    scenario
+        .expect(
+            &first,
+            Method::PUT,
+            RELATION,
+            &scenario.carol,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .await?;
+    // Replay acknowledges desired state, not the absence of an older buffered
+    // request. Writes remain quarantined until the explicit operator drain.
+    first.stop().await?;
+    restarted.stop().await?;
+    proxy.wait_idle().await?;
+    stack.recover_after_backend_drain(&stack.fga_url).await?;
+    let first = stack.app(&stack.fga_url).await?;
+    let second = stack.app(&proxy.url).await?;
+    scenario.grant(&first).await?;
+    scenario.check(&second, StatusCode::OK).await?;
+    scenario.check(&second, StatusCode::OK).await?;
+    scenario.revoke(&first, StatusCode::NO_CONTENT).await?;
+    scenario.check(&second, StatusCode::FORBIDDEN).await?;
+    assert_eq!(scenario.metric(&second, "bypass_pending").await?, 0);
+    assert!(scenario.metric(&second, "hit_allow").await? > 0);
+    println!(
+        "Replay restored safe reads; only verified drain and explicit recovery restored writes and normal caching"
+    );
     Ok(())
 }

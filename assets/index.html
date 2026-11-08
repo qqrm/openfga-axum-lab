@@ -1,20 +1,128 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Лапки — приют для вымышленных животных</title>
-<link rel="stylesheet" href="/assets/app.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Openlane · организации и задачи</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
 </head>
 <body>
-<header><div class="brand">🐾 Лапки</div><small>Тестовый приют · все персонажи вымышлены</small></header>
-<section class="intro"><h1>Здесь живут истории</h1><p>Знакомьтесь с животными и посмотрите, как права меняют доступ к их карточкам.</p></section>
-<div class="switcher"><label for="who">Войти как:</label>
-<select id="who"><option value="alice">Алиса · администратор</option><option value="bob">Боб · сотрудник приюта</option><option value="carol">Кэрол · владелец Мики</option><option value="dave">Дэйв · читатель Пикселя</option></select>
-<label for="password">Пароль:</label><input id="password" type="password" autocomplete="current-password">
-<button id="sign-in">Войти</button><button id="sign-out">Выйти</button></div>
-<p class="muted">Локальные демонстрационные аккаунты. Пароль указан в README проекта.</p>
-<p id="error" role="alert"></p><div id="pets" class="grid"></div>
-<footer class="muted">API: GET /pets · Доступ проверяют PostgreSQL и OpenFGA</footer>
-<script src="/assets/app.js" defer></script>
-</body></html>
+  <header class="app-header">
+    <div><span class="brand">Openlane / Access Lab</span><p>Организации, задачи и объектные права</p></div>
+    <span id="session-status" class="session-status">Вход не выполнен</span>
+  </header>
+  <main>
+    <section class="panel session-panel" aria-labelledby="session-title">
+      <div><h1 id="session-title">Рабочее пространство</h1><p class="muted">Сценарий на основе публичной модели Openlane. Учебные аккаунты и данные; решения о доступе принимает сервер.</p></div>
+      <form id="session-form" class="session-controls">
+        <label>Пользователь<select id="who" name="username" autocomplete="username"><option value="alice">Alice</option><option value="bob">Bob</option><option value="carol">Carol</option><option value="dave">Dave</option><option value="erin">Erin</option></select></label>
+        <label>Пароль<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button id="sign-in" type="submit">Войти</button>
+        <button id="sign-out" type="button" class="secondary" disabled>Выйти</button>
+      </form>
+      <p class="hint">Используйте пароль, заданный при запуске локального стенда через DEMO_PASSWORD. Смена пользователя завершает текущий сеанс в интерфейсе.</p>
+    </section>
+    <p id="error" role="alert"></p>
+    <p id="notice" role="status" aria-live="polite"></p>
+
+    <div id="workspace" hidden>
+      <section class="toolbar" aria-label="Фильтр задач">
+        <label>Организация<select id="organization"><option value="*">Все доступные задачи</option></select></label>
+        <p id="task-count" class="muted"></p>
+        <button id="refresh" type="button" class="secondary">Обновить</button>
+        <button id="new-task" type="button">Создать задачу</button>
+      </section>
+
+      <section id="create-panel" class="panel" hidden aria-labelledby="create-heading">
+        <div class="section-heading"><h2 id="create-heading">Новая задача</h2><button id="cancel-create" type="button" class="secondary">Отмена</button></div>
+        <form id="create-task" class="form-grid">
+          <label>Организация задачи<select id="create-organization" required></select></label>
+          <label>Статус<select id="create-status"><option value="todo">К выполнению</option><option value="in_progress">В работе</option><option value="done">Готово</option></select></label>
+          <label class="wide">Название<input id="create-title" maxlength="160" required></label>
+          <label class="wide">Описание<textarea id="create-description" maxlength="4000" rows="3"></textarea></label>
+          <div class="wide"><button id="create-submit" type="submit">Создать</button></div>
+        </form>
+        <p class="hint">Создатель становится назначающим (assigner). Право создавать задачи не означает доступ ко всем существующим задачам.</p>
+      </section>
+
+      <div class="task-layout">
+        <section class="panel" aria-labelledby="tasks-heading">
+          <div class="section-heading"><h2 id="tasks-heading">Доступные задачи</h2></div>
+          <ul id="tasks" class="task-list" aria-live="polite"></ul>
+          <p id="empty-tasks" class="muted" hidden>Доступных задач нет.</p>
+          <p class="hint">Здесь показаны только задачи, для которых сервер подтвердил can_view. Прямой доступ к задаче возможен без членства в её организации.</p>
+        </section>
+
+        <section id="task-detail" class="panel" aria-labelledby="task-heading" hidden>
+          <p id="task-context" class="eyebrow"></p>
+          <div class="section-heading"><h2 id="task-heading"></h2><button id="delete-task" type="button" class="danger" hidden>Удалить задачу</button></div>
+          <p id="task-recovery" class="recovery-note" role="status" hidden>Только чтение: требуется завершение восстановления прав. Обратитесь к оператору стенда.</p>
+          <p id="task-permissions" class="muted"></p>
+          <form id="edit-task">
+            <fieldset id="edit-fields" class="form-grid">
+              <label class="wide">Название задачи<input id="edit-title" maxlength="160" required></label>
+              <label class="wide">Описание задачи<textarea id="edit-description" maxlength="4000" rows="4"></textarea></label>
+              <label>Статус задачи<select id="edit-status"><option value="todo">К выполнению</option><option value="in_progress">В работе</option><option value="done">Готово</option></select></label>
+              <div class="form-actions"><button id="save-task" type="submit">Сохранить задачу</button></div>
+            </fieldset>
+          </form>
+          <section id="task-access" class="subsection" hidden aria-labelledby="access-heading">
+            <h3 id="access-heading">Прямые права на задачу</h3>
+            <ul id="direct-relations" class="compact-list" hidden></ul>
+            <form id="task-relation" class="form-grid">
+              <label>Пользователь для доступа<input id="relation-user" placeholder="например, dave" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+              <label>Отношение<select id="relation"><option value="viewer">viewer — чтение</option><option value="editor">editor — редактирование</option><option value="assignee">assignee — исполнитель</option><option value="blocked">blocked — ограничение</option></select></label>
+              <div class="wide button-row"><button id="grant-relation" type="submit" value="grant">Выдать отношение</button><button id="revoke-relation" type="submit" value="revoke" class="secondary">Отозвать отношение</button></div>
+            </form>
+            <p class="hint">Менять отношения может тот, у кого есть can_delete. Отзыв одного прямого отношения не отменяет доступ по другим отношениям или через организацию.</p>
+          </section>
+        </section>
+      </div>
+
+      <section id="organization-panel" class="panel" hidden aria-labelledby="org-heading">
+        <div class="section-heading"><div><p class="eyebrow">Организация</p><h2 id="org-heading"></h2></div><p id="org-owner" class="owner-label"></p></div>
+        <p id="organization-recovery" class="recovery-note" role="status" hidden>Только чтение: требуется завершение восстановления прав. Обратитесь к оператору стенда.</p>
+        <div class="table-scroll"><table><thead><tr><th>Пользователь</th><th>Роль</th><th>Владение</th></tr></thead><tbody id="members"></tbody></table></div>
+        <div id="organization-management" hidden>
+          <div class="management-grid">
+            <section class="subsection" aria-labelledby="member-heading">
+              <h3 id="member-heading">Участники и роли</h3>
+              <form id="member-form" class="form-grid">
+                <label>Участник<input id="member-user" placeholder="например, carol" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+                <label>Роль участника<select id="member-role"><option value="member">member — участник</option><option value="admin">admin — администратор</option></select></label>
+                <div class="wide button-row"><button id="set-member" type="submit" value="set">Установить роль</button><button id="remove-member" type="submit" value="remove" class="secondary">Удалить участника</button></div>
+              </form>
+              <p class="hint">Admin может создавать задачи, но не получает автоматически доступ ко всем задачам. Владелец управляется отдельной операцией передачи.</p>
+            </section>
+            <section class="subsection" aria-labelledby="inheritance-heading">
+              <h3 id="inheritance-heading">Права на все задачи организации</h3>
+              <form id="organization-permission" class="form-grid">
+                <label>Получатель права<input id="permission-user" placeholder="например, bob" pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required autocomplete="off"></label>
+                <label>Право организации<select id="organization-relation"><option value="can_view_task">can_view_task</option><option value="can_edit_task">can_edit_task</option><option value="can_delete_task">can_delete_task</option></select></label>
+                <div class="wide button-row"><button id="grant-permission" type="submit" value="grant">Выдать право</button><button id="revoke-permission" type="submit" value="revoke" class="secondary">Отозвать право</button></div>
+              </form>
+              <p class="hint">Права наследуются задачами через parent_context. В исходной модели can_edit_task также даёт право удалять задачи; это широкое полномочие.</p>
+            </section>
+          </div>
+          <section class="subsection ownership" aria-labelledby="ownership-heading">
+            <div><h3 id="ownership-heading">Передача владения</h3><p class="hint">Передать можно существующему участнику. Прежний владелец теряет доступ, полученный через owner, но сохраняет независимые прямые права.</p></div>
+            <form id="transfer-owner"><label>Новый владелец<select id="new-owner" required></select></label><button id="transfer-owner-submit" type="submit" class="secondary">Передать владение</button></form>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <details class="model-notes">
+      <summary>Как устроен доступ в этом примере</summary>
+      <div class="notes-grid">
+        <div><h3>Владелец и администратор</h3><p>Owner наследует полный доступ к задачам своей организации. Admin может создавать задачи. Member видит организацию, но не получает автоматически доступ к её задачам.</p></div>
+        <div><h3>Назначающий и исполнитель</h3><p>Assigner может читать, редактировать и удалять свою задачу. Assignee и editor могут читать и редактировать, но не получают права удаления или выдачи доступа.</p></div>
+        <div><h3>Особенность blocked</h3><p>Сохранён приоритет исходной модели Openlane: blocked исключает can_view; can_edit всё ещё допускается через can_delete, а can_delete не ограничивается blocked. Это не универсальный запрет всех операций.</p></div>
+        <div><h3>Проверка на сервере</h3><p>Доступ после изменения прав проверяется заново. При недоступности авторизации сервер не выдаёт доступ по старому разрешению. Интерфейс не является источником прав.</p></div>
+      </div>
+    </details>
+  </main>
+  <footer>Адаптация публичной модели <a href="https://github.com/theopenlane/core/tree/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga">Openlane</a> · Apache-2.0 · Rust / Axum / PostgreSQL / OpenFGA</footer>
+</body>
+</html>

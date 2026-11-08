@@ -1,8 +1,10 @@
-# Лапки — Rust/Axum и объектная авторизация OpenFGA
+# Openlane Tasks — Rust/Axum и объектная авторизация OpenFGA
 
 Инженерная лаборатория: роли и доступ к отдельным объектам, настоящий
 PostgreSQL/OpenFGA, отзыв прав между репликами и восстановление после отказов.
-Все данные вымышлены. Это не публичная production IAM-система.
+Небольшой сценарий организаций и задач адаптирован из реальной модели
+[Openlane](docs/openlane-model.md), Apache-2.0, с закреплённым исходным коммитом.
+Демонстрационные аккаунты и организации вымышлены. Это не публичная IAM-система.
 
 **[Открыть личную настоящую лабораторию в Codespaces](https://codespaces.new/qqrm/openfga-axum-lab?quickstart=1)** ·
 **[Запустить временный стенд через Actions](https://github.com/qqrm/openfga-axum-lab/actions/workflows/live-lab.yml)** ·
@@ -16,7 +18,7 @@ PostgreSQL/OpenFGA, отзыв прав между репликами и вос�
 OpenFGA, проверяет готовность и первичный сценарий авторизации. Откройте порт
 **3000** в панели **Ports**. Он приватный, а PostgreSQL/OpenFGA не пробрасываются.
 В своём терминале выполните `cat .lab/codespaces/secrets/demo-password` и войдите
-как `alice`, `bob`, `carol` или `dave`. Не публикуйте пароль. Данные сохраняются
+как `alice`, `bob`, `carol`, `dave` или `erin`. Не публикуйте пароль. Данные сохраняются
 при остановке/возобновлении; удаление Codespace удаляет его среду.
 
 **Actions — для ручной проверки владельцем.** Один раз задайте repository secrets
@@ -30,13 +32,10 @@ demo-пользователя и свой `LIVE_LAB_PASSWORD`. Доступ ра
 после завершения не работают. Summary может появиться только после окончания
 job — во время сессии используйте ссылку из лога завершённого стартового шага.
 
-До слияния PR #12 эти конфигурации находятся в `feature/goal-10-delivery`:
-для Codespaces выберите эту ветку; ручной Actions workflow станет доступен
-с `main` после слияния. Наличие конфигурации не означает созданного личного
-Codespace или уже работающей сессии. Подробности и границы проверок:
-[живая лаборатория](docs/live-lab.md).
+Наличие конфигурации не означает созданного личного Codespace или уже
+работающей сессии. Подробности и границы проверок: [живая лаборатория](docs/live-lab.md).
 
-**Pages — только имитация интерфейса и данных с WASM-ядром.** Настоящие
+**Pages — только пояснение модели и демонстрация жизненного цикла с WASM-ядром.** Настоящие
 PostgreSQL и OpenFGA там не запускаются. Постоянные удалённые staging/stable
 пока не настроены; для просмотра лабы они не обязательны.
 
@@ -60,14 +59,40 @@ docker compose up -d --build app
 
 Откройте `http://localhost:3000`. Локальный исходный стенд использует пароль
 из `DEMO_PASSWORD` (посмотреть в своём терминале: `printenv DEMO_PASSWORD`):
-`alice` — администратор, `bob` — сотрудник,
-`carol` — владелец лисы Mika, `dave` изначально видит кота Pixel, но не лису.
+`alice` — владелец организации Acme, `bob` — администратор с отдельным правом
+чтения задач, `carol` — назначающая задачу `access-review` и исполнитель
+`incident-response`, `dave` — внешний читатель `vendor-review`.
+`erin` владеет отдельной организацией `other`, недоступной пользователям Acme.
 Это не пароль личного Codespace или защищённой Actions-сессии.
 
 Compose создаёт две базы в PostgreSQL; Rust `lab-tool bootstrap` инициализирует
 модель/отношения OpenFGA. Повторный запуск сохраняет store/model.
 `APP_PORT=3001 docker compose up -d app` меняет порт. `DEMO_PASSWORD` задаёт
 только первоначальный пароль: существующие аккаунты переменная не изменяет.
+
+## Модель Openlane и переход с прежнего демо
+
+Владелец организации наследует права на задачи; администратор может создавать
+задачи, но сам по себе не получает право читать все существующие. Назначающий
+(`assigner`) управляет задачей; исполнитель (`assignee`) редактирует, но не
+удаляет и не раздаёт права. Членство и прямые разрешения независимы: удаление
+одного пути доступа не отменяет остальные.
+
+Особенность upstream сохранена явно: `blocked` закрывает чтение и обычное
+редактирование, но не перекрывает `can_delete` и связанную ветку `can_edit`.
+Это **не универсальный запрет**. [Точная матрица и происхождение](docs/openlane-model.md).
+
+Передача владельца и смена роли применяют удаление/добавление tuple одним
+атомарным запросом OpenFGA. Незавершённое изменение записывается в PostgreSQL;
+до подтверждения организация закрыта с 503, а запуск приложения повторяет
+сохранённую операцию. После неопределённого результата повтор возвращает чтение;
+запись остаётся закрытой до явного завершения всех прежних запросов и сверки. Данные других организаций не перепривязываются.
+
+Прежние миграции и записи не переписываются. Новый model fingerprint намеренно
+несовместим со старым сохранённым config: автоматического сброса store/томов нет.
+Для проверки новой модели используйте отдельный Compose project, например
+`export COMPOSE_PROJECT_NAME=openlane-review`, и отдельные пароли.
+[Переход и проверки](docs/openlane-migration.md).
 
 ## Проверить основную задачу
 
@@ -78,7 +103,8 @@ docker compose exec -e SMOKE_ALLOW_MUTATIONS=true app lab-tool acceptance
 ```
 
 Ожидается JSON с `accepted: true` и последовательностью
-**403 → 204 → 200 → 204 → 403**: `dave` не читает лису, `carol` выдаёт доступ,
+**403 → 204 → 200 → 204 → 403**: `dave` не читает `access-review`,
+`carol` назначает его исполнителем,
 чтение проходит, доступ отзывается, чтение снова запрещено. Команда изменяет
 тестовые права и возвращает их в исходное состояние; не запускайте её параллельно
 с ручным редактированием этих же прав. Предварительно выданный доступ — ошибка,
@@ -113,7 +139,7 @@ liveness как доказательство готовности авториз
 cargo install cargo-nextest --locked
 cargo nextest run --locked --profile ci
 cargo nextest run --locked --release --profile ci --run-ignored all \
-  -E 'not test(paired_aa_calibration) and not binary(delivery)' --success-output immediate
+  -E 'not test(paired_aa_calibration) and not binary(delivery) and not binary(fga_model)' --success-output immediate
 ```
 
 В Codespace установлен Rust 1.99; для фиксированной версии используйте
@@ -148,8 +174,16 @@ Criterion A/A–A/B пока находится в [PR #8](https://github.com/qq
 [проверки и их границы](docs/verification.md), [INTENT](INTENT.md).
 
 `POST/DELETE /session` создаёт/отзывает bearer-сессию. API:
-`GET/POST /pets`, `GET/PATCH/DELETE /pets/{id}`,
-`PUT/DELETE /pets/{id}/relations/{viewer|caregiver}/{user}`.
+`GET/POST /tasks`, `GET/PATCH/DELETE /tasks/{id}`,
+`PUT/DELETE /tasks/{id}/relations/{viewer|editor|assignee|blocked}/{user}`.
+Организации: `GET /organizations`, `GET /organizations/{id}/members`,
+`PUT/DELETE /organizations/{id}/members/{user}`,
+`PUT /organizations/{id}/owner`,
+`PUT/DELETE /organizations/{id}/permissions/{can_view_task|can_edit_task|can_delete_task}/{user}`.
+Создание задачи принимает `organization_id`, `title`, `description`, `status`
+(`todo`, `in_progress`, `done`); редактирование — последние три поля.
+Передача владения требует `expected_owner` и `new_owner`; новую роль участника
+задают через `{"role":"member"}` или `{"role":"admin"}`.
 Создание требует `Idempotency-Key`; конфликт содержимого — 409.
 OpenFGA errors закрывают доступ с 503, а не становятся allow. `/metrics` — Prometheus.
 
@@ -186,8 +220,8 @@ RUSTSEC-2023-0071. Аудит допускает только это преду�
 
 ## Производительность и браузер
 
-Интерактивная версия в `browser-demo/` работает целиком в браузере: выбор
-роли и данные имитируются, а жизненный цикл использует то же доменное ядро
+Версия в `browser-demo/` работает целиком в браузере: правила доступа показаны
+как справочная матрица; интерактивный жизненный цикл использует то же доменное ядро
 Rust, собранное в WebAssembly. Настоящие Axum, OpenFGA и PostgreSQL в этой
 версии не запускаются. Для локальной сборки установите цель Rust
 `wasm32-unknown-unknown` и выполните `bash scripts/build-browser-demo.sh`,
@@ -231,14 +265,14 @@ just stop
 
 ## OpenFGA transport
 
-The default `grpc` feature uses OpenFGA's native gRPC port 8081. The optional
-`http` feature uses port 8080. Bootstrap and test fixture inspection always use
+The default `http` feature uses OpenFGA's HTTP port 8080. The optional
+`grpc` feature uses port 8081. Bootstrap and test fixture inspection always use
 HTTP, independently of the application's selected transport. If both features
 are enabled, the application selects gRPC.
 
 ```sh
 cargo build --locked
-cargo build --locked --no-default-features --features http
+cargo build --locked --no-default-features --features grpc
 ```
 
 Both adapters request `HIGHER_CONSISTENCY`, tolerate duplicate grants and
@@ -263,16 +297,18 @@ that environment. Bootstrap continues to use HTTP in either case.
 
 `backend_bench` requires `FGA_URL`, `FGA_STORE` and `FGA_MODEL` for an existing
 isolated lab. `BACKEND` defaults to the enabled transport; `ITERS` defaults to
-1000 and must be positive. Any failed or denied authorization, including during
-warmup, aborts without publishing timings.
+20 and must be positive. `MODE=check|list`, `CONC` and `DELAY_MS` retain the
+concurrent diagnostic introduced on main. The default probe is Alice viewing
+`task:access-review`; list mode targets `task`. Any failed or denied authorization,
+including during warmup, aborts without publishing timings.
 
 ```sh
 cargo run --locked --release --bin backend_bench
-cargo run --locked --release --no-default-features --features http --bin backend_bench
+cargo run --locked --release --no-default-features --features grpc --bin backend_bench
 ```
 
 The previous gRPC/HTTP timing table was invalid: the adapters used different
 consistency settings and the runner counted failed checks as samples. Those
 numbers do not establish a performance difference. The current tool is a
-single-threaded diagnostic, not a capacity or SLO measurement; use repeated,
+diagnostic, not a capacity or SLO measurement; use repeated,
 paired runs with correctness and noise checks before making performance claims.

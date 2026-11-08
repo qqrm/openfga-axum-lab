@@ -106,7 +106,7 @@ impl Drop for Compose {
 impl Stack {
     pub async fn start(client: &Client) -> TestResult<Self> {
         let compose = Compose {
-            project: format!("petlab-test-{}", Uuid::new_v4()),
+            project: format!("openlane-test-{}", Uuid::new_v4()),
             password: Uuid::new_v4().to_string(),
         };
         compose.run(&["up", "-d", "openfga"]).await?;
@@ -193,8 +193,9 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"))
+    fn app_command(&self, fga_url: &str) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
+        command
             .env("DATABASE_URL", &self.database)
             .env(
                 "MIGRATIONS_DIR",
@@ -202,14 +203,42 @@ impl Stack {
             )
             .env("FGA_URL", fga_url)
             .env("FGA_CONFIG", self.config_path())
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
             .env("AUTHZ_MODE", "openfga")
             .env("DEMO_SEED", "true")
             .env("DEMO_PASSWORD", &self.password)
             .env("LISTEN_ADDR", "127.0.0.1:0")
             .env("RUST_LOG", "off")
             .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
+            .kill_on_drop(true);
+        command
+    }
+
+    /// The caller must stop every test application and prove the test proxy has
+    /// completed all captured writes before invoking this explicit operator step.
+    pub async fn recover_after_backend_drain(&self, fga_url: &str) -> TestResult {
+        let output = timeout(
+            Duration::from_secs(60),
+            self.app_command(fga_url)
+                .arg("--recover-authorization-after-backend-drain")
+                .output(),
+        )
+        .await??;
+        if !output.status.success() {
+            return Err(format!(
+                "drained authorization recovery failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    pub async fn app(&self, fga_url: &str) -> TestResult<App> {
+        let mut child = self.app_command(fga_url).spawn()?;
         let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let address = timeout(Duration::from_secs(60), async {
             while let Some(line) = stdout.next_line().await? {
@@ -256,7 +285,7 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn pet_row_is_locked(&self, id: &str) -> TestResult<bool> {
+    pub async fn task_row_is_locked(&self, id: &str) -> TestResult<bool> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&self.database)
@@ -264,19 +293,88 @@ impl Stack {
         // This independent autocommit probe releases any acquired lock before
         // returning, including when it discovers a missing mutation lock.
         let result =
-            sqlx::query_scalar::<_, String>("SELECT id FROM pets WHERE id=$1 FOR UPDATE NOWAIT")
+            sqlx::query_scalar::<_, String>("SELECT id FROM tasks WHERE id=$1 FOR UPDATE NOWAIT")
                 .bind(id)
                 .fetch_optional(&pool)
                 .await;
         pool.close().await;
         match result {
             Ok(Some(_)) => Ok(false),
-            Ok(None) => Err("pet lock probe requires an existing pet".into()),
+            Ok(None) => Err("task lock probe requires an existing task".into()),
             Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
                 Ok(true)
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    pub async fn organization_row_is_locked(&self, id: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        let result = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM organizations WHERE id=$1 FOR UPDATE NOWAIT",
+        )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await;
+        pool.close().await;
+        match result {
+            Ok(Some(_)) => Ok(false),
+            Ok(None) => Err("organization lock probe requires an existing organization".into()),
+            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
+                Ok(true)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub async fn authorization_pending(&self, organization: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        let result =
+            sqlx::query_scalar::<_, bool>("SELECT authz_pending FROM organizations WHERE id=$1")
+                .bind(organization)
+                .fetch_one(&pool)
+                .await;
+        pool.close().await;
+        Ok(result?)
+    }
+
+    pub async fn assert_single_owner(
+        &self,
+        client: &Client,
+        organization: &str,
+        owner: &str,
+    ) -> TestResult {
+        let config = self.config()?;
+        let store = config["store_id"].as_str().ok_or("missing store id")?;
+        let response: TuplePage = client
+            .post(format!("{}/stores/{store}/read", self.fga_http_url))
+            .json(&json!({
+                "tuple_key": {"object": format!("organization:{organization}"), "relation": "owner"},
+                "page_size": 100,
+                "consistency": "HIGHER_CONSISTENCY"
+            }))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert!(
+            response.continuation_token.is_empty(),
+            "unexpected additional owners"
+        );
+        assert_eq!(
+            response.tuples.len(),
+            1,
+            "organization must have exactly one owner tuple"
+        );
+        assert_eq!(response.tuples[0]["key"]["user"], format!("user:{owner}"));
+        Ok(())
     }
 
     pub async fn restart_dependencies(&mut self, client: &Client) -> TestResult {
@@ -305,12 +403,12 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn assert_no_tuples(&self, client: &Client, pet: &str) -> TestResult {
+    pub async fn assert_no_tuples(&self, client: &Client, task: &str) -> TestResult {
         let config = self.config()?;
         let store = config["store_id"].as_str().ok_or("missing store id")?;
         let response: TuplePage = client
             .post(format!("{}/stores/{store}/read", self.fga_http_url))
-            .json(&json!({"tuple_key": {"object": format!("pet:{pet}")},
+            .json(&json!({"tuple_key": {"object": format!("task:{task}")},
                 "consistency": "HIGHER_CONSISTENCY"}))
             .send()
             .await?
@@ -319,7 +417,7 @@ impl Stack {
             .await?;
         assert!(
             response.tuples.is_empty() && response.continuation_token.is_empty(),
-            "deleted pet still has authorization tuples"
+            "deleted task still has authorization tuples"
         );
         Ok(())
     }

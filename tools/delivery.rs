@@ -157,13 +157,13 @@ pub async fn acceptance() -> ToolResult {
     probe().await?;
     let carol = login(&client, &base, "carol", &password).await?;
     let dave = login(&client, &base, "dave", &password).await?;
-    let path = "/pets/fox/relations/caregiver/dave";
+    let path = "/tasks/access-review/relations/assignee/dave";
     // Refuse to modify a fixture which already grants dave access.
     expect(
         &client,
         &base,
         Method::GET,
-        "/pets/fox",
+        "/tasks/access-review",
         &dave,
         StatusCode::FORBIDDEN,
     )
@@ -182,7 +182,7 @@ pub async fn acceptance() -> ToolResult {
             &client,
             &base,
             Method::GET,
-            "/pets/fox",
+            "/tasks/access-review",
             &dave,
             StatusCode::OK,
         )
@@ -200,7 +200,7 @@ pub async fn acceptance() -> ToolResult {
             &client,
             &base,
             Method::GET,
-            "/pets/fox",
+            "/tasks/access-review",
             &dave,
             StatusCode::FORBIDDEN,
         )

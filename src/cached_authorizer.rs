@@ -60,7 +60,7 @@ impl CachedAuthorizer {
         &self,
         operation: impl Future<Output = Result<(), AuthError>> + Send,
     ) -> Result<(), AuthError> {
-        // These statements commit independently of the caller's pet transaction.
+        // These statements commit independently of the caller's domain transaction.
         // Persist the fence before polling the remote operation. Cancellation
         // or an ambiguous response leaves it in place on every replica.
         sqlx::query_scalar::<_, i64>(
@@ -151,7 +151,18 @@ impl Authorizer for CachedAuthorizer {
 
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "authz_cache.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        self.mutate(self.inner.write(tuples, add)).await
+        if add {
+            self.change(tuples, &[]).await
+        } else {
+            self.change(&[], tuples).await
+        }
+    }
+
+    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+        if writes.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
+        self.mutate(self.inner.change(writes, deletes)).await
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "authz_cache.delete_object")]

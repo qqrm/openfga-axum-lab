@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 theopenlane, Inc.
+#
+# MODIFIED for qqrm/openfga-axum-lab: a users-only organization/task subset
+# flattened from Openlane's modular schema 1.2 to schema 1.1. Omitted services,
+# groups, specialized roles, conditions, org hierarchy and other parent types.
+# Original: https://github.com/theopenlane/core/tree/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga/model
+# Exact inputs, preserved semantics and application policies:
+# ../docs/openlane-model.md. License: ../LICENSES/Apache-2.0-Openlane.txt.
+# model.json is the deployable JSON representation of this modified source.
+
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define owner: [user]
+    define admin: [user]
+    define member: [user] or owner or admin
+    define full_access: owner
+    define can_delete: owner
+    define can_edit: admin or owner
+    define can_view: member or admin or can_edit
+
+    # From Openlane's generated/crud.fga, restricted to users.
+    define can_view_task: [user] or can_edit_task or full_access
+    define can_edit_task: [user] or can_delete_task or full_access
+    define can_delete_task: [user] or full_access
+    define can_create_task: can_edit or can_edit_task
+
+type task
+  relations
+    define parent_context: [organization]
+    define assigner: [user]
+    define assignee: [user]
+
+    define parent_viewer: can_view_task from parent_context
+    define parent_editor: can_edit_task from parent_context
+    define parent_deleter: can_delete_task from parent_context
+
+    define deleter: assigner or parent_editor or parent_deleter
+    define editor: [user] or parent_editor or assignee or assigner
+    define viewer: [user] or editor or parent_viewer
+    define blocked: [user]
+
+    # Preserve upstream precedence. blocked denies viewing and ordinary editing;
+    # it does not override can_delete or the can_delete branch of can_edit.
+    define can_view: viewer but not blocked
+    define can_edit: (editor but not blocked) or can_delete
+    define can_delete: deleter

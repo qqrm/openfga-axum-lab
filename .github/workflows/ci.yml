@@ -59,6 +59,8 @@ jobs:
             cargo-machete@0.9.2
           fallback: none
       - run: cargo nextest run --locked --profile ci
+      - name: Verify the Openlane model and both adapters against pinned OpenFGA
+        run: bash scripts/test-openlane-model.sh
       - run: bash scripts/audit-dependencies.sh
       - run: bash scripts/audit-negative.sh
       - run: cargo deny check advisories bans sources
@@ -111,9 +113,68 @@ jobs:
             artifacts/
             target/nextest/ci/junit.xml
           if-no-files-found: ignore
+  browser-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - transport: grpc
+            port: 8081
+          - transport: http
+            port: 8080
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE_PROJECT_NAME: openlane-browser-${{ matrix.transport }}
+      FGA_TRANSPORT: ${{ matrix.transport }}
+      FGA_APP_URL: http://openfga:${{ matrix.port }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Generate credentials for this disposable test stack
+        run: |
+          POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          DEMO_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$DEMO_PASSWORD"
+          {
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "DEMO_PASSWORD=$DEMO_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Install the locked browser test dependencies
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Start real Axum, PostgreSQL and OpenFGA
+        run: |
+          docker compose up -d --build app
+          for attempt in $(seq 1 90); do
+            if docker compose exec -T app lab-tool probe; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Exercise the browser against the real API
+        working-directory: e2e
+        run: npm test
+      - name: Collect logs and remove only this disposable project
+        if: always()
+        run: |
+          mkdir -p artifacts
+          docker compose logs --no-color > artifacts/browser-stack.log 2>&1 || true
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: browser-e2e-${{ matrix.transport }}
+          path: |
+            artifacts/browser-*
+            e2e/test-results/
+          if-no-files-found: ignore
   ci-gate:
     if: always()
-    needs: [rust, integration, shell, formal, browser-demo]
+    needs: [rust, integration, shell, formal, browser-demo, browser-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks
@@ -123,9 +184,11 @@ jobs:
           SHELL_RESULT: ${{ needs.shell.result }}
           FORMAL_RESULT: ${{ needs.formal.result }}
           BROWSER_RESULT: ${{ needs.browser-demo.result }}
+          BROWSER_E2E_RESULT: ${{ needs.browser-e2e.result }}
         run: |
           test "$RUST_RESULT" = success
           test "$INTEGRATION_RESULT" = success
           test "$SHELL_RESULT" = success
           test "$FORMAL_RESULT" = success
           test "$BROWSER_RESULT" = success
+          test "$BROWSER_E2E_RESULT" = success

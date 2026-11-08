@@ -1,78 +1,76 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+//! Live adapter diagnostics. This target measures OpenFGA calls, not cache hits.
+use criterion::Criterion;
 use openfga_axum_lab::application::Authorizer;
 #[cfg(feature = "grpc")]
 use openfga_axum_lab::infrastructure::OpenFgaGrpc;
 #[cfg(feature = "http")]
 use openfga_axum_lab::infrastructure::OpenFgaHttp;
 use std::env;
+#[cfg(feature = "http")]
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
-fn rt() -> Runtime {
-    Runtime::new().unwrap()
+async fn checked_request(auth: &dyn Authorizer) -> bool {
+    let allowed = auth
+        .check("alice", "can_view", "task:access-review")
+        .await
+        .expect("OpenFGA check failed; benchmark is invalid");
+    assert!(
+        allowed,
+        "OpenFGA denied the seeded task; benchmark is invalid"
+    );
+    allowed
 }
 
-#[cfg(feature = "grpc")]
-fn make_grpc() -> Box<dyn Authorizer> {
-    let url = env::var("FGA_URL_GRPC").unwrap_or_else(|_| "http://openfga:8081".into());
-    let store = env::var("FGA_STORE").expect("FGA_STORE");
-    let model = env::var("FGA_MODEL").expect("FGA_MODEL");
-    let rt = rt();
-    rt.block_on(async {
-        let sc = openfga_client::client::OpenFgaServiceClient::connect(url)
-            .await
-            .unwrap();
-        let client = openfga_client::client::OpenFgaClient::new(sc, &store, &model);
-        Box::new(OpenFgaGrpc { client }) as Box<dyn Authorizer>
-    })
-}
-
-#[cfg(feature = "http")]
-fn make_http() -> Box<dyn Authorizer> {
-    let url = env::var("FGA_URL_HTTP").unwrap_or_else(|_| "http://openfga:8080".into());
-    let store = env::var("FGA_STORE").expect("FGA_STORE");
-    let model = env::var("FGA_MODEL").expect("FGA_MODEL");
-    Box::new(OpenFgaHttp {
-        client: reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .unwrap(),
-        url,
-        store,
-        model,
-    }) as Box<dyn Authorizer>
-}
-
-#[cfg(feature = "grpc")]
-fn bench_grpc(c: &mut Criterion) {
-    let auth = make_grpc();
-    let rt = rt();
-    c.bench_function("grpc_check", |b| {
-        b.to_async(&rt).iter(|| async {
-            let _ = auth.check("alice", "can_view", "pet:cat").await;
-        })
+fn benchmark(c: &mut Criterion, runtime: &Runtime, name: &str, auth: &dyn Authorizer) {
+    runtime
+        .block_on(auth.ensure_ready())
+        .expect("OpenFGA store/model is unavailable; benchmark is invalid");
+    runtime.block_on(checked_request(auth));
+    c.bench_function(name, |b| {
+        b.to_async(runtime).iter(|| checked_request(auth));
     });
 }
 
-#[cfg(feature = "http")]
-fn bench_http(c: &mut Criterion) {
-    let auth = make_http();
-    let rt = rt();
-    c.bench_function("http_check", |b| {
-        b.to_async(&rt).iter(|| async {
-            let _ = auth.check("alice", "can_view", "pet:cat").await;
-        })
-    });
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    // Cargo test --all-targets invokes this custom harness without --bench.
+    // Compile it normally, but require an explicit benchmark run for network I/O.
+    if !arguments.iter().any(|arg| arg == "--bench") || arguments.iter().any(|arg| arg == "--test")
+    {
+        eprintln!(
+            "Live OpenFGA benchmarks skipped in test mode; run cargo bench --bench authz_cache with FGA_STORE and FGA_MODEL configured."
+        );
+        return Ok(());
+    }
+
+    let mut criterion = Criterion::default().configure_from_args();
+    let store = env::var("FGA_STORE").map_err(|_| "FGA_STORE must identify the seeded store")?;
+    let model = env::var("FGA_MODEL")
+        .map_err(|_| "FGA_MODEL must identify the seeded authorization model")?;
+    // The gRPC channel's background tasks must stay on a live runtime for the
+    // complete measurement. Do not connect inside a temporary runtime.
+    let runtime = Runtime::new()?;
+    #[cfg(feature = "grpc")]
+    {
+        let url = env::var("FGA_URL_GRPC").unwrap_or_else(|_| "http://openfga:8081".into());
+        let auth = runtime.block_on(OpenFgaGrpc::connect(url, &store, &model))?;
+        benchmark(&mut criterion, &runtime, "grpc_check", &auth);
+    }
+    #[cfg(feature = "http")]
+    {
+        let auth = OpenFgaHttp {
+            client: reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(2))
+                .build()?,
+            url: env::var("FGA_URL_HTTP").unwrap_or_else(|_| "http://openfga:8080".into()),
+            store,
+            model,
+        };
+        benchmark(&mut criterion, &runtime, "http_check", &auth);
+    }
+    criterion.final_summary();
+    Ok(())
 }
-
-#[cfg(feature = "grpc")]
-criterion_group!(grpc_benches, bench_grpc);
-#[cfg(feature = "http")]
-criterion_group!(http_benches, bench_http);
-
-#[cfg(all(feature = "grpc", feature = "http"))]
-criterion_main!(grpc_benches, http_benches);
-#[cfg(all(feature = "grpc", not(feature = "http")))]
-criterion_main!(grpc_benches);
-#[cfg(all(feature = "http", not(feature = "grpc")))]
-criterion_main!(http_benches);

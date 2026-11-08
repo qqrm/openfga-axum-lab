@@ -14,8 +14,9 @@ use openfga_axum_lab::{
 };
 use openfga_client::client::{
     AuthorizationModel, CheckRequest, CheckResponse, ConsistencyPreference, GetStoreRequest,
-    GetStoreResponse, ReadAuthorizationModelRequest, ReadAuthorizationModelResponse, ReadRequest,
-    ReadResponse, Tuple as FgaTuple, TupleKey, WriteRequest, WriteResponse,
+    GetStoreResponse, ListObjectsRequest, ListObjectsResponse, ReadAuthorizationModelRequest,
+    ReadAuthorizationModelResponse, ReadRequest, ReadResponse, Tuple as FgaTuple, TupleKey,
+    WriteRequest, WriteResponse,
 };
 use prost::Message;
 use std::{collections::VecDeque, convert::Infallible, sync::Arc, time::Duration};
@@ -106,6 +107,12 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
                 ..Default::default()
             }),
         }),
+        "ListObjects" => frame(ListObjectsResponse {
+            objects: vec![
+                "task:access-review".to_owned(),
+                "task:vendor-review".to_owned(),
+            ],
+        }),
         "Write" => frame(WriteResponse {}),
         "Read" => frame(state.reads.lock().await.pop_front().unwrap_or_default()),
         _ => panic!("unexpected RPC {}", uri.path()),
@@ -131,7 +138,7 @@ fn fga_tuple(object: &str) -> FgaTuple {
     FgaTuple {
         key: Some(TupleKey {
             user: "user:alice".to_owned(),
-            relation: "owner".to_owned(),
+            relation: "assigner".to_owned(),
             object: object.to_owned(),
             condition: None,
         }),
@@ -139,16 +146,97 @@ fn fga_tuple(object: &str) -> FgaTuple {
     }
 }
 
+fn owner(user: &str) -> Tuple {
+    Tuple {
+        user: format!("user:{user}"),
+        relation: "owner".to_owned(),
+        object: "organization:acme".to_owned(),
+    }
+}
+
+fn assert_owner_transfer(request: &WriteRequest) {
+    assert_eq!(request.store_id, "store");
+    assert_eq!(request.authorization_model_id, "model");
+    let writes = request.writes.as_ref().expect("new owner in same Write");
+    let deletes = request.deletes.as_ref().expect("old owner in same Write");
+    assert_eq!(writes.on_duplicate, "ignore");
+    assert_eq!(deletes.on_missing, "ignore");
+    assert_eq!(writes.tuple_keys.len(), 1);
+    assert_eq!(deletes.tuple_keys.len(), 1);
+    assert_eq!(writes.tuple_keys[0].user, "user:carol");
+    assert_eq!(deletes.tuple_keys[0].user, "user:alice");
+    assert_eq!(writes.tuple_keys[0].relation, "owner");
+    assert_eq!(deletes.tuple_keys[0].relation, "owner");
+    assert_eq!(writes.tuple_keys[0].object, "organization:acme");
+    assert_eq!(deletes.tuple_keys[0].object, "organization:acme");
+    assert!(writes.tuple_keys[0].condition.is_none());
+}
+
+#[tokio::test]
+async fn ownership_transfer_is_one_atomic_idempotent_write() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    auth.change(&[owner("carol")], &[owner("alice")]).await?;
+    let requests = stub.requests::<WriteRequest>("Write").await?;
+    assert_eq!(requests.len(), 1, "ownership transfer must be one RPC");
+    assert_owner_transfer(&requests[0]);
+    assert_eq!(stub.state.requests.lock().await.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn empty_changes_do_not_send_an_invalid_write() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    auth.change(&[], &[]).await?;
+    auth.write(&[], true).await?;
+    auth.write(&[], false).await?;
+    assert!(stub.state.requests.lock().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn ownership_transfer_rejects_rpc_failure_without_retrying() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    *stub.state.fail_operation.lock().await = Some("Write");
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    assert!(
+        auth.change(&[owner("carol")], &[owner("alice")])
+            .await
+            .is_err()
+    );
+    let requests = stub.requests::<WriteRequest>("Write").await?;
+    assert_eq!(requests.len(), 1, "failed mutations must not be retried");
+    assert_owner_transfer(&requests[0]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ownership_transfer_rejects_stalled_trailers_without_retrying() -> TestResult {
+    let stub = Stub::start(Vec::new(), true).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    let writes = [owner("carol")];
+    let deletes = [owner("alice")];
+    let result = tokio::time::timeout(Duration::from_secs(3), auth.change(&writes, &deletes))
+        .await
+        .expect("mutation deadline must include response trailers");
+    assert!(result.is_err(), "unacknowledged transfer must not succeed");
+    let requests = stub.requests::<WriteRequest>("Write").await?;
+    assert_eq!(requests.len(), 1, "ambiguous mutations must not be retried");
+    assert_owner_transfer(&requests[0]);
+    Ok(())
+}
+
 #[tokio::test]
 async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
     let stub = Stub::start(Vec::new(), false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     auth.ensure_available().await?;
-    assert!(auth.check("alice", "can_view", "pet:cat").await?);
+    assert!(auth.check("alice", "can_view", "organization:acme").await?);
     let tuples = [Tuple {
         user: "user:alice".to_owned(),
         relation: "owner".to_owned(),
-        object: "pet:cat".to_owned(),
+        object: "organization:acme".to_owned(),
     }];
     auth.write(&tuples, true).await?;
     auth.write(&tuples, false).await?;
@@ -182,44 +270,47 @@ async fn grpc_requests_keep_strong_consistency_and_idempotency() -> TestResult {
 async fn deletion_restarts_first_page_after_each_write() -> TestResult {
     let pages = vec![
         ReadResponse {
-            tuples: vec![fga_tuple("pet:cat")],
+            tuples: vec![fga_tuple("task:vendor-review")],
             continuation_token: "cursor-before-deletion".to_owned(),
         },
         ReadResponse::default(),
     ];
     let stub = Stub::start(pages, false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-    auth.delete_object("pet:cat").await?;
+    auth.delete_object("task:vendor-review").await?;
     let reads = stub.requests::<ReadRequest>("Read").await?;
     assert_eq!(reads.len(), 2);
     for read in reads {
         assert_eq!(read.consistency(), ConsistencyPreference::HigherConsistency);
         assert_eq!(read.page_size, Some(100));
         assert!(read.continuation_token.is_empty());
-        assert_eq!(read.tuple_key.as_ref().unwrap().object, "pet:cat");
+        assert_eq!(
+            read.tuple_key.as_ref().unwrap().object,
+            "task:vendor-review"
+        );
     }
     let writes = stub.requests::<WriteRequest>("Write").await?;
     assert_eq!(writes.len(), 1);
     let deletes = writes[0].deletes.as_ref().unwrap();
     assert_eq!(deletes.on_missing, "ignore");
     assert_eq!(deletes.tuple_keys.len(), 1);
-    assert_eq!(deletes.tuple_keys[0].object, "pet:cat");
+    assert_eq!(deletes.tuple_keys[0].object, "task:vendor-review");
     Ok(())
 }
 
 #[tokio::test]
 async fn deletion_rejects_malformed_or_unrelated_tuples_before_writing() -> TestResult {
-    for invalid in [FgaTuple::default(), fga_tuple("pet:unrelated")] {
+    for invalid in [FgaTuple::default(), fga_tuple("task:unrelated")] {
         let stub = Stub::start(
             vec![ReadResponse {
-                tuples: vec![fga_tuple("pet:cat"), invalid],
+                tuples: vec![fga_tuple("task:vendor-review"), invalid],
                 ..Default::default()
             }],
             false,
         )
         .await?;
         let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-        assert!(auth.delete_object("pet:cat").await.is_err());
+        assert!(auth.delete_object("task:vendor-review").await.is_err());
         assert!(stub.requests::<WriteRequest>("Write").await?.is_empty());
     }
     Ok(())
@@ -231,7 +322,7 @@ async fn grpc_timeout_covers_stalled_response_trailers() -> TestResult {
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     let response = tokio::time::timeout(
         Duration::from_secs(3),
-        auth.check("alice", "can_view", "pet:cat"),
+        auth.check("alice", "can_view", "task:vendor-review"),
     )
     .await
     .expect("adapter must bound the full response, not only the headers");
@@ -275,5 +366,72 @@ async fn readiness_probes_store_and_model_without_cached_success() -> TestResult
         "an unavailable store must fail even if its model remains readable"
     );
     assert!(stub.requests::<CheckRequest>("Check").await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_objects_pins_model_and_strong_consistency() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    assert_eq!(
+        auth.list_objects("alice", "can_view", "task").await?,
+        ["task:access-review", "task:vendor-review"]
+    );
+    let requests = stub.requests::<ListObjectsRequest>("ListObjects").await?;
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.store_id, "store");
+    assert_eq!(request.authorization_model_id, "model");
+    assert_eq!(request.user, "user:alice");
+    assert_eq!(request.relation, "can_view");
+    assert_eq!(request.r#type, "task");
+    assert_eq!(
+        request.consistency,
+        ConsistencyPreference::HigherConsistency as i32
+    );
+    assert!(request.contextual_tuples.is_none());
+    assert!(request.context.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_objects_rejects_rpc_failure_without_retrying() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    *stub.state.fail_operation.lock().await = Some("ListObjects");
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    assert!(
+        auth.list_objects("alice", "can_view", "task")
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        stub.requests::<ListObjectsRequest>("ListObjects")
+            .await?
+            .len(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_objects_does_not_return_objects_before_successful_trailers() -> TestResult {
+    let stub = Stub::start(Vec::new(), true).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        auth.list_objects("alice", "can_view", "task"),
+    )
+    .await
+    .expect("list deadline must include response trailers");
+    assert!(
+        result.is_err(),
+        "an object payload alone is not a completed RPC"
+    );
+    assert_eq!(
+        stub.requests::<ListObjectsRequest>("ListObjects")
+            .await?
+            .len(),
+        1
+    );
     Ok(())
 }

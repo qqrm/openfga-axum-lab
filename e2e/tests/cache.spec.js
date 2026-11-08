@@ -1,88 +1,56 @@
 const { test, expect } = require("@playwright/test");
+const { login, api, createTask, removeTask, refresh, selectTask } = require("../support/lab");
 
-const PASSWORD = process.env.DEMO_PASSWORD;
-if (!PASSWORD) {
-  throw new Error("Set DEMO_PASSWORD to the password used by the running lab before running Playwright.");
-}
-
-async function token(request, username) {
-  const response = await request.post("/session", {
-    data: { username, password: PASSWORD },
-  });
-  return (await response.json()).token;
-}
-
-async function cleanRelation(request, carolToken) {
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-}
-
-async function signIn(page, username) {
-  await page.selectOption("#who", username);
-  await page.fill("#password", PASSWORD);
-  await page.click("#sign-in");
-}
-
-async function petNames(page) {
-  await page.waitForTimeout(200);
-  return page.locator("#pets .card h2").allTextContents();
-}
-
-test("revoked access disappears from UI within cache TTL", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-  await request.put("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  const started = Date.now();
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).not.toContain("Mika");
-  const elapsed = Date.now() - started;
-  console.log("revocation observed in", elapsed, "ms");
-  expect(elapsed).toBeLessThan(3000);
+test("acknowledged revoke invalidates a warm allow before the next UI refresh", async ({ page, context, request }) => {
+  const owner = await login(page, "bob");
+  const reader = await context.newPage();
+  const dave = await login(reader, "dave");
+  let id;
+  try {
+    id = await createTask(request, owner, "Cache revocation review");
+    const relation = "/tasks/" + id + "/relations/assignee/dave";
+    await api(request, "PUT", relation, owner);
+    for (let index = 0; index < 2; index += 1) {
+      await refresh(reader);
+      await selectTask(reader, id);
+      await api(request, "GET", "/tasks/" + id, dave, undefined, 200);
+    }
+    // No TTL sleep and no new login: the first post-acknowledgement request
+    // must observe revocation with the same session and warm application cache.
+    await api(request, "DELETE", relation, owner);
+    await api(request, "GET", "/tasks/" + id, dave, undefined, 403);
+    await refresh(reader);
+    await expect(reader.locator('[data-task-id="' + id + '"]')).toHaveCount(0);
+    await expect(reader.locator("#task-detail")).toBeHidden();
+    await expect(reader.locator("#edit-description")).toHaveValue("");
+    // An idempotent repeated revoke cannot accidentally re-grant access.
+    await api(request, "DELETE", relation, owner);
+    await api(request, "GET", "/tasks/" + id, dave, undefined, 403);
+  } finally {
+    await removeTask(request, owner, id);
+    await reader.close();
+  }
 });
 
-test("cached allow does not survive revoke after reload", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-  await request.put("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  // Warm the cache with a second load.
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toContain("Mika");
-
-  await request.delete("/pets/fox/relations/caregiver/dave", {
-    headers: { Authorization: "Bearer " + carolToken },
-  });
-
-  await page.click("#sign-out");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).not.toContain("Mika");
-});
-
-test("reader cannot see a pet after permission is removed", async ({ page, request }) => {
-  const carolToken = await token(request, "carol");
-  await cleanRelation(request, carolToken);
-
-  await page.goto("/");
-  await signIn(page, "dave");
-  await expect.poll(async () => await petNames(page)).toEqual(["Pixel"]);
+test("a warm deny is invalidated when a direct grant is acknowledged", async ({ page, context, request }) => {
+  const owner = await login(page, "bob");
+  const reader = await context.newPage();
+  const dave = await login(reader, "dave");
+  let id;
+  try {
+    id = await createTask(request, owner, "Cache grant review");
+    for (let index = 0; index < 2; index += 1) {
+      await api(request, "GET", "/tasks/" + id, dave, undefined, 403);
+      await refresh(reader);
+    }
+    await api(request, "PUT", "/tasks/" + id + "/relations/viewer/dave", owner);
+    await api(request, "GET", "/tasks/" + id, dave, undefined, 200);
+    await refresh(reader);
+    await selectTask(reader, id);
+    await expect(reader.locator("#edit-fields")).toBeDisabled();
+    await expect(reader.locator("#task-access")).toBeHidden();
+  } finally {
+    await removeTask(request, owner, id);
+    await reader.close();
+  }
 });

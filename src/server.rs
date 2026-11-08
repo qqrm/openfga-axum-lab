@@ -6,11 +6,33 @@ use crate::infrastructure::OpenFgaGrpc as OpenFga;
 use crate::infrastructure::OpenFgaHttp as OpenFga;
 use crate::{cached_authorizer, configuration, http, infrastructure, metrics, operations};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use std::{sync::Arc, time::Duration};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let after_backend_drain = match arguments.as_slice() {
+        [] => false,
+        [flag] if flag == "--recover-authorization-after-backend-drain" => true,
+        _ => return Err("usage: app [--recover-authorization-after-backend-drain]".into()),
+    };
+    if after_backend_drain && std::env::var("AUTHZ_MODE").as_deref() == Ok("deny") {
+        return Err("authorization recovery requires the real backend".into());
+    }
+    let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
+    let config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let model_path = std::env::var("FGA_MODEL").unwrap_or_else(|_| "fga/model.json".into());
+    let model_hash = Sha256::digest(std::fs::read(model_path)?)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if config["model_sha256"].as_str() != Some(&model_hash) {
+        return Err(
+            "model changed; explicit migration is required before starting the application".into(),
+        );
+    }
     let database = configuration::secret("DATABASE_URL")?;
     let db = PgPoolOptions::new()
         .max_connections(10)
@@ -28,8 +50,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         infrastructure::seed(&db, &password).await?;
     }
-    let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
-    let config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
     let val = |k: &str| -> Result<String, Box<dyn std::error::Error>> {
         config[k]
             .as_str()
@@ -74,20 +94,31 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let readiness = operations::Readiness::new(db.clone(), auth.clone());
     let metrics = metrics::Metrics::new()?;
     let mut auth = auth;
+    let mut authz_coordinator = db.clone();
     if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
-        // Pet mutations can hold a connection from the main pool while
+        // Domain mutations can hold a connection from the main pool while
         // checking authorization. Keep revision queries on a separate pool.
-        let coordinator = PgPoolOptions::new()
+        authz_coordinator = PgPoolOptions::new()
             .max_connections(4)
             .acquire_timeout(Duration::from_secs(2))
             .connect(&database)
             .await?;
         auth = Arc::new(cached_authorizer::CachedAuthorizer::new(
             auth,
-            coordinator,
+            authz_coordinator.clone(),
             metrics.authz_cache.clone(),
         ));
-        infrastructure::recover_pending(&db, auth.as_ref()).await?;
+        infrastructure::recover_pending(
+            &db,
+            &authz_coordinator,
+            auth.as_ref(),
+            after_backend_drain,
+        )
+        .await?;
+    }
+    if after_backend_drain {
+        tracing::info!("authorization recovery completed after operator-confirmed backend drain");
+        return Ok(());
     }
     let address = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -100,6 +131,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         listener,
         http::router(App {
             db,
+            authz_coordinator,
             auth,
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,

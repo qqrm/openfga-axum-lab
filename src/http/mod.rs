@@ -1,4 +1,4 @@
-use crate::application::{App, Identity, PetInput};
+use crate::application::{App, CreateTask, Identity, TaskInput};
 use axum::{
     Json, Router,
     extract::{MatchedPath, Path, Request, State},
@@ -65,14 +65,18 @@ async fn list(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
 ) -> Response {
-    match app.visible_pets(&identity.0).await {
-        Ok(pets) => Json(pets).into_response(),
+    match app.visible_tasks(&identity.0).await {
+        Ok(tasks) => Json(tasks).into_response(),
         Err(error) => error_response(error),
     }
 }
-async fn pet(State(app): State<App>, Path(id): Path<String>) -> Response {
-    match app.get_pet(&id).await {
-        Ok(pet) => Json(pet).into_response(),
+async fn task(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<String>,
+) -> Response {
+    match app.get_task(&identity.0, &id).await {
+        Ok(task) => Json(task).into_response(),
         Err(error) => error_response(error),
     }
 }
@@ -80,12 +84,13 @@ async fn create(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
     headers: HeaderMap,
-    Json(input): Json<PetInput>,
+    Json(input): Json<CreateTask>,
 ) -> Response {
-    let Some(key) = headers.get("idempotency-key").and_then(|v| v.to_str().ok()) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-    match app.create_pet(&identity.0, key, &input).await {
+    let key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    match app.create_task(&identity.0, key, &input).await {
         Ok(id) => (StatusCode::CREATED, Json(json!({"id":id}))).into_response(),
         Err(error) => error_response(error),
     }
@@ -94,22 +99,16 @@ async fn edit(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
     Path(id): Path<String>,
-    Json(input): Json<PetInput>,
+    Json(input): Json<TaskInput>,
 ) -> Response {
-    match app.edit_pet(&identity.0, &id, &input).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => error_response(error),
-    }
+    mutation_response(app.edit_task(&identity.0, &id, &input).await)
 }
-async fn delete_pet(
+async fn delete_task(
     State(app): State<App>,
     axum::Extension(identity): axum::Extension<Identity>,
     Path(id): Path<String>,
 ) -> Response {
-    match app.delete_pet(&id, &identity.0).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => error_response(error),
-    }
+    mutation_response(app.delete_task(&identity.0, &id).await)
 }
 async fn relation(
     State(app): State<App>,
@@ -117,21 +116,114 @@ async fn relation(
     Path((id, relation, subject)): Path<(String, String, String)>,
     method: Method,
 ) -> Response {
-    match app
-        .set_relation(&identity.0, &id, &relation, &subject, method == Method::PUT)
-        .await
-    {
+    mutation_response(
+        app.set_task_relation(&identity.0, &id, &relation, &subject, method == Method::PUT)
+            .await,
+    )
+}
+async fn organizations(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+) -> Response {
+    match app.visible_organizations(&identity.0).await {
+        Ok(organizations) => Json(organizations).into_response(),
+        Err(error) => error_response(error),
+    }
+}
+async fn members(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<String>,
+) -> Response {
+    match app.organization_members(&identity.0, &id).await {
+        Ok(members) => Json(members).into_response(),
+        Err(error) => error_response(error),
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemberRole {
+    role: String,
+}
+async fn put_member(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, subject)): Path<(String, String)>,
+    Json(input): Json<MemberRole>,
+) -> Response {
+    mutation_response(
+        app.set_member(&identity.0, &id, &subject, Some(&input.role))
+            .await,
+    )
+}
+async fn delete_member(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, subject)): Path<(String, String)>,
+) -> Response {
+    mutation_response(app.set_member(&identity.0, &id, &subject, None).await)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ownership {
+    expected_owner: String,
+    new_owner: String,
+}
+async fn transfer_owner(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path(id): Path<String>,
+    Json(input): Json<Ownership>,
+) -> Response {
+    mutation_response(
+        app.transfer_ownership(&identity.0, &id, &input.expected_owner, &input.new_owner)
+            .await,
+    )
+}
+async fn organization_permission(
+    State(app): State<App>,
+    axum::Extension(identity): axum::Extension<Identity>,
+    Path((id, relation, subject)): Path<(String, String, String)>,
+    method: Method,
+) -> Response {
+    mutation_response(
+        app.set_organization_permission(
+            &identity.0,
+            &id,
+            &relation,
+            &subject,
+            method == Method::PUT,
+        )
+        .await,
+    )
+}
+fn mutation_response(result: crate::use_cases::Result<()>) -> Response {
+    match result {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => error_response(error),
     }
 }
 pub(crate) fn router(app: App) -> Router {
     Router::new()
-        .route("/pets", get(list).post(create))
-        .route("/pets/{id}", get(pet).patch(edit).delete(delete_pet))
+        .route("/tasks", get(list).post(create))
+        .route("/tasks/{id}", get(task).patch(edit).delete(delete_task))
         .route(
-            "/pets/{id}/relations/{relation}/{subject}",
+            "/tasks/{id}/relations/{relation}/{subject}",
             axum::routing::put(relation).delete(relation),
+        )
+        .route("/organizations", get(organizations))
+        .route("/organizations/{id}/members", get(members))
+        .route(
+            "/organizations/{id}/members/{subject}",
+            axum::routing::put(put_member).delete(delete_member),
+        )
+        .route(
+            "/organizations/{id}/owner",
+            axum::routing::put(transfer_owner),
+        )
+        .route(
+            "/organizations/{id}/permissions/{relation}/{subject}",
+            axum::routing::put(organization_permission).delete(organization_permission),
         )
         .route_layer(middleware::from_fn_with_state(app.clone(), guard))
         .route(

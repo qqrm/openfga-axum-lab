@@ -5,7 +5,7 @@ use argon2::{
 };
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 pub(crate) fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
@@ -37,6 +37,9 @@ impl Authorizer for DenyAll {
     async fn write(&self, _: &[Tuple], _: bool) -> Result<(), AuthError> {
         Err(AuthError)
     }
+    async fn change(&self, _: &[Tuple], _: &[Tuple]) -> Result<(), AuthError> {
+        Err(AuthError)
+    }
     async fn delete_object(&self, _: &str) -> Result<(), AuthError> {
         Err(AuthError)
     }
@@ -51,96 +54,122 @@ use serde::Deserialize;
 use serde_json::json;
 
 pub(crate) async fn seed(db: &PgPool, password: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut tx = db.begin().await?;
     for (id, name) in [
         ("alice", "Alice"),
         ("bob", "Bob"),
         ("carol", "Carol"),
         ("dave", "Dave"),
+        ("erin", "Erin"),
     ] {
         let hash = hash_password(password)?;
         sqlx::query("INSERT INTO users (id,display_name,password_hash) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash WHERE users.password_hash IS NULL")
-            .bind(id).bind(name).bind(hash).execute(db).await?;
+            .bind(id).bind(name).bind(hash).execute(&mut *tx).await?;
     }
-    for (id, name, species, biography, owner) in [
+    for (id, name, owner, members) in [
         (
-            "fox",
-            "Mika",
-            "fox",
-            "A curious fox who likes quiet afternoons.",
+            "acme",
+            "Acme Compliance",
+            "alice",
+            vec![("alice", "member"), ("bob", "admin"), ("carol", "member")],
+        ),
+        (
+            "other",
+            "Other Organization",
+            "erin",
+            vec![("erin", "member"), ("dave", "member")],
+        ),
+    ] {
+        let inserted = sqlx::query(
+            "INSERT INTO organizations (id,name,owner_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+        )
+        .bind(id)
+        .bind(name)
+        .bind(owner)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if inserted == 1 {
+            for (user, role) in members {
+                sqlx::query("INSERT INTO organization_members (organization_id,user_id,role) VALUES ($1,$2,$3)")
+                    .bind(id).bind(user).bind(role).execute(&mut *tx).await?;
+            }
+            if id == "acme" {
+                sqlx::query("INSERT INTO organization_permissions (organization_id,user_id,relation) VALUES ('acme','bob','can_view_task')")
+                    .execute(&mut *tx).await?;
+            }
+        }
+    }
+    for (id, org, title, description, assigner) in [
+        (
+            "access-review",
+            "acme",
+            "Quarterly access review",
+            "Collect evidence and review privileged accounts.",
             "carol",
         ),
         (
-            "cat",
-            "Pixel",
-            "cat",
-            "A sleepy cat with a loud purr.",
+            "vendor-review",
+            "acme",
+            "Vendor security assessment",
+            "Review vendor controls and record outstanding evidence.",
             "alice",
         ),
         (
-            "dog",
-            "Rex",
-            "dog",
-            "A friendly dog who loves walks.",
+            "incident-response",
+            "acme",
+            "Incident response exercise",
+            "Exercise the response procedure and capture follow-up actions.",
             "bob",
         ),
+        (
+            "other-review",
+            "other",
+            "Independent organization review",
+            "This task demonstrates organization isolation.",
+            "erin",
+        ),
     ] {
-        sqlx::query("INSERT INTO pets (id,name,species,biography,owner_id,status) VALUES ($1,$2,$3,$4,$5,'active') ON CONFLICT (id) DO NOTHING")
-            .bind(id).bind(name).bind(species).bind(biography).bind(owner).execute(db).await?;
+        let fenced: bool = sqlx::query_scalar(
+            "SELECT authz_pending OR authz_uncertain FROM organizations WHERE id=$1 FOR UPDATE",
+        )
+        .bind(org)
+        .fetch_one(&mut *tx)
+        .await?;
+        if fenced {
+            continue;
+        }
+        let inserted = sqlx::query("INSERT INTO tasks (id,organization_id,title,description,task_status,assigner_id,status) VALUES ($1,$2,$3,$4,'todo',$5,'active') ON CONFLICT DO NOTHING")
+            .bind(id).bind(org).bind(title).bind(description).bind(assigner).execute(&mut *tx).await?.rows_affected();
+        if inserted == 1 {
+            let grant = match id {
+                "vendor-review" => Some(("dave", "viewer")),
+                "incident-response" => Some(("carol", "assignee")),
+                _ => None,
+            };
+            if let Some((user, relation)) = grant {
+                sqlx::query(
+                    "INSERT INTO task_relations (task_id,user_id,relation) VALUES ($1,$2,$3)",
+                )
+                .bind(id)
+                .bind(user)
+                .bind(relation)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
     }
+    tx.commit().await?;
     Ok(())
 }
+
 pub(crate) async fn recover_pending(
     db: &PgPool,
+    coordinator: &PgPool,
     auth: &dyn Authorizer,
+    after_backend_drain: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ids: Vec<String> =
-        sqlx::query_scalar("SELECT id FROM pets WHERE status='pending' ORDER BY id")
-            .fetch_all(db)
-            .await?;
-    for id in ids {
-        let mut transaction = db.begin().await?;
-        let row =
-            sqlx::query("SELECT owner_id FROM pets WHERE id=$1 AND status='pending' FOR UPDATE")
-                .bind(&id)
-                .fetch_optional(&mut *transaction)
-                .await?;
-        let Some(row) = row else { continue };
-        let owner: String = row.get("owner_id");
-        let object = format!("pet:{id}");
-        let tuples = [
-            Tuple {
-                user: format!("user:{owner}"),
-                relation: "owner".into(),
-                object: object.clone(),
-            },
-            Tuple {
-                user: "shelter:central".into(),
-                relation: "shelter".into(),
-                object,
-            },
-        ];
-        auth.write(&tuples, true)
-            .await
-            .map_err(|_| "pending authorization recovery failed")?;
-        sqlx::query("UPDATE pets SET status='active' WHERE id=$1 AND status='pending'")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await?;
-        transaction.commit().await?;
-    }
-    let deleting: Vec<String> =
-        sqlx::query_scalar("SELECT id FROM pets WHERE status='deleting' ORDER BY id")
-            .fetch_all(db)
-            .await?;
-    for id in deleting {
-        auth.delete_object(&format!("pet:{id}"))
-            .await
-            .map_err(|_| "pending deletion recovery failed")?;
-        sqlx::query("UPDATE pets SET status='deleted' WHERE id=$1 AND status='deleting'")
-            .bind(id)
-            .execute(db)
-            .await?;
-    }
+    crate::authorization::recover(db, coordinator, auth, after_backend_drain).await?;
     Ok(())
 }
 
@@ -190,30 +219,38 @@ mod openfga_http {
                 .json::<Health>()
                 .await
                 .map_err(|_| AuthError)?;
-            if health.status == "SERVING" {
-                Ok(())
-            } else {
-                Err(AuthError)
+            if health.status != "SERVING" {
+                return Err(AuthError);
             }
+            // A healthy server may host a soft-deleted store. Cached allows
+            // must probe the configured store, matching the gRPC adapter.
+            self.client
+                .get(format!("{}/stores/{}", self.url, self.store))
+                .send()
+                .await
+                .map_err(|_| AuthError)?
+                .error_for_status()
+                .map_err(|_| AuthError)?
+                .bytes()
+                .await
+                .map_err(|_| AuthError)?;
+            Ok(())
         }
         async fn ensure_ready(&self) -> Result<(), AuthError> {
             self.ensure_available().await?;
-            // A model can remain readable after a soft-deleted store.
-            for path in [
-                format!("stores/{}", self.store),
-                format!("stores/{}/authorization-models/{}", self.store, self.model),
-            ] {
-                self.client
-                    .get(format!("{}/{}", self.url, path))
-                    .send()
-                    .await
-                    .map_err(|_| AuthError)?
-                    .error_for_status()
-                    .map_err(|_| AuthError)?
-                    .bytes()
-                    .await
-                    .map_err(|_| AuthError)?;
-            }
+            self.client
+                .get(format!(
+                    "{}/stores/{}/authorization-models/{}",
+                    self.url, self.store, self.model
+                ))
+                .send()
+                .await
+                .map_err(|_| AuthError)?
+                .error_for_status()
+                .map_err(|_| AuthError)?
+                .bytes()
+                .await
+                .map_err(|_| AuthError)?;
             Ok(())
         }
         #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
@@ -264,12 +301,23 @@ mod openfga_http {
         }
         #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
         async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-            let mut data = json!({"authorization_model_id":self.model});
-            data[if add { "writes" } else { "deletes" }] = if add {
-                json!({"tuple_keys":tuples, "on_duplicate":"ignore"})
+            if add {
+                self.change(tuples, &[]).await
             } else {
-                json!({"tuple_keys":tuples, "on_missing":"ignore"})
-            };
+                self.change(&[], tuples).await
+            }
+        }
+        async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+            if writes.is_empty() && deletes.is_empty() {
+                return Ok(());
+            }
+            let mut data = json!({"authorization_model_id":self.model});
+            if !writes.is_empty() {
+                data["writes"] = json!({"tuple_keys":writes,"on_duplicate":"ignore"});
+            }
+            if !deletes.is_empty() {
+                data["deletes"] = json!({"tuple_keys":deletes,"on_missing":"ignore"});
+            }
             self.client
                 .post(format!("{}/stores/{}/write", self.url, self.store))
                 .json(&data)
@@ -277,6 +325,9 @@ mod openfga_http {
                 .await
                 .map_err(|_| AuthError)?
                 .error_for_status()
+                .map_err(|_| AuthError)?
+                .bytes()
+                .await
                 .map_err(|_| AuthError)?;
             Ok(())
         }

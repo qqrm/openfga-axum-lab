@@ -36,7 +36,7 @@ impl Stand {
             "services:\n  openfga:\n    ports: [\"127.0.0.1::8080\"]\n",
         )?;
         Ok(Self {
-            project: format!("petlab-delivery-{}", uuid::Uuid::new_v4()),
+            project: format!("openlane-delivery-{}", uuid::Uuid::new_v4()),
             environment: state.join("environment.env"),
             directory,
             overlay,
@@ -87,7 +87,7 @@ impl Stand {
     async fn fga_config(&self) -> TestResult<Value> {
         Ok(serde_json::from_str(
             &self
-                .run(&["exec", "-T", "app", "cat", "/data/config.json"])
+                .run(&["exec", "-T", "app", "vendor-review", "/data/config.json"])
                 .await?,
         )?)
     }
@@ -223,7 +223,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     let token = session["token"].as_str().ok_or("token")?;
     assert_eq!(
         client
-            .get(format!("{stable_url}/pets/fox"))
+            .get(format!("{stable_url}/tasks/access-review"))
             .bearer_auth(token)
             .send()
             .await?
@@ -231,7 +231,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
         StatusCode::UNAUTHORIZED
     );
     let original: Value = client
-        .get(format!("{stage_url}/pets/fox"))
+        .get(format!("{stage_url}/tasks/access-review"))
         .bearer_auth(token)
         .send()
         .await?
@@ -282,7 +282,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
-            "UPDATE pets SET biography='restore sentinel' WHERE id='fox'",
+            "UPDATE tasks SET description='restore sentinel' WHERE id='access-review'",
         ])
         .await?;
     for (database, dump) in dumps {
@@ -291,7 +291,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     stage.start().await?;
     let stage_url = stage.address("app", "3000").await?;
     let restored: Value = client
-        .get(format!("{stage_url}/pets/fox"))
+        .get(format!("{stage_url}/tasks/access-review"))
         .bearer_auth(token)
         .send()
         .await?
@@ -314,7 +314,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     status(&client, &stable_url, "/readyz", StatusCode::OK).await?;
     assert_eq!(
         client
-            .get(format!("{stage_url}/pets/fox"))
+            .get(format!("{stage_url}/tasks/access-review"))
             .bearer_auth(token)
             .send()
             .await?
