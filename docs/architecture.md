@@ -121,7 +121,9 @@ can populate only its old generation's key. Graph-wide invalidation includes
 organization permissions inherited by tasks.
 
 Only denials are cached. Every successful decision requires a live OpenFGA
-Check using HIGHER_CONSISTENCY, even after an earlier allow. HTTP validates
+Check using HIGHER_CONSISTENCY, even after an earlier allow. Before returning
+true, the wrapper also probes the configured store: OpenFGA can still answer
+Check from retained tuples after a store is soft-deleted. HTTP validates
 exact statuses, endpoint, bounded JSON and typed responses; redirects and
 malformed acknowledgements fail closed. Readiness additionally compares the
 configured immutable model with the pinned source model. A healthy server with

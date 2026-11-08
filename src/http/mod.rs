@@ -1,5 +1,4 @@
 use crate::application::{App, CreateTask, Identity, TaskInput};
-use crate::domain::{OrganizationId, TaskId, UserId};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, MatchedPath, Path, Request, State},
@@ -12,7 +11,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 mod auth;
+mod identifiers;
 pub(crate) use auth::guard;
+use identifiers::{OrganizationId, TaskId, UserId};
 
 pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(AUTHORIZATION).iter();

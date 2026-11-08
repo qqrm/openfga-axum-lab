@@ -18,6 +18,18 @@ function expectProtectedHeaders(response) {
   }
 }
 
+async function within(promise, description, milliseconds = 10000) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(description + " timed out")), milliseconds); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test("public provenance and authenticated responses retain no-store and browser security headers", async ({ page, request }) => {
   const document = await page.goto("/");
   expect(document.status()).toBe(200);
@@ -53,24 +65,37 @@ test("identity change clears privileged data and rejects a delayed real response
   await selectOrganization(page, "acme");
   await selectTask(page, "access-review");
   let captured;
+  let heldRequest;
+  let handlerError;
+  let handlerFinished = Promise.resolve();
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   let holdNextResponse = true;
   const pattern = "**/tasks";
-  const handler = async (route) => {
+  const handler = (route) => {
     if (!holdNextResponse || route.request().method() !== "GET") return route.continue();
     holdNextResponse = false;
-    // Hold an unchanged real Axum/OpenFGA response; authorization is not mocked.
-    const response = await route.fetch();
-    captured = { status: response.status(), ids: (await response.json()).map((task) => task.id).sort() };
-    await gate;
-    await route.fulfill({ response });
+    heldRequest = route.request();
+    handlerFinished = (async () => {
+      // Hold an unchanged real Axum/OpenFGA response; authorization is not mocked.
+      const response = await route.fetch({ timeout: 10000 });
+      captured = { status: response.status(), ids: (await response.json()).map((task) => task.id).sort() };
+      await gate;
+      await route.fulfill({ response });
+    })();
+    return handlerFinished.catch((error) => { handlerError = error; });
   };
   await page.route(pattern, handler);
+  let failure;
   try {
-    await page.click("#refresh");
-    await expect.poll(() => captured?.status).toBe(200);
-    expect(captured.ids).toEqual(["access-review", "incident-response", "vendor-review"]);
+    await test.step("capture Alice's real authorized response before switching accounts", async () => {
+      await page.click("#refresh");
+      await expect.poll(() => {
+        if (handlerError) throw handlerError;
+        return captured?.status;
+      }).toBe(200);
+      expect(captured.ids).toEqual(["access-review", "incident-response", "vendor-review"]);
+    }, { timeout: 15000 });
     const revoked = page.waitForResponse((response) => new URL(response.url()).pathname === "/session" && response.request().method() === "DELETE");
     await page.selectOption("#who", "dave");
     expect((await revoked).status()).toBe(204);
@@ -84,20 +109,39 @@ test("identity change clears privileged data and rejects a delayed real response
     // Stay in the same document, so the old request can still reach its handler.
     await signIn(page, "dave");
     await expectIds(page, ["vendor-review"]);
-    const delayed = page.waitForResponse((response) => new URL(response.url()).pathname === "/tasks" && response.request().headers().authorization === "Bearer " + alice);
-    release();
-    const response = await delayed;
-    expect(response.status()).toBe(200);
-    await response.finished();
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await test.step("deliver that same Alice response into Dave's current session", async () => {
+      // headers() is provisional and may omit security headers. Correlate the
+      // exact intercepted Request instead of depending on a bearer header.
+      const delayed = page.waitForResponse((response) => response.request() === heldRequest, { timeout: 10000 });
+      release();
+      const response = await delayed;
+      expect(response.status()).toBe(200);
+      await within(response.finished(), "delayed response completion");
+      // A foreground page avoids animation-frame throttling in headless CI.
+      await page.bringToFront();
+      await within(page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))), "browser processing of the delayed response", 3000);
+    }, { timeout: 15000 });
     await expect(page.locator("#session-status")).toHaveText("Сеанс: dave");
     await expectIds(page, ["vendor-review"]);
     await expect(page.locator("#task-detail")).toBeHidden();
     await expect(page.locator("#organization-management")).toBeHidden();
     await expect(page.locator("#error")).toBeEmpty();
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
     release();
-    await page.unroute(pattern, handler);
+    const cleanup = await Promise.allSettled([
+      within(handlerFinished, "delayed route cleanup", 5000),
+      page.isClosed() ? Promise.resolve() : within(page.unroute(pattern, handler), "route removal", 5000),
+    ]);
+    const cleanupErrors = cleanup.filter((result) => result.status === "rejected").map((result) => result.reason);
+    if (cleanupErrors.length) {
+      if (!failure) throw cleanupErrors[0];
+      // Preserve the original assertion/deadline failure when teardown has
+      // already closed the page; cleanup errors remain visible as annotations.
+      for (const error of cleanupErrors) test.info().annotations.push({ type: "cleanup", description: String(error) });
+    }
   }
 });
 

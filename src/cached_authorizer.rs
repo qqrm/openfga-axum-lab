@@ -150,6 +150,12 @@ impl Authorizer for CachedAuthorizer {
             } else {
                 self.inner.check(user, relation, object).await?
             };
+            if allowed {
+                // OpenFGA can still answer Check after a soft-deleted store.
+                // An allow also requires a live configured store; a health
+                // probe alone or a prior successful Check cannot replace it.
+                self.inner.ensure_available().await?;
+            }
             // This read is the decision's linearization point. A late denial
             // fill can only populate the old generation's key. Pending writes
             // block immediately, including writes with an ambiguous outcome.

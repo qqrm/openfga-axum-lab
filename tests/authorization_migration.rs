@@ -670,6 +670,8 @@ async fn admin_create_permission_does_not_grant_existing_task_access_and_blocked
         );
     }
     let created=expect(api.call(M::POST,TASKS,&frank).header("Idempotency-Key","create-only-admin").json(&json!({"organization_id":"acme","title":"New task","description":"Admin may create and becomes assigner","status":"todo"})),S::CREATED).await?;
+    let id = created["id"].as_str().ok_or("missing created task id")?;
+    let created = expect(api.call(M::GET, &format!("/tasks/{id}"), &frank), S::OK).await?;
     assert_eq!(created["can_delete"], true);
     assert_eq!(created["assigner_id"], "frank");
     pool.close().await;

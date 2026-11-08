@@ -40,7 +40,8 @@ permission matrix plus a Rust/WASM lifecycle, not an authorization server.
 - Owner and role changes use one mixed OpenFGA Write. Every mutation checks its
   authority while holding organization/task locks; SQL intent and its journal
   commit before remote I/O. A dedicated pool commits attempt markers separately.
-- Every allow uses a live HIGHER_CONSISTENCY Check. Only denials may be cached.
+- Every allow uses a live HIGHER_CONSISTENCY Check plus a live store availability
+  probe, including after soft deletion. Only denials may be cached.
   Shared SQL generation and organization revisions discard stale decisions.
 - Exact statuses, endpoint binding, response size/deadline and typed JSON/ACK
   checks reject malformed or ambiguous HTTP. gRPC exercises corresponding typed
