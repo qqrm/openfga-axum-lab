@@ -1,5 +1,7 @@
 #[path = "support/api.rs"]
 pub mod api;
+#[path = "cache_support/proxy.rs"]
+mod proxy;
 #[path = "support/stack.rs"]
 pub mod stack;
 
@@ -91,6 +93,33 @@ async fn authorization_sessions_and_metrics() -> TestResult {
         "metrics leaked credential data"
     );
     let edit = json!({"name": "Mika", "species": "fox", "biography": "Mika likes apples."});
+    expect(api.request(M::DELETE, "/pets/fox"), S::UNAUTHORIZED).await?;
+    expect(api.call(M::DELETE, "/pets/fox", &dave), S::FORBIDDEN).await?;
+    expect(api.call(M::DELETE, "/pets/missing", &carol), S::NOT_FOUND).await?;
+    expect(
+        api.call(M::DELETE, "/pets/invalid.id", &carol),
+        S::BAD_REQUEST,
+    )
+    .await?;
+    // A caller without manage permission cannot discover whether a subject exists.
+    for subject in ["dave", "nonexistent"] {
+        for method in [M::PUT, M::DELETE] {
+            expect(
+                api.call(
+                    method,
+                    &format!("/pets/fox/relations/viewer/{subject}"),
+                    &dave,
+                ),
+                S::FORBIDDEN,
+            )
+            .await?;
+        }
+    }
+    expect(
+        api.call(M::PUT, "/pets/fox/relations/viewer/nonexistent", &carol),
+        S::NOT_FOUND,
+    )
+    .await?;
     for token in [&dave, &bob] {
         expect(
             api.call(M::PATCH, "/pets/fox", token).json(&edit),
@@ -230,14 +259,74 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
     while let Some(result) = tasks.join_next().await {
         let (index, status) = result??;
         if index == 0 {
-            assert_eq!(status, S::NO_CONTENT);
+            assert_eq!(status, S::NO_CONTENT, "delete request {index}");
         } else {
-            assert!(matches!(status, S::NO_CONTENT | S::NOT_FOUND));
+            assert!(
+                matches!(status, S::NO_CONTENT | S::NOT_FOUND),
+                "relation grant request {index} returned {status}"
+            );
         }
         completed += 1;
     }
     assert_eq!(completed, 8);
     stack.assert_no_tuples(&client, id).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a local Docker engine"]
+async fn mutations_authorize_while_holding_pet_lifecycle_lock() -> TestResult {
+    let client = client()?;
+    let stack = Stack::start(&client).await?;
+    let proxy = proxy::Proxy::start(client.clone(), stack.fga_url.clone()).await?;
+    let app = stack.app(&proxy.url).await?;
+    let api = Api::new(client.clone(), &app);
+    let bob = stack.login(&client, &app, "bob").await?;
+    let payload = json!({"name": "Biscuit", "species": "rabbit", "biography": "Likes carrots."});
+    for (method, suffix) in [
+        (M::PATCH, ""),
+        (M::DELETE, ""),
+        (M::PUT, "/relations/viewer/carol"),
+        (M::DELETE, "/relations/viewer/carol"),
+    ] {
+        // A new object guarantees a real Check, not a warm decision-cache hit.
+        let pet = expect(
+            api.call(M::POST, "/pets", &bob)
+                .header("Idempotency-Key", Uuid::new_v4().to_string())
+                .json(&payload),
+            S::CREATED,
+        )
+        .await?;
+        let id = pet["id"].as_str().ok_or("missing pet id")?;
+        let path = format!("/pets/{id}{suffix}");
+        let mut pause = proxy.pause("check", false).await;
+        let (mutation, locked) = tokio::join!(
+            expect(
+                api.call(method.clone(), &path, &bob).json(&payload),
+                S::NO_CONTENT
+            ),
+            async {
+                let captured = pause.captured().await;
+                let locked = stack.pet_row_is_locked(id).await;
+                drop(pause);
+                let decision: Value = serde_json::from_slice(&captured?)?;
+                assert_eq!(decision["allowed"], true);
+                assert!(
+                    locked?,
+                    "{method} {path} authorized without the pet lifecycle lock"
+                );
+                Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+            }
+        );
+        locked?;
+        mutation?;
+        expect(
+            api.call(M::DELETE, &format!("/pets/{id}"), &bob),
+            S::NO_CONTENT,
+        )
+        .await?;
+        stack.assert_no_tuples(&client, id).await?;
+    }
     Ok(())
 }
 

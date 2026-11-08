@@ -1,4 +1,5 @@
 use crate::application::{App, Identity};
+use crate::domain;
 use crate::use_cases::Error as UseCaseError;
 use axum::{
     extract::{MatchedPath, Request, State},
@@ -15,10 +16,8 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
 pub(crate) enum Requirement {
     AllowAuthenticated,
     ShelterCreation,
-    Pet {
-        relation: &'static str,
-        deletion_retry: bool,
-    },
+    PetMutation,
+    Pet { relation: &'static str },
     Deny,
 }
 
@@ -28,21 +27,10 @@ pub(crate) fn requirement(method: &Method, path: &str) -> Requirement {
         (&Method::POST, "/pets") => Requirement::ShelterCreation,
         (&Method::GET, "/pets/{id}") => Requirement::Pet {
             relation: "can_view",
-            deletion_retry: false,
         },
-        (&Method::PATCH, "/pets/{id}") => Requirement::Pet {
-            relation: "can_edit",
-            deletion_retry: false,
-        },
-        (&Method::DELETE, "/pets/{id}") => Requirement::Pet {
-            relation: "can_manage",
-            deletion_retry: true,
-        },
+        (&Method::PATCH | &Method::DELETE, "/pets/{id}") => Requirement::PetMutation,
         (&Method::PUT | &Method::DELETE, "/pets/{id}/relations/{relation}/{subject}") => {
-            Requirement::Pet {
-                relation: "can_manage",
-                deletion_retry: false,
-            }
+            Requirement::PetMutation
         }
         _ => Requirement::Deny,
     }
@@ -85,13 +73,21 @@ pub(crate) async fn guard(State(app): State<App>, mut request: Request, next: Ne
             )
             .await
         }
-        Requirement::Pet {
-            relation,
-            deletion_retry,
-        } => {
+        Requirement::PetMutation => {
+            // Mutation handlers check lifecycle and permissions while holding the
+            // pet row lock. A separate check here can race with tuple deletion.
+            let id = pet_id_from_path(request.uri().path()).unwrap_or("");
+            let decision = if domain::valid_id(id) {
+                Ok(())
+            } else {
+                Err(UseCaseError::Invalid)
+            };
+            finish(decision, who, request, next).await
+        }
+        Requirement::Pet { relation } => {
             let id = pet_id_from_path(request.uri().path()).unwrap_or("");
             finish(
-                app.authorize_pet(&who, id, relation, deletion_retry).await,
+                app.authorize_pet(&who, id, relation).await,
                 who,
                 request,
                 next,
@@ -141,24 +137,17 @@ mod tests {
         assert_eq!(
             requirement(&Method::GET, "/pets/{id}"),
             Requirement::Pet {
-                relation: "can_view",
-                deletion_retry: false
+                relation: "can_view"
             }
         );
-        assert_eq!(
-            requirement(&Method::DELETE, "/pets/{id}"),
-            Requirement::Pet {
-                relation: "can_manage",
-                deletion_retry: true
-            }
-        );
-        assert_eq!(
-            requirement(&Method::PUT, "/pets/{id}/relations/{relation}/{subject}"),
-            Requirement::Pet {
-                relation: "can_manage",
-                deletion_retry: false
-            }
-        );
+        for (method, path) in [
+            (Method::PATCH, "/pets/{id}"),
+            (Method::DELETE, "/pets/{id}"),
+            (Method::PUT, "/pets/{id}/relations/{relation}/{subject}"),
+            (Method::DELETE, "/pets/{id}/relations/{relation}/{subject}"),
+        ] {
+            assert_eq!(requirement(&method, path), Requirement::PetMutation);
+        }
         assert_eq!(requirement(&Method::POST, "/pets/{id}"), Requirement::Deny);
     }
 

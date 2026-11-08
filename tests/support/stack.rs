@@ -253,6 +253,29 @@ impl Stack {
         Ok(())
     }
 
+    pub async fn pet_row_is_locked(&self, id: &str) -> TestResult<bool> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.database)
+            .await?;
+        // This independent autocommit probe releases any acquired lock before
+        // returning, including when it discovers a missing mutation lock.
+        let result =
+            sqlx::query_scalar::<_, String>("SELECT id FROM pets WHERE id=$1 FOR UPDATE NOWAIT")
+                .bind(id)
+                .fetch_optional(&pool)
+                .await;
+        pool.close().await;
+        match result {
+            Ok(Some(_)) => Ok(false),
+            Ok(None) => Err("pet lock probe requires an existing pet".into()),
+            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
+                Ok(true)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub async fn restart_dependencies(&mut self, client: &Client) -> TestResult {
         self.compose
             .run(&["stop", "-t", "2", "openfga", "postgres"])
