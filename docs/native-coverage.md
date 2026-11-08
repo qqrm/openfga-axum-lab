@@ -49,6 +49,35 @@ The original release-mode integration, Compose image, latency, browser,
 formal and security jobs remain required. Instrumented timings are not used as
 performance evidence; the separate Criterion benchmarks are not selected.
 
+## Authorization and failure scenarios
+
+The failure/recovery integration keeps the useful scenarios from PRs #15, #16,
+#17, #20 and #21 on the current Openlane data model:
+
+| Original PR | Retained behavioral evidence |
+| --- | --- |
+| #15 | Edit, deletion and viewer grant/revoke wait for a real PostgreSQL task lock. A coordinated real assigner revocation must then deny the operation without modifying desired SQL state or OpenFGA tuples; restoring authority makes the same request succeed. |
+| #16 | Real SQL faults in login accounting, credential lookup, session insertion, authentication and logout fail closed and recover. Missing cache-coordinator state, a rejected pre-write marker and failed post-write finalization preserve intent/fences across replicas and restart. |
+| #17 | Failed startup after lost committed provisioning/deletion responses, activation UPDATE or deferred COMMIT errors, deletion UPDATE errors and a missing recovery table must exit normally with a nonzero status before listening. Each failed instrumented child is reaped and must retain its own profile. |
+| #20 | With OpenFGA offline, emergency deny mode keeps sessions usable while denying domain access and writes, preserves pending lifecycle data and desired grants, and cannot execute recovery. Every current DenyAll trait operation also has an ordinary unit assertion. |
+| #21 | Three real successful Check responses are paused while unrelated writes advance the generation. Exhausting the bounded retry budget returns 503; the unchanged request recovers when churn stops. |
+
+These cases preserve the newer protocol: unresolved intent/debt closes reads
+and further mutations; ordinary restart or an acknowledged replay does not prove
+that an older request drained. Tests stop all writers and observe captured proxy
+writes completing before the explicit operator recovery command. A restored
+backend and repeated successful requests are positive controls after each fault.
+
+The marker-failure case separately checks readiness when SQL intent is durable
+but the global marker could not commit. The intended contract is 503 during
+that unresolved state and 200 after explicit recovery; credentials continue to
+work. The failure PR records the baseline and fixed-head execution evidence.
+
+The older requirement that every competing lifecycle handler be admitted is not
+restored. Current concurrent lifecycle and row-lock scenarios retain their
+no-resurrection and tuple-cleanup checks while allowing the durable fence to
+reject an overlapping request with 503.
+
 ## Child process and profile integrity
 
 The server registers SIGTERM before announcing readiness and lets Axum finish

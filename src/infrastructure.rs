@@ -477,3 +477,41 @@ mod openfga_http {
 
 #[cfg(feature = "http")]
 pub use openfga_http::OpenFgaHttp;
+
+#[cfg(test)]
+mod tests {
+    use super::{Authorizer, DenyAll, Tuple};
+
+    #[tokio::test]
+    async fn deny_all_never_grants_or_mutates_authorization() {
+        let auth: &dyn Authorizer = &DenyAll;
+        assert!(auth.ensure_available().await.is_err());
+        assert!(auth.ensure_ready().await.is_err());
+        assert!(
+            auth.list_objects("alice", "can_view", "task")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        for (user, relation, object) in [
+            ("alice", "can_create_task", "organization:acme"),
+            ("carol", "can_view", "task:access-review"),
+            ("carol", "can_edit", "task:access-review"),
+            ("carol", "can_delete", "task:access-review"),
+        ] {
+            assert!(!auth.check(user, relation, object).await.unwrap());
+        }
+        let tuples = [Tuple {
+            user: "user:dave".into(),
+            relation: "viewer".into(),
+            object: "task:access-review".into(),
+        }];
+        for add in [true, false] {
+            assert!(auth.write(&tuples, add).await.is_err());
+        }
+        assert!(auth.change(&tuples, &[]).await.is_err());
+        assert!(auth.change(&[], &tuples).await.is_err());
+        assert!(auth.change(&[], &[]).await.is_err());
+        assert!(auth.delete_object("task:access-review").await.is_err());
+    }
+}

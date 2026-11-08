@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::{error::Error, net::SocketAddr, path::PathBuf, process::Stdio, time::Duration};
 use tempfile::TempDir;
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     process::{Child, Command},
     time::{sleep, timeout},
 };
@@ -272,14 +272,7 @@ impl Stack {
     }
 
     pub async fn spawn_app(mut command: Command) -> TestResult<App> {
-        // Keep profiles in cargo-llvm-cov's directory, but give this child a
-        // distinct prefix so a test-client profile cannot satisfy its check.
-        let coverage_profile = std::env::var_os("LLVM_PROFILE_FILE").map(|pattern| {
-            let prefix = format!("axum-{}", Uuid::new_v4());
-            let path = PathBuf::from(pattern).with_file_name(format!("{prefix}-%p-%m.profraw"));
-            command.env("LLVM_PROFILE_FILE", &path);
-            (path, prefix)
-        });
+        let coverage_profile = child_profile(&mut command);
         let mut child = command.spawn()?;
         let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let address = timeout(Duration::from_secs(60), async {
@@ -309,6 +302,61 @@ impl Stack {
         })
     }
 
+    pub async fn assert_startup_fails(&self, fga_url: &str, expected_error: &str) -> TestResult {
+        let mut command = self.app_command(fga_url);
+        let coverage_profile = child_profile(&mut command);
+        // Fixtures are seeded before faults are installed. Disable seeding here
+        // so the injected database error must be reached by recovery itself.
+        command
+            .env("DEMO_SEED", "false")
+            .env("DEMO_MIGRATE", "false")
+            .stderr(Stdio::piped());
+        let mut child = command.spawn()?;
+        let pid = child.id().ok_or("Axum child has already been reaped")?;
+        let mut stdout = child.stdout.take().expect("piped stdout");
+        let mut stderr = child.stderr.take().expect("piped stderr");
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let exited = timeout(Duration::from_secs(60), async {
+            // Drain both pipes while waiting: a diagnostic must not deadlock a
+            // failed child, and waiting explicitly reaps it before profile checks.
+            let (status, out, err) = tokio::join!(
+                child.wait(),
+                stdout.read_to_end(&mut output),
+                stderr.read_to_end(&mut errors)
+            );
+            out?;
+            err?;
+            status
+        })
+        .await;
+        let status = match exited {
+            Ok(Ok(status)) => status,
+            result => {
+                let _ = timeout(Duration::from_secs(5), child.kill()).await;
+                return Err(format!("could not reap failed Axum child {pid}: {result:?}").into());
+            }
+        };
+        let output = String::from_utf8_lossy(&output);
+        let errors = String::from_utf8_lossy(&errors);
+        if status.success() || status.code().is_none() {
+            return Err(
+                format!("expected normal nonzero Axum exit, got {status}: {errors}").into(),
+            );
+        }
+        if output.lines().any(|line| line.starts_with("Listening on ")) {
+            return Err("Axum advertised listening despite failed recovery".into());
+        }
+        if !errors.contains(expected_error) {
+            return Err(
+                format!("expected {expected_error:?} in Axum startup error: {errors}").into(),
+            );
+        }
+        assert_child_profile(&coverage_profile, pid)?;
+        println!("Axum child {pid} failed before listening as expected: {expected_error}");
+        Ok(())
+    }
+
     pub async fn login(&self, client: &Client, app: &App, user: &str) -> TestResult<String> {
         let response: Value = client
             .post(format!("{}/session", app.url))
@@ -333,6 +381,22 @@ impl Stack {
         pool.close().await;
         result?;
         Ok(())
+    }
+
+    pub async fn domain_snapshot(&self) -> TestResult<Value> {
+        let db = self.pool().await?;
+        let snapshot: String = sqlx::query_scalar(
+            "SELECT jsonb_build_object(
+                'tasks',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.id),'[]'::jsonb) FROM tasks t),
+                'relations',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.task_id,r.user_id,r.relation),'[]'::jsonb) FROM task_relations r),
+                'organizations',(SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY o.id),'[]'::jsonb) FROM organizations o),
+                'members',(SELECT coalesce(jsonb_agg(to_jsonb(m) ORDER BY m.organization_id,m.user_id),'[]'::jsonb) FROM organization_members m),
+                'permissions',(SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.organization_id,p.user_id,p.relation),'[]'::jsonb) FROM organization_permissions p),
+                'jobs',(SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY j.organization_id),'[]'::jsonb) FROM authorization_jobs j)
+            )::text"
+        ).fetch_one(&db).await?;
+        db.close().await;
+        Ok(serde_json::from_str(&snapshot)?)
     }
 
     pub async fn task_row_is_locked(&self, id: &str) -> TestResult<bool> {
@@ -508,7 +572,7 @@ impl Stack {
 pub struct App {
     pub url: String,
     child: Child,
-    coverage_profile: Option<(PathBuf, String)>,
+    coverage_profile: CoverageProfile,
 }
 
 impl App {
@@ -564,36 +628,50 @@ impl App {
             let _ = timeout(Duration::from_secs(5), self.child.kill()).await;
             return Err(error);
         }
-        if let Some((pattern, prefix)) = &self.coverage_profile {
-            let directory = pattern
-                .parent()
-                .filter(|path| !path.as_os_str().is_empty())
-                .unwrap_or_else(|| std::path::Path::new("."));
-            let prefix = format!("{prefix}-{pid}-");
-            let mut found = false;
-            for entry in std::fs::read_dir(directory)? {
-                let entry = entry?;
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.starts_with(&prefix) && name.ends_with(".profraw") {
-                    let metadata = entry.metadata()?;
-                    if !metadata.is_file() || metadata.len() == 0 {
-                        return Err(
-                            format!("empty Axum profile: {}", entry.path().display()).into()
-                        );
-                    }
-                    println!(
-                        "Axum child {pid} exited successfully; profile {} ({} bytes)",
-                        entry.path().display(),
-                        metadata.len()
-                    );
-                    found = true;
-                }
-            }
-            if !found {
-                return Err(format!("Axum child {pid} did not save its LLVM profile").into());
-            }
-        }
+        assert_child_profile(&self.coverage_profile, pid)?;
         Ok(())
     }
+}
+
+type CoverageProfile = Option<(PathBuf, String)>;
+
+fn child_profile(command: &mut Command) -> CoverageProfile {
+    std::env::var_os("LLVM_PROFILE_FILE").map(|pattern| {
+        let prefix = format!("axum-{}", Uuid::new_v4());
+        let path = PathBuf::from(pattern).with_file_name(format!("{prefix}-%p-%m.profraw"));
+        command.env("LLVM_PROFILE_FILE", &path);
+        (path, prefix)
+    })
+}
+
+fn assert_child_profile(profile: &CoverageProfile, pid: u32) -> TestResult {
+    if let Some((pattern, prefix)) = profile {
+        let directory = pattern
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let prefix = format!("{prefix}-{pid}-");
+        let mut found = false;
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(&prefix) && name.ends_with(".profraw") {
+                let metadata = entry.metadata()?;
+                if !metadata.is_file() || metadata.len() == 0 {
+                    return Err(format!("empty Axum profile: {}", entry.path().display()).into());
+                }
+                println!(
+                    "Axum child {pid} saved profile {} ({} bytes)",
+                    entry.path().display(),
+                    metadata.len()
+                );
+                found = true;
+            }
+        }
+        if !found {
+            return Err(format!("Axum child {pid} did not save its LLVM profile").into());
+        }
+    }
+    Ok(())
 }
