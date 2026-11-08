@@ -19,6 +19,7 @@ pub trait Authorizer: Send + Sync {
     /// This must not use cached authorization decisions.
     async fn ensure_ready(&self) -> Result<(), AuthError>;
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError>;
+    async fn list_objects(&self, user: &str, relation: &str, object_type: &str) -> Result<Vec<String>, AuthError>;
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError>;
     async fn delete_object(&self, object: &str) -> Result<(), AuthError>;
 }

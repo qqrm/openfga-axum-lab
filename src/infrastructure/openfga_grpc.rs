@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Native gRPC adapter with the same consistency and retry contract as HTTP.
 pub struct OpenFgaGrpc {
-    client: OpenFgaClient<Channel>,
+    pub client: OpenFgaClient<Channel>,
 }
 
 impl OpenFgaGrpc {
@@ -103,6 +103,20 @@ impl Authorizer for OpenFgaGrpc {
                 .write_with_options(writes, deletes, WriteOptions::new_idempotent()),
         )
         .await
+    }
+
+    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
+    async fn list_objects(&self, user: &str, relation: &str, object_type: &str) -> Result<Vec<String>, AuthError> {
+        let response = bounded(self.client.list_objects(
+            object_type.to_owned(),
+            relation.to_owned(),
+            format!("user:{user}"),
+            None,
+            None,
+        ))
+        .await?
+        .into_inner();
+        Ok(response.objects)
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
