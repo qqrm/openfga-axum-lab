@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { login, api, createTask, removeTask, refresh, selectTask } = require("../support/lab");
+const { login, api, createTask, removeTask, refresh, selectTask, expectTaskEditable } = require("../support/lab");
 
 test("acknowledged revoke invalidates a warm allow before the next UI refresh", async ({ page, context, request }) => {
   const owner = await login(page, "bob");
@@ -47,7 +47,7 @@ test("a warm deny is invalidated when a direct grant is acknowledged", async ({ 
     await api(request, "GET", "/tasks/" + id, dave, undefined, 200);
     await refresh(reader);
     await selectTask(reader, id);
-    await expect(reader.locator("#edit-fields")).toBeDisabled();
+    await expectTaskEditable(reader, false);
     await expect(reader.locator("#task-access")).toBeHidden();
   } finally {
     await removeTask(request, owner, id);

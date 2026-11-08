@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { login, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds } = require("../support/lab");
+const { login, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds, expectTaskEditable } = require("../support/lab");
 
 test("role promotion and demotion change creation rights without making admin an owner", async ({ page, context, request }) => {
   const alice = await login(page, "alice");
@@ -55,7 +55,7 @@ test("organization grants inherit into tasks and direct grants survive their rev
     await setOrganizationPermission(page, "can_view_task", "carol", true);
     await refresh(member);
     await selectTask(member, id);
-    await expect(member.locator("#edit-fields")).toBeDisabled();
+    await expectTaskEditable(member, false);
     await expect(member.locator("#task-access")).toBeHidden();
     await setTaskRelation(page, id, "viewer", "carol", true);
     await setOrganizationPermission(page, "can_view_task", "carol", false);

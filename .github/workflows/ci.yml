@@ -150,7 +150,7 @@ jobs:
       - name: Start real Axum, PostgreSQL and OpenFGA
         run: |
           docker compose up -d --build app
-          for attempt in $(seq 1 90); do
+          for _ in $(seq 1 90); do
             if docker compose exec -T app lab-tool probe; then exit 0; fi
             sleep 2
           done

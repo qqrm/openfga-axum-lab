@@ -87,7 +87,7 @@ impl Stand {
     async fn fga_config(&self) -> TestResult<Value> {
         Ok(serde_json::from_str(
             &self
-                .run(&["exec", "-T", "app", "vendor-review", "/data/config.json"])
+                .run(&["exec", "-T", "app", "cat", "/data/config.json"])
                 .await?,
         )?)
     }

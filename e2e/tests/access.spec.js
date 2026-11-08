@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { randomUUID } = require("node:crypto");
-const { login, api, createTask, removeTask, refresh, selectTask, mutate, setTaskRelation, expectIds } = require("../support/lab");
+const { login, api, createTask, removeTask, refresh, selectTask, mutate, setTaskRelation, expectIds, expectTaskEditable } = require("../support/lab");
 
 // These tests use the real application's HTTP routes and its configured
 // PostgreSQL/OpenFGA backend. No network routes or authorization are mocked.
@@ -19,7 +19,7 @@ for (const [username, ids] of [
 test("assignee can edit but cannot delete or grant rights", async ({ page, request }) => {
   const token = await login(page, "carol");
   await selectTask(page, "incident-response");
-  await expect(page.locator("#edit-fields")).toBeEnabled();
+  await expectTaskEditable(page, true);
   await expect(page.locator("#delete-task")).toBeHidden();
   await expect(page.locator("#task-access")).toBeHidden();
   await api(request, "DELETE", "/tasks/incident-response", token, undefined, 403);
@@ -31,7 +31,7 @@ test("assignee can edit but cannot delete or grant rights", async ({ page, reque
 test("external task viewer sees no editing controls", async ({ page, request }) => {
   const token = await login(page, "dave");
   await selectTask(page, "vendor-review");
-  await expect(page.locator("#edit-fields")).toBeDisabled();
+  await expectTaskEditable(page, false);
   await expect(page.locator("#delete-task")).toBeHidden();
   await expect(page.locator("#task-access")).toBeHidden();
   await api(request, "GET", "/tasks/access-review", token, undefined, 403);
@@ -104,7 +104,7 @@ test("grant, block, unblock and revoke task access with independent paths", asyn
     await setTaskRelation(page, id, "viewer", "dave", true);
     await refresh(reader);
     await selectTask(reader, id);
-    await expect(reader.locator("#edit-fields")).toBeDisabled();
+    await expectTaskEditable(reader, false);
     await setTaskRelation(page, id, "blocked", "dave", true);
     await refresh(reader);
     await expect(reader.locator('[data-task-id="' + id + '"]')).toHaveCount(0);
@@ -115,7 +115,7 @@ test("grant, block, unblock and revoke task access with independent paths", asyn
     await selectTask(reader, id);
     await setTaskRelation(page, id, "assignee", "dave", true);
     await refresh(reader);
-    await expect(reader.locator("#edit-fields")).toBeEnabled();
+    await expectTaskEditable(reader, true);
     await expect(reader.locator("#delete-task")).toBeHidden();
     await expect(reader.locator("#task-access")).toBeHidden();
     await api(request, "PUT", "/tasks/" + id + "/relations/viewer/erin", readerToken, undefined, 403);

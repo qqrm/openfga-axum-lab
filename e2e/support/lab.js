@@ -91,4 +91,12 @@ async function expectIds(page, ids) {
   const actual = await page.locator("#tasks [data-task-id]").evaluateAll((elements) => elements.map((element) => element.dataset.taskId).sort());
   expect(actual).toEqual([...ids].sort());
 }
-module.exports = { PASSWORD, login, apiToken, headers, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds };
+async function expectTaskEditable(page, editable) {
+  // Playwright's enabled/disabled matcher applies to form controls, not the
+  // fieldset itself. Check every control to verify inherited disabled state.
+  for (const selector of ["#edit-title", "#edit-description", "#edit-status", "#save-task"]) {
+    if (editable) await expect(page.locator(selector)).toBeEnabled();
+    else await expect(page.locator(selector)).toBeDisabled();
+  }
+}
+module.exports = { PASSWORD, login, apiToken, headers, api, createTask, removeTask, refresh, selectTask, selectOrganization, mutate, setTaskRelation, setOrganizationPermission, expectIds, expectTaskEditable };
