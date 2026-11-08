@@ -34,7 +34,7 @@ fn invitation_and_duration_fail_closed_without_disclosing_values() {
         let result = script(&["validate"], "tester@example.invalid", &password, duration);
         assert!(!result.status.success());
     }
-    let empty = script(&["validate"], "tester@example.invalid", "", "30");
+    let empty = script(&["validate"], "tester@example.invalid", &String::new(), "30");
     let valid = script(&["validate"], "tester@example.invalid", &password, "30");
     assert!(!empty.status.success());
     assert!(valid.status.success());
@@ -50,11 +50,11 @@ fn only_the_actual_email_login_redirect_counts_as_protection() {
         ("302", "https://login.trycloudflare.com@attacker.invalid/"),
         ("302", "http://login.trycloudflare.com/"),
     ] {
-        let result = script(&["classify-gate", status, location], "", "", "");
+        let result = script(&["classify-gate", status, location], "", &String::new(), "");
         assert!(!result.status.success());
     }
     let args = ["classify-gate", "302", "https://login.trycloudflare.com/"];
-    assert!(script(&args, "", "", "").status.success());
+    assert!(script(&args, "", &String::new(), "").status.success());
 }
 
 #[test]
