@@ -42,7 +42,7 @@ spec:
             - name: DATABASE_URL
               value: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
             - name: FGA_URL
-              value: http://openfga:8080
+              value: http://openfga:8081
             - name: FGA_CONFIG
               value: /data/config.json
             - name: DEMO_SEED

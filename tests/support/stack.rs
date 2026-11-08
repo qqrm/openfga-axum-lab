@@ -25,6 +25,7 @@ pub struct Stack {
     database: String,
     password: String,
     pub fga_url: String,
+    pub fga_http_url: String,
 }
 
 struct Compose {
@@ -111,13 +112,20 @@ impl Stack {
             "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
             compose.password
         );
-        let fga_url = format!("http://{}", compose.address("openfga", "8080").await?);
+        let fga_http_url = format!("http://{}", compose.address("openfga", "8080").await?);
+        let port = if cfg!(feature = "grpc") {
+            "8081"
+        } else {
+            "8080"
+        };
+        let fga_url = format!("http://{}", compose.address("openfga", port).await?);
         let stack = Self {
             compose,
             config_dir: tempfile::tempdir()?,
             database,
             password: Uuid::new_v4().to_string(),
             fga_url,
+            fga_http_url,
         };
         stack.wait_ready(client).await?;
         stack.bootstrap().await?;
@@ -127,7 +135,10 @@ impl Stack {
     async fn wait_ready(&self, client: &Client) -> TestResult {
         timeout(Duration::from_secs(60), async {
             loop {
-                if let Ok(response) = client.get(format!("{}/healthz", self.fga_url)).send().await
+                if let Ok(response) = client
+                    .get(format!("{}/healthz", self.fga_http_url))
+                    .send()
+                    .await
                     && response.status() == StatusCode::OK
                     && let Ok(body) = response.json::<Value>().await
                     && body["status"] == "SERVING"
@@ -153,7 +164,7 @@ impl Stack {
         let mut command = Command::new(env!("CARGO_BIN_EXE_lab-tool"));
         command
             .arg("bootstrap")
-            .env("FGA_URL", &self.fga_url)
+            .env("FGA_URL", &self.fga_http_url)
             .env("FGA_CONFIG", self.config_path())
             .env(
                 "FGA_MODEL",
@@ -253,7 +264,13 @@ impl Stack {
             "postgres://petlab:{}@{postgres}/petlab?sslmode=disable",
             self.compose.password
         );
-        self.fga_url = format!("http://{}", self.compose.address("openfga", "8080").await?);
+        self.fga_http_url = format!("http://{}", self.compose.address("openfga", "8080").await?);
+        let port = if cfg!(feature = "grpc") {
+            "8081"
+        } else {
+            "8080"
+        };
+        self.fga_url = format!("http://{}", self.compose.address("openfga", port).await?);
         self.wait_ready(client).await
     }
 
@@ -266,7 +283,7 @@ impl Stack {
         let config = self.config()?;
         let store = config["store_id"].as_str().ok_or("missing store id")?;
         let response: TuplePage = client
-            .post(format!("{}/stores/{store}/read", self.fga_url))
+            .post(format!("{}/stores/{store}/read", self.fga_http_url))
             .json(&json!({"tuple_key": {"object": format!("pet:{pet}")},
                 "consistency": "HIGHER_CONSISTENCY"}))
             .send()

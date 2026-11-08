@@ -2,7 +2,7 @@
 //! PostgreSQL is deliberately a concrete dependency here: transactional row
 //! locks are part of the consistency contract rather than a generic CRUD port.
 use crate::application::{App, Pet, PetInput, Tuple};
-use openfga_axum_lab::domain::{self, Event, Lifecycle};
+use crate::domain::{self, Event, Lifecycle};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 

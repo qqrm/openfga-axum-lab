@@ -353,7 +353,7 @@ async fn bootstrap_reuses_state_and_refuses_implicit_resets() -> TestResult {
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     client
-        .delete(format!("{}/stores/{store}", stack.fga_url))
+        .delete(format!("{}/stores/{store}", stack.fga_http_url))
         .send()
         .await?
         .error_for_status()?;

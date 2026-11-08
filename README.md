@@ -199,23 +199,42 @@ just k8s-stop
 
 ## OpenFGA transport
 
-Backend uses the native gRPC interface (port 8081) via openfga-client; HTTP (port 8080) is used only for bootstrap.
-
-## OpenFGA transport features
-
-- Default: `grpc` (native gRPC, preferred high-performance backend).
-- Optional: `http` (legacy HTTP backend, explicit opt-in).
+The default `grpc` feature uses OpenFGA's native gRPC port 8081. The optional
+`http` feature uses port 8080. Bootstrap and test fixture inspection always use
+HTTP, independently of the application's selected transport. If both features
+are enabled, the application selects gRPC.
 
 ```sh
-cargo build --features grpc
-cargo build --no-default-features --features http
+cargo build --locked
+cargo build --locked --no-default-features --features http
 ```
 
-## Backend benchmark (check, 2000 iterations, localhost)
+Both adapters request `HIGHER_CONSISTENCY`, tolerate duplicate grants and
+missing revocations, and bound authorization requests to two seconds. CI runs
+the real authorization, cache race, restart, recovery and Docker deployment
+suites separately for each transport.
 
-| Backend | mean ms | p50 ms | p99 ms | RPS |
-| --- | ---: | ---: | ---: | ---: |
-| gRPC | 0.749 | 0.716 | 1.257 | 1335 |
-| HTTP | 0.790 | 0.754 | 1.349 | 1265 |
+Compose builds gRPC by default. To build and run the HTTP variant, set both the
+build feature and the application's endpoint (bootstrap keeps using HTTP):
 
-Single-threaded closed-loop microbenchmark against the same OpenFGA instance; not a capacity/SLO result.
+```sh
+FGA_TRANSPORT=http FGA_APP_URL=http://openfga:8080 docker compose up --build
+```
+
+## Backend diagnostic benchmark
+
+`backend_bench` requires `FGA_URL`, `FGA_STORE` and `FGA_MODEL` for an existing
+isolated lab. `BACKEND` defaults to the enabled transport; `ITERS` defaults to
+1000 and must be positive. Any failed or denied authorization, including during
+warmup, aborts without publishing timings.
+
+```sh
+cargo run --locked --release --bin backend_bench
+cargo run --locked --release --no-default-features --features http --bin backend_bench
+```
+
+The previous gRPC/HTTP timing table was invalid: the adapters used different
+consistency settings and the runner counted failed checks as samples. Those
+numbers do not establish a performance difference. The current tool is a
+single-threaded diagnostic, not a capacity or SLO measurement; use repeated,
+paired runs with correctness and noise checks before making performance claims.

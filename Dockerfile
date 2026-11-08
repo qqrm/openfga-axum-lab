@@ -6,7 +6,8 @@ COPY tools ./tools
 COPY assets ./assets
 COPY db ./db
 COPY migrations ./migrations
-RUN cargo build --locked --release --bins
+ARG FGA_TRANSPORT=grpc
+RUN cargo build --locked --release --bins --no-default-features --features "$FGA_TRANSPORT"
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/release/openfga-axum-lab /usr/local/bin/app

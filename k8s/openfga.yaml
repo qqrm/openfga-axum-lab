@@ -24,6 +24,7 @@ spec:
               value: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
           ports:
             - containerPort: 8080
+            - containerPort: 8081
           resources:
             requests:
               cpu: 250m
@@ -41,8 +42,12 @@ spec:
   selector:
     app: openfga
   ports:
-    - port: 8080
+    - name: http
+      port: 8080
       targetPort: 8080
+    - name: grpc
+      port: 8081
+      targetPort: 8081
 ---
 apiVersion: batch/v1
 kind: Job

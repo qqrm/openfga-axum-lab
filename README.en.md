@@ -58,4 +58,21 @@ just k8s-stop
 
 ## OpenFGA transport
 
-Backend uses the native gRPC interface (port 8081) via openfga-client; HTTP (port 8080) is used only for bootstrap.
+The default `grpc` feature uses port 8081. Build the HTTP adapter with
+`cargo build --locked --no-default-features --features http` and use port 8080.
+When both features are enabled, the application selects gRPC. Bootstrap always
+uses HTTP independently of the application's transport.
+
+Both adapters use `HIGHER_CONSISTENCY`, idempotent grants/revocations and
+two-second request deadlines. CI exercises the real stack, cache races and
+recovery scenarios separately for both transports.
+
+Compose builds gRPC by default. For HTTP, set both the build feature and endpoint:
+
+```sh
+FGA_TRANSPORT=http FGA_APP_URL=http://openfga:8080 docker compose up --build
+```
+
+The earlier timing comparison used different consistency settings and cannot
+support performance claims. See the [diagnostic benchmark instructions](README.md#backend-diagnostic-benchmark)
+for rerunning the corrected tool, which aborts on authorization errors or denials.

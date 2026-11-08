@@ -19,6 +19,22 @@ impl Deployment {
         command
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("APP_PORT", "0")
+            .env(
+                "FGA_TRANSPORT",
+                if cfg!(feature = "grpc") {
+                    "grpc"
+                } else {
+                    "http"
+                },
+            )
+            .env(
+                "FGA_APP_URL",
+                if cfg!(feature = "grpc") {
+                    "http://openfga:8081"
+                } else {
+                    "http://openfga:8080"
+                },
+            )
             .env("DEMO_PASSWORD", &self.password)
             .args(["compose", "-p", &self.project, "-f", "compose.yaml"]);
         command

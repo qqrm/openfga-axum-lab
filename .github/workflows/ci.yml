@@ -49,6 +49,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --locked --tests --benches
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo clippy --locked --all-targets --no-default-features --features http -- -D warnings
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: |
@@ -71,6 +72,10 @@ jobs:
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
   integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [grpc, http]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -85,8 +90,11 @@ jobs:
           tool: cargo-nextest
           fallback: none
       - name: Run real-stack scenarios, cache races, deployment and latency in Rust
+        env:
+          FGA_TRANSPORT: ${{ matrix.transport }}
         run: >-
           cargo nextest run --locked --release --profile ci
+          --no-default-features --features "$FGA_TRANSPORT"
           --test system --test cache_replicas --test compose_deployment --test performance
           --run-ignored only -E 'not test(paired_aa_calibration)'
           --success-output immediate
@@ -98,7 +106,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: integration-nextest-results
+          name: integration-nextest-results-${{ matrix.transport }}
           path: |
             artifacts/
             target/nextest/ci/junit.xml

@@ -35,89 +35,14 @@ impl Authorizer for DenyAll {
         Err(AuthError)
     }
 }
-#[cfg(feature = "http")]
-use reqwest::Client;
+#[cfg(feature = "grpc")]
+mod openfga_grpc;
+#[cfg(feature = "grpc")]
+pub use openfga_grpc::OpenFgaGrpc;
 #[cfg(feature = "http")]
 use serde::Deserialize;
 #[cfg(feature = "http")]
 use serde_json::json;
-
-/// Preferred, native gRPC backend. Higher performance and type-safe.
-pub struct OpenFgaGrpc {
-    pub client: openfga_client::client::OpenFgaClient<openfga_client::tonic::transport::Channel>,
-}
-
-#[async_trait]
-impl Authorizer for OpenFgaGrpc {
-    #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
-    async fn ensure_available(&self) -> Result<(), AuthError> {
-        // A cheap check that exercises the gRPC connection and store.
-        self.client
-            .check_simple(openfga_client::client::CheckRequestTupleKey {
-                user: "user:health".to_string(),
-                relation: "can_view".to_string(),
-                object: "pet:health".to_string(),
-            })
-            .await
-            .map(|_| ())
-            .map_err(|_| AuthError)
-    }
-
-    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
-    async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
-        self.client
-            .check_simple(openfga_client::client::CheckRequestTupleKey {
-                user: format!("user:{user}"),
-                relation: relation.to_string(),
-                object: object.to_string(),
-            })
-            .await
-            .map_err(|_| AuthError)
-    }
-
-    #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
-    async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        if add {
-            let writes: Vec<openfga_client::client::TupleKey> = tuples
-                .iter()
-                .map(|tuple| openfga_client::client::TupleKey {
-                    user: tuple.user.clone(),
-                    relation: tuple.relation.clone(),
-                    object: tuple.object.clone(),
-                    condition: None,
-                })
-                .collect();
-            self.client
-                .write(Some(writes), None)
-                .await
-                .map(|_| ())
-                .map_err(|_| AuthError)
-        } else {
-            let deletes: Vec<openfga_client::client::TupleKeyWithoutCondition> = tuples
-                .iter()
-                .map(|tuple| openfga_client::client::TupleKeyWithoutCondition {
-                    user: tuple.user.clone(),
-                    relation: tuple.relation.clone(),
-                    object: tuple.object.clone(),
-                })
-                .collect();
-            self.client
-                .write(None, Some(deletes))
-                .await
-                .map(|_| ())
-                .map_err(|_| AuthError)
-        }
-    }
-
-    #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
-    async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
-        self.client
-            .delete_relations_to_object(object)
-            .await
-            .map(|_| ())
-            .map_err(|_| AuthError)
-    }
-}
 
 pub(crate) async fn seed(db: &PgPool, password: &str) -> Result<(), Box<dyn std::error::Error>> {
     for (id, name) in [
@@ -216,118 +141,117 @@ pub(crate) async fn recover_pending(
 #[cfg(feature = "http")]
 mod openfga_http {
     use super::*;
-pub struct OpenFgaHttp {
-    pub client: reqwest::Client,
-    pub url: String,
-    pub store: String,
-    pub model: String,
-}
-#[derive(Deserialize)]
-struct Check {
-    allowed: bool,
-}
-#[derive(Deserialize)]
-struct Health {
-    status: String,
-}
-#[derive(Deserialize)]
-struct ReadTuple {
-    key: Tuple,
-}
-#[derive(Deserialize)]
-struct ReadResponse {
-    #[serde(default)]
-    tuples: Vec<ReadTuple>,
-}
-#[async_trait]
-impl Authorizer for OpenFgaHttp {
-    #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
-    async fn ensure_available(&self) -> Result<(), AuthError> {
-        let health = self
-            .client
-            .get(format!("{}/healthz", self.url))
-            .send()
-            .await
-            .map_err(|_| AuthError)?
-            .error_for_status()
-            .map_err(|_| AuthError)?
-            .json::<Health>()
-            .await
-            .map_err(|_| AuthError)?;
-        if health.status == "SERVING" {
-            Ok(())
-        } else {
-            Err(AuthError)
-        }
+    pub struct OpenFgaHttp {
+        pub client: reqwest::Client,
+        pub url: String,
+        pub store: String,
+        pub model: String,
     }
-    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
-    async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
-        let response = self
-            .client
-            .post(format!("{}/stores/{}/check", self.url, self.store))
-            .json(
-                &json!({"authorization_model_id":self.model,"consistency":"HIGHER_CONSISTENCY",
-                "tuple_key":{"user":format!("user:{user}"),"relation":relation,"object":object}}),
-            )
-            .send()
-            .await
-            .map_err(|_| AuthError)?
-            .error_for_status()
-            .map_err(|_| AuthError)?
-            .json::<Check>()
-            .await
-            .map_err(|_| AuthError)?;
-        Ok(response.allowed)
+    #[derive(Deserialize)]
+    struct Check {
+        allowed: bool,
     }
-    #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
-    async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
-        let mut data = json!({"authorization_model_id":self.model});
-        data[if add { "writes" } else { "deletes" }] = if add {
-            json!({"tuple_keys":tuples, "on_duplicate":"ignore"})
-        } else {
-            json!({"tuple_keys":tuples, "on_missing":"ignore"})
-        };
-        self.client
-            .post(format!("{}/stores/{}/write", self.url, self.store))
-            .json(&data)
-            .send()
-            .await
-            .map_err(|_| AuthError)?
-            .error_for_status()
-            .map_err(|_| AuthError)?;
-        Ok(())
+    #[derive(Deserialize)]
+    struct Health {
+        status: String,
     }
-    #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
-    async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
-        // Re-read the first page after every deletion: continuation tokens do
-        // not give a stable snapshot while the underlying tuples are removed.
-        for _ in 0..1000 {
-            let page = self
+    #[derive(Deserialize)]
+    struct ReadTuple {
+        key: Tuple,
+    }
+    #[derive(Deserialize)]
+    struct ReadResponse {
+        #[serde(default)]
+        tuples: Vec<ReadTuple>,
+    }
+    #[async_trait]
+    impl Authorizer for OpenFgaHttp {
+        #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
+        async fn ensure_available(&self) -> Result<(), AuthError> {
+            let health = self
                 .client
-                .post(format!("{}/stores/{}/read", self.url, self.store))
-                .json(&json!({"tuple_key":{"object":object}, "page_size":100,
-                    "consistency":"HIGHER_CONSISTENCY"}))
+                .get(format!("{}/healthz", self.url))
                 .send()
                 .await
                 .map_err(|_| AuthError)?
                 .error_for_status()
                 .map_err(|_| AuthError)?
-                .json::<ReadResponse>()
+                .json::<Health>()
                 .await
                 .map_err(|_| AuthError)?;
-            if page.tuples.is_empty() {
-                return Ok(());
+            if health.status == "SERVING" {
+                Ok(())
+            } else {
+                Err(AuthError)
             }
-            let tuples: Vec<_> = page.tuples.into_iter().map(|entry| entry.key).collect();
-            if tuples.iter().any(|tuple| tuple.object != object) {
-                return Err(AuthError);
-            }
-            self.write(&tuples, false).await?;
         }
-        Err(AuthError)
+        #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
+        async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
+            let response = self
+                .client
+                .post(format!("{}/stores/{}/check", self.url, self.store))
+                .json(
+                    &json!({"authorization_model_id":self.model,"consistency":"HIGHER_CONSISTENCY",
+                "tuple_key":{"user":format!("user:{user}"),"relation":relation,"object":object}}),
+                )
+                .send()
+                .await
+                .map_err(|_| AuthError)?
+                .error_for_status()
+                .map_err(|_| AuthError)?
+                .json::<Check>()
+                .await
+                .map_err(|_| AuthError)?;
+            Ok(response.allowed)
+        }
+        #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
+        async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
+            let mut data = json!({"authorization_model_id":self.model});
+            data[if add { "writes" } else { "deletes" }] = if add {
+                json!({"tuple_keys":tuples, "on_duplicate":"ignore"})
+            } else {
+                json!({"tuple_keys":tuples, "on_missing":"ignore"})
+            };
+            self.client
+                .post(format!("{}/stores/{}/write", self.url, self.store))
+                .json(&data)
+                .send()
+                .await
+                .map_err(|_| AuthError)?
+                .error_for_status()
+                .map_err(|_| AuthError)?;
+            Ok(())
+        }
+        #[tracing::instrument(skip(self), fields(object = %object), name = "openfga.delete_object")]
+        async fn delete_object(&self, object: &str) -> Result<(), AuthError> {
+            // Re-read the first page after every deletion: continuation tokens do
+            // not give a stable snapshot while the underlying tuples are removed.
+            for _ in 0..1000 {
+                let page = self
+                    .client
+                    .post(format!("{}/stores/{}/read", self.url, self.store))
+                    .json(&json!({"tuple_key":{"object":object}, "page_size":100,
+                    "consistency":"HIGHER_CONSISTENCY"}))
+                    .send()
+                    .await
+                    .map_err(|_| AuthError)?
+                    .error_for_status()
+                    .map_err(|_| AuthError)?
+                    .json::<ReadResponse>()
+                    .await
+                    .map_err(|_| AuthError)?;
+                if page.tuples.is_empty() {
+                    return Ok(());
+                }
+                let tuples: Vec<_> = page.tuples.into_iter().map(|entry| entry.key).collect();
+                if tuples.iter().any(|tuple| tuple.object != object) {
+                    return Err(AuthError);
+                }
+                self.write(&tuples, false).await?;
+            }
+            Err(AuthError)
+        }
     }
-}
-
 }
 
 #[cfg(feature = "http")]

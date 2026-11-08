@@ -7,10 +7,10 @@ use std::sync::Arc;
 #[error("authorization backend unavailable")]
 pub struct AuthError;
 #[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct Tuple {
-    pub(crate) user: String,
-    pub(crate) relation: String,
-    pub(crate) object: String,
+pub struct Tuple {
+    pub user: String,
+    pub relation: String,
+    pub object: String,
 }
 #[async_trait]
 pub trait Authorizer: Send + Sync {

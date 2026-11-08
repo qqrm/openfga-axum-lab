@@ -1,7 +1,7 @@
 //! Authentication use cases. Tokens are opaque and stored only as hashes.
+use crate::domain;
 use crate::{application::App, infrastructure::hash_token, use_cases::Error};
 use argon2::{Argon2, PasswordVerifier, password_hash::PasswordHash};
-use openfga_axum_lab::domain;
 
 impl App {
     #[tracing::instrument(skip(self, token), name = "auth.authenticate")]
