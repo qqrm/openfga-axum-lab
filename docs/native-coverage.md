@@ -78,6 +78,27 @@ restored. Current concurrent lifecycle and row-lock scenarios retain their
 no-resurrection and tuple-cleanup checks while allowing the durable fence to
 reject an overlapping request with 503.
 
+## Login and session boundary scenarios
+
+The native `system` suite also ports the useful, previously unmerged cases from
+PRs #18 and #19 to the organization/task application:
+
+- The twentieth per-user login succeeds, subsequent requests are throttled,
+  independent users continue, and PostgreSQL's clock controls window reset.
+- Four real login requests are observed waiting on a held PostgreSQL table
+  lock. A fifth is rejected without consuming quota; two complete rounds prove
+  that password-failure paths return all semaphore permits.
+- Invalid and inclusive username/password limits, malformed JSON and unusable
+  stored password hashes cannot produce sessions. Successful login stores only
+  the token hash and returns explicit no-store/expiry metadata.
+- Invalid bearer headers, expired tokens and repeated logout cannot reuse an
+  old token or revoke another live session. Expiry uses the database clock.
+
+An ordinary unit test additionally verifies that internal token-length guards
+work even when the database pool is closed; it does not claim to simulate a
+live database outage. These scenarios retain the real Axum, PostgreSQL and
+OpenFGA path and the native child-profile teardown checks.
+
 ## Child process and profile integrity
 
 The server registers SIGTERM before announcing readiness and lets Axum finish
