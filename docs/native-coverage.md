@@ -42,6 +42,9 @@ files separately; their combined percentage is not a server-only metric.
 
 Docker-built application images, OpenFGA/PostgreSQL internals, the separate
 browser/WASM package and doctest executions are **outside this measurement**.
+The intentional SIGKILL cases in `authorization_migration` stay in the release
+integration matrix. They explicitly crash and reap the child while its remote
+write is paused; such a process cannot provide a normally flushed profile.
 The original release-mode integration, Compose image, latency, browser,
 formal and security jobs remain required. Instrumented timings are not used as
 performance evidence; the separate Criterion benchmarks are not selected.

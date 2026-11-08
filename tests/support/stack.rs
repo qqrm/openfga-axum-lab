@@ -512,6 +512,23 @@ pub struct App {
 }
 
 impl App {
+    /// Inject an abrupt process failure. This deliberately cannot flush a
+    /// coverage profile and is only used by the release-mode crash scenarios.
+    pub async fn crash(mut self) -> TestResult {
+        if let Some(status) = self.child.try_wait()? {
+            return Err(format!("Axum exited before the injected crash: {status}").into());
+        }
+        self.child.start_kill()?;
+        let status = timeout(Duration::from_secs(5), self.child.wait()).await??;
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(status.signal(), Some(9), "expected the injected SIGKILL");
+        }
+        assert!(!status.success(), "crash injection exited successfully");
+        Ok(())
+    }
+
     pub async fn stop(mut self) -> TestResult {
         let pid = self
             .child
