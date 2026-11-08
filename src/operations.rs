@@ -32,16 +32,21 @@ async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
         );
     };
     let result = tokio::time::timeout(Duration::from_secs(3), async {
-        let (db, fga) = tokio::join!(
+        let (db, unresolved, fga) = tokio::join!(
             crate::authorization_migration::ensure_active(
                 &state.db,
                 &target.store,
                 &target.model,
                 &target.model_sha256
             ),
+            // Domain intent can commit before the global write marker. A
+            // failed marker must not leave a fenced organization reporting ready.
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM authorization_jobs) OR EXISTS(SELECT 1 FROM organizations WHERE authz_pending OR authz_uncertain)"
+            ).fetch_one(&state.db),
             state.backend.ensure_ready()
         );
-        db.is_ok() && fga.is_ok()
+        db.is_ok() && matches!(unresolved, Ok(false)) && fga.is_ok()
     })
     .await
     .unwrap_or(false);
