@@ -13,6 +13,11 @@ path = "tools/main.rs"
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
+[features]
+default = ["grpc"]
+grpc = []
+http = []
+
 [dependencies]
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
