@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Actual OpenFGA model/adapter checks; no PostgreSQL or browser substitute.
+# Independent scenarios/openlane workload and shared adapter checks.
+# Fresh native stores; no application config, PostgreSQL or browser substitute.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tools_dir=$(mktemp -d)

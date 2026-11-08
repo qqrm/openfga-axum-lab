@@ -152,8 +152,11 @@ async fn invalid_workloads_and_backend_results_never_emit_timings() -> TestResul
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
     }
-    *stub.wire.response.lock().await = (StatusCode::OK, json!({"objects": ["task:access-review"]}));
-    for expected in ["[]", "[\"task:access-review\"]"] {
+    *stub.wire.response.lock().await = (
+        StatusCode::OK,
+        json!({"objects": ["lakekeeper_table:analytics/requests"]}),
+    );
+    for expected in ["[]", "[\"lakekeeper_table:analytics/requests\"]"] {
         let output = timeout(
             Duration::from_secs(10),
             stub.command()

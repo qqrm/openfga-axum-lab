@@ -1,4 +1,4 @@
-//! Readiness includes the bound migration gate and durable mutation fence.
+//! Readiness includes the bound migration gate, durable intent and mutation fence.
 use crate::application::{AuthorizationTarget, Authorizer};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
@@ -40,9 +40,9 @@ async fn ready(State(state): State<Readiness>) -> (StatusCode, Json<Value>) {
                 &target.model_sha256
             ),
             // Domain intent can commit before the global write marker. A
-            // failed marker must not leave a fenced organization reporting ready.
+            // failed marker must not leave unfinished catalog work reporting ready.
             sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM authorization_jobs) OR EXISTS(SELECT 1 FROM organizations WHERE authz_pending OR authz_uncertain)"
+                "SELECT EXISTS(SELECT 1 FROM catalog_pending_updates) OR EXISTS(SELECT 1 FROM catalog_tables WHERE status IN ('pending','updating','deleting'))"
             ).fetch_one(&state.db),
             state.backend.ensure_ready()
         );

@@ -165,8 +165,8 @@ async fn http_preserves_model_consistency_and_atomic_idempotent_writes() -> Test
     assert!(auth.check("alice", "can_view", "organization:acme").await?);
     auth.write(&[tuple("alice")], true).await?;
     auth.write(&[tuple("alice")], false).await?;
-    auth.change(&[tuple("bob")], &[tuple("alice")]).await?;
-    auth.change(&[], &[]).await?;
+    auth.apply(&[tuple("bob")], &[tuple("alice")]).await?;
+    auth.apply(&[], &[]).await?;
     auth.write(&[], true).await?;
     auth.write(&[], false).await?;
     let checks = stub.requests("check").await;
@@ -522,5 +522,37 @@ async fn readiness_probes_health_store_and_model_once_per_attempt() -> TestResul
         ]
         .repeat(2)
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn positive_check_does_not_replace_live_store_availability() -> TestResult {
+    let stub = Stub::start().await?;
+    let auth = stub.auth()?;
+    auth.ensure_available().await?;
+    assert!(
+        auth.check(
+            "alice",
+            "can_get_metadata",
+            "lakekeeper_table:warehouse/table"
+        )
+        .await?
+    );
+    // OpenFGA may still return a positive Check after soft-deleting the store.
+    // CachedAuthorizer must also use this independent, uncached store probe.
+    let mut missing = Reply::json(json!({}));
+    missing.status = StatusCode::NOT_FOUND;
+    stub.enqueue("store", missing).await;
+    assert!(
+        auth.check(
+            "alice",
+            "can_get_metadata",
+            "lakekeeper_table:warehouse/table"
+        )
+        .await?
+    );
+    assert!(auth.ensure_available().await.is_err());
+    assert_eq!(stub.requests("check").await.len(), 2);
+    assert_eq!(stub.requests("store").await.len(), 2);
     Ok(())
 }

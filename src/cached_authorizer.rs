@@ -122,8 +122,8 @@ impl Authorizer for CachedAuthorizer {
             let before = self.unfenced_revision().await?;
             let objects = self.inner.list_objects(user, relation, object_type).await?;
             // Even an empty enumeration must not cross a pending write or an
-            // acknowledged grant/revoke. App-level organization revisions and
-            // per-object Checks still guard SQL scope and task lifecycle.
+            // acknowledged grant/revoke. Catalog endpoints still enforce SQL
+            // scope and lifecycle using their locked per-object Checks.
             if before == self.unfenced_revision().await? {
                 return Ok(objects);
             }
@@ -180,18 +180,18 @@ impl Authorizer for CachedAuthorizer {
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "authz_cache.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         if add {
-            self.change(tuples, &[]).await
+            self.apply(tuples, &[]).await
         } else {
-            self.change(&[], tuples).await
+            self.apply(&[], tuples).await
         }
     }
 
-    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "authz_cache.change")]
-    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "authz_cache.apply")]
+    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
         if writes.is_empty() && deletes.is_empty() {
             return Ok(());
         }
-        self.mutate(self.inner.change(writes, deletes)).await
+        self.mutate(self.inner.apply(writes, deletes)).await
     }
 
     #[tracing::instrument(skip(self), fields(object = %object), name = "authz_cache.delete_object")]

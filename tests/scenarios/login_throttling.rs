@@ -54,10 +54,26 @@ async fn login_rate_limit_allows_twentieth_attempt_and_resets_expired_window() -
         .fetch_one(&pool)
         .await?;
     assert_eq!(sessions, 1, "throttled logins must not create sessions");
-    expect(api.call(M::GET, "/tasks/access-review", &alice), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &alice,
+        ),
+        S::OK,
+    )
+    .await?;
     // This quota is per username; it must not disable an unrelated account.
     let bob = stack.login(&client, &app, "bob").await?;
-    expect(api.call(M::GET, "/tasks/access-review", &bob), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &bob,
+        ),
+        S::OK,
+    )
+    .await?;
     assert_eq!(attempts(&pool, "bob").await?, 1);
 
     sqlx::query(
@@ -70,7 +86,15 @@ async fn login_rate_limit_allows_twentieth_attempt_and_resets_expired_window() -
         renewed != alice,
         "new login reused an existing session token"
     );
-    expect(api.call(M::GET, "/tasks/access-review", &renewed), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &renewed,
+        ),
+        S::OK,
+    )
+    .await?;
     let (count, fresh): (i32, bool) = sqlx::query_as(
         "SELECT attempts, window_start BETWEEN now()-interval '1 minute' AND now() \
          FROM login_attempts WHERE subject='alice'",
@@ -173,7 +197,15 @@ async fn login_concurrency_limit_rejects_fifth_request_and_releases_all_permits(
     }
 
     let alice = stack.login(&client, &app, "alice").await?;
-    expect(api.call(M::GET, "/tasks/access-review", &alice), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &alice,
+        ),
+        S::OK,
+    )
+    .await?;
     assert_eq!(attempts(&pool, "alice").await?, 3);
     pool.close().await;
     app.stop().await?;

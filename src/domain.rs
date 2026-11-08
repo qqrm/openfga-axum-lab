@@ -1,23 +1,26 @@
 //! Pure domain decisions. Persistence and authorization are external effects.
 
-/// Persisted lifecycle of a task; only [`Lifecycle::Active`] is visible.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Persisted lifecycle of a catalog table.
 pub enum Lifecycle {
-    /// The record exists, but authorization provisioning has not completed.
+    /// SQL exists, but initial authorization tuples are not yet confirmed.
     Pending,
-    /// Provisioning completed and the record may be shown to authorized users.
+    /// The table is eligible for an authorization check and data access.
     Active,
-    /// Deletion began; the record is hidden while authorization is removed.
+    /// Ownership or hierarchy replacement is not yet fully acknowledged.
+    Updating,
+    /// Deletion has started; the table remains hidden until cleanup completes.
     Deleting,
-    /// Deletion completed; this state cannot transition back to active.
+    /// A permanent tombstone prevents identifier reuse and resurrection.
     Deleted,
 }
 impl Lifecycle {
-    /// Parses a stored state, returning `None` for unknown values.
+    /// Parse a persisted state, refusing unknown values.
     pub fn from_storage(value: &str) -> Option<Self> {
         match value {
             "pending" => Some(Self::Pending),
             "active" => Some(Self::Active),
+            "updating" => Some(Self::Updating),
             "deleting" => Some(Self::Deleting),
             "deleted" => Some(Self::Deleted),
             _ => None,
@@ -25,40 +28,39 @@ impl Lifecycle {
     }
 }
 
-/// A completed application action that can advance a task's lifecycle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Confirmed events that may advance a table's lifecycle.
 pub enum Event {
-    /// The required authorization tuples have been provisioned.
+    /// Initial authorization tuples were acknowledged.
     Provisioned,
-    /// An authorized actor has started deletion.
+    /// A durable ownership or hierarchy replacement was staged.
+    BeginUpdate,
+    /// The relationship replacement and SQL projection were confirmed.
+    Updated,
+    /// An authorized deletion was durably staged.
     BeginDeletion,
-    /// All authorization tuples belonging to the task have been removed.
+    /// The table's authorization relationships were removed.
     TuplesRemoved,
 }
 
-/// Returns the next state, or `None` when this event is invalid for the state.
-///
-/// This function validates a transition only; callers perform and verify the
-/// external operation before committing the corresponding state change.
+/// Return the next valid state; reject skips, repetitions and resurrection.
 pub const fn transition(state: Lifecycle, event: Event) -> Option<Lifecycle> {
     match (state, event) {
         (Lifecycle::Pending, Event::Provisioned) => Some(Lifecycle::Active),
+        (Lifecycle::Active, Event::BeginUpdate) => Some(Lifecycle::Updating),
+        (Lifecycle::Updating, Event::Updated) => Some(Lifecycle::Active),
         (Lifecycle::Active, Event::BeginDeletion) => Some(Lifecycle::Deleting),
         (Lifecycle::Deleting, Event::TuplesRemoved) => Some(Lifecycle::Deleted),
         _ => None,
     }
 }
 
-/// Whether a record in this state is eligible for authorization and display.
-///
-/// Visibility does not itself grant any user access.
+/// Only fully active tables may proceed to object authorization.
 pub const fn is_visible(state: Lifecycle) -> bool {
     matches!(state, Lifecycle::Active)
 }
 
-/// Accepts 1–64 ASCII letters, digits, hyphens or underscores.
-///
-/// OpenFGA type prefixes, whitespace and path separators are not identifiers.
+/// Accept a nonempty ASCII identifier of at most 64 bytes, without FGA syntax.
 pub fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
@@ -67,41 +69,218 @@ pub fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-/// Validates a nonblank title (at most 160 UTF-8 bytes), a description of at
-/// most 4000 bytes, and the task status `todo`, `in_progress` or `done`.
-///
-/// This function does not modify or trim input; the description may be empty.
-pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
-    !title.trim().is_empty()
-        && title.len() <= 160
-        && description.len() <= 4000
-        && matches!(status, "todo" | "in_progress" | "done")
+/// Validate a nonblank name (100 UTF-8 bytes) and description (2,000 bytes).
+pub fn valid_table(name: &str, description: &str) -> bool {
+    !name.trim().is_empty() && name.len() <= 100 && description.len() <= 2000
 }
 
-/// Accepts an 8–128 byte ASCII letter/digit/hyphen/underscore request key.
-///
-/// Keys scope retries of task creation; they are not authentication tokens.
-pub fn valid_idempotency_key(key: &str) -> bool {
-    (8..=128).contains(&key.len())
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An identifier failed the domain grammar.
+pub struct InvalidId;
+impl std::fmt::Display for InvalidId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid identifier")
+    }
+}
+impl std::error::Error for InvalidId {}
+
+macro_rules! identifier {
+    ($name:ident) => {
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[doc = concat!("Validated ", stringify!($name), " identifier without an OpenFGA type prefix.")]
+        pub struct $name(String);
+        impl $name {
+            /// Borrow the validated identifier text.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+        impl TryFrom<String> for $name {
+            type Error = InvalidId;
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                valid_id(&value).then_some(Self(value)).ok_or(InvalidId)
+            }
+        }
+        impl TryFrom<&str> for $name {
+            type Error = InvalidId;
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::try_from(value.to_owned())
+            }
+        }
+        impl std::fmt::Display for $name {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(&self.0)
+            }
+        }
+    };
+}
+identifier!(UserId);
+identifier!(ProjectId);
+identifier!(WarehouseId);
+identifier!(NamespaceId);
+identifier!(TableId);
+identifier!(RoleId);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// SQL tenant and warehouse scope for all catalog table operations.
+pub struct Scope {
+    /// Project membership defines the application tenant boundary.
+    pub project: ProjectId,
+    /// Warehouse selected within that project.
+    pub warehouse: WarehouseId,
 }
 
-/// Accepts mutable task relations; the assigner and computed permissions
-/// cannot be granted through the generic relation API.
-pub fn valid_task_relation(relation: &str) -> bool {
-    matches!(relation, "viewer" | "editor" | "assignee" | "blocked")
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// A direct user or a role's effective assignees.
+pub enum Subject {
+    /// A known user in the scoped project.
+    User(UserId),
+    /// Assignees of a role in the scoped project.
+    Role(RoleId),
+}
+impl std::fmt::Display for Subject {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::User(id) => write!(formatter, "user:{id}"),
+            Self::Role(id) => write!(formatter, "role:{id}#assignee"),
+        }
+    }
 }
 
-/// Accepts explicit task permission grants at the organization level.
-///
-/// Ownership and membership use separate, guarded operations.
-pub fn valid_organization_permission(relation: &str) -> bool {
-    matches!(
-        relation,
-        "can_view_task" | "can_edit_task" | "can_delete_task"
-    )
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Supported catalog object keys in the pinned authorization model.
+pub enum Object {
+    /// A table identifier is qualified by its warehouse.
+    Table {
+        /// Warehouse containing the table.
+        warehouse: WarehouseId,
+        /// Table identifier within the warehouse.
+        id: TableId,
+    },
+    /// Namespace hierarchy and inherited permissions.
+    Namespace(NamespaceId),
+    /// Project-scoped role and its assignees.
+    Role(RoleId),
+}
+impl std::fmt::Display for Object {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Table { warehouse, id } => write!(formatter, "lakekeeper_table:{warehouse}/{id}"),
+            Self::Namespace(id) => write!(formatter, "namespace:{id}"),
+            Self::Role(id) => write!(formatter, "role:{id}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Direct privileges exposed by the catalog API.
+pub enum Privilege {
+    /// Inspect metadata.
+    Describe,
+    /// Read table data.
+    Select,
+    /// Write table data.
+    Write,
+    /// Modify the table's structure and lifecycle.
+    Modify,
+    /// Delegate permitted data privileges.
+    PassGrants,
+    /// Manage grants according to the upstream model.
+    ManageGrants,
+}
+impl Privilege {
+    /// Parse an exposed privilege; derived relations are intentionally rejected.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "describe" => Some(Self::Describe),
+            "select" => Some(Self::Select),
+            "write" => Some(Self::Write),
+            "modify" => Some(Self::Modify),
+            "pass_grants" => Some(Self::PassGrants),
+            "manage_grants" => Some(Self::ManageGrants),
+            _ => None,
+        }
+    }
+    /// Return the direct relation name in the pinned model.
+    pub const fn relation(self) -> &'static str {
+        match self {
+            Self::Describe => "describe",
+            Self::Select => "select",
+            Self::Write => "write",
+            Self::Modify => "modify",
+            Self::PassGrants => "pass_grants",
+            Self::ManageGrants => "manage_grants",
+        }
+    }
+    /// Return the permission required to grant this privilege.
+    pub const fn grant_action(self) -> &'static str {
+        match self {
+            Self::Describe => "can_grant_describe",
+            Self::Select => "can_grant_select",
+            Self::Write => "can_grant_write",
+            Self::Modify => "can_grant_modify",
+            Self::PassGrants => "can_grant_pass_grants",
+            Self::ManageGrants => "can_grant_manage_grants",
+        }
+    }
+    /// Return the permission required to revoke this privilege.
+    pub const fn revoke_action(self) -> &'static str {
+        match self {
+            Self::Describe => "can_revoke_describe",
+            Self::Select => "can_revoke_select",
+            Self::Write => "can_revoke_write",
+            Self::Modify => "can_revoke_modify",
+            // These privileges are management-only in both directions upstream.
+            Self::PassGrants => "can_grant_pass_grants",
+            Self::ManageGrants => "can_grant_manage_grants",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Effective permissions exposed by the catalog's Check endpoint.
+pub enum TableAction {
+    /// Read table metadata.
+    Metadata,
+    /// Read table data.
+    ReadData,
+    /// Commit table changes.
+    Commit,
+    /// Delete the table.
+    Drop,
+    /// Inspect direct assignments.
+    ReadAssignments,
+    /// Replace ownership using the model's delegation policy.
+    ChangeOwnership,
+    /// Move the table, also requiring permission at the destination.
+    Move,
+}
+impl TableAction {
+    /// Parse one of the supported effective actions.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "can_get_metadata" => Some(Self::Metadata),
+            "can_read_data" => Some(Self::ReadData),
+            "can_commit" => Some(Self::Commit),
+            "can_drop" => Some(Self::Drop),
+            "can_read_assignments" => Some(Self::ReadAssignments),
+            "can_change_ownership" => Some(Self::ChangeOwnership),
+            "can_move" => Some(Self::Move),
+            _ => None,
+        }
+    }
+    /// Return the effective permission name in the pinned model.
+    pub const fn relation(self) -> &'static str {
+        match self {
+            Self::Metadata => "can_get_metadata",
+            Self::ReadData => "can_read_data",
+            Self::Commit => "can_commit",
+            Self::Drop => "can_drop",
+            Self::ReadAssignments => "can_read_assignments",
+            Self::ChangeOwnership => "can_change_ownership",
+            Self::Move => "can_move",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -119,21 +298,32 @@ mod tests {
         assert!(!is_visible(Lifecycle::Deleting));
     }
     #[test]
+    fn relationship_replacement_stays_hidden_until_confirmed() {
+        assert_eq!(
+            transition(Lifecycle::Active, Event::BeginUpdate),
+            Some(Lifecycle::Updating)
+        );
+        assert!(!is_visible(Lifecycle::Updating));
+        assert_eq!(
+            transition(Lifecycle::Updating, Event::Updated),
+            Some(Lifecycle::Active)
+        );
+        assert_eq!(transition(Lifecycle::Pending, Event::Updated), None);
+        assert_eq!(transition(Lifecycle::Deleted, Event::Updated), None);
+    }
+    #[test]
     fn validates_identifiers_and_input() {
-        assert!(valid_id("access-review-123"));
-        assert!(!valid_id("task:review"));
+        assert!(valid_id("requests-123"));
+        assert!(!valid_id("table:requests"));
         assert!(!valid_id(""));
         assert!(!valid_id(&"x".repeat(65)));
-        assert!(!valid_task("", "", "todo"));
-        assert!(valid_task(
-            "Review access",
-            "Evidence required",
-            "in_progress"
-        ));
-        assert!(!valid_task("Review access", "", "active"));
-        assert!(!valid_task_relation("assigner"));
-        assert!(!valid_task_relation("can_delete"));
-        assert!(!valid_organization_permission("owner"));
+        assert!(!valid_table("", ""));
+        assert!(valid_table("requests", "HTTP requests aggregate"));
+        assert!(UserId::try_from("user:alice").is_err());
+        assert!(NamespaceId::try_from("../other").is_err());
+        assert_eq!(Privilege::Select.revoke_action(), "can_revoke_select");
+        assert!(Privilege::parse("ownership").is_none());
+        assert!(TableAction::parse("admin").is_none());
     }
 }
 
@@ -143,32 +333,40 @@ mod proofs {
 
     #[kani::proof]
     fn deletion_cannot_resurrect_or_be_visible() {
-        let event = match kani::any::<u8>() % 3 {
+        let event = match kani::any::<u8>() % 5 {
             0 => Event::Provisioned,
             1 => Event::BeginDeletion,
-            _ => Event::TuplesRemoved,
+            2 => Event::TuplesRemoved,
+            3 => Event::BeginUpdate,
+            _ => Event::Updated,
         };
         assert!(transition(Lifecycle::Deleted, event).is_none());
         assert!(!is_visible(Lifecycle::Deleting));
         assert!(!is_visible(Lifecycle::Deleted));
+        assert!(!is_visible(Lifecycle::Updating));
     }
 
     #[kani::proof]
-    fn activation_requires_provisioning_pending_state() {
-        let state = match kani::any::<u8>() % 4 {
+    fn activation_requires_confirmed_transition() {
+        let state = match kani::any::<u8>() % 5 {
             0 => Lifecycle::Pending,
             1 => Lifecycle::Active,
             2 => Lifecycle::Deleting,
-            _ => Lifecycle::Deleted,
+            3 => Lifecycle::Deleted,
+            _ => Lifecycle::Updating,
         };
-        let event = match kani::any::<u8>() % 3 {
+        let event = match kani::any::<u8>() % 5 {
             0 => Event::Provisioned,
             1 => Event::BeginDeletion,
-            _ => Event::TuplesRemoved,
+            2 => Event::TuplesRemoved,
+            3 => Event::BeginUpdate,
+            _ => Event::Updated,
         };
         if transition(state, event) == Some(Lifecycle::Active) {
-            assert_eq!(state, Lifecycle::Pending);
-            assert_eq!(event, Event::Provisioned);
+            assert!(
+                (state == Lifecycle::Pending && event == Event::Provisioned)
+                    || (state == Lifecycle::Updating && event == Event::Updated)
+            );
         }
     }
 }

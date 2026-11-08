@@ -1,6 +1,7 @@
 #![cfg(any(feature = "grpc", feature = "http"))]
 
-//! Real OpenFGA model and adapter tests without Docker or PostgreSQL.
+//! Independent model workloads against real OpenFGA, without Docker/PostgreSQL.
+//! Each workload installs its explicit model in a fresh temporary store.
 //! The ignored tests require explicitly supplied official native binaries.
 
 use openfga_axum_lab::application::{Authorizer, Tuple};
@@ -15,6 +16,9 @@ use std::{net::TcpListener, process::Stdio, time::Duration};
 use tokio::{process::Child, process::Command, time::timeout};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+const OPENLANE_MODEL: &str = include_str!("../scenarios/openlane/fga/model.json");
+const LAKEKEEPER_MODEL: &str = include_str!("../fga/model.json");
 
 #[cfg(feature = "grpc")]
 const TRANSPORT: &str = "gRPC";
@@ -146,14 +150,12 @@ impl NativeServer {
             .await?)
     }
 
-    async fn create_model(&self) -> TestResult<(String, String)> {
-        let store = self
-            .post("/stores", &json!({"name": "openlane-native-model-test"}))
-            .await?["id"]
+    async fn create_model(&self, name: &str, model_json: &str) -> TestResult<(String, String)> {
+        let store = self.post("/stores", &json!({"name": name})).await?["id"]
             .as_str()
             .ok_or("missing native store id")?
             .to_owned();
-        let model: Value = serde_json::from_str(include_str!("../fga/model.json"))?;
+        let model: Value = serde_json::from_str(model_json)?;
         let model_id = self
             .post(&format!("/stores/{store}/authorization-models"), &model)
             .await?["authorization_model_id"]
@@ -168,7 +170,9 @@ impl NativeServer {
 #[ignore = "requires OPENFGA_TEST_BINARY pointing to official OpenFGA 1.10.3"]
 async fn native_openlane_model_and_adapter_matrix() -> TestResult {
     let mut server = NativeServer::start().await?;
-    let (store, model_id) = server.create_model().await?;
+    let (store, model_id) = server
+        .create_model("openlane-native-model-test", OPENLANE_MODEL)
+        .await?;
     #[cfg(feature = "grpc")]
     let auth: Box<dyn Authorizer> =
         Box::new(OpenFgaGrpc::connect(server.grpc_url.clone(), &store, &model_id).await?);
@@ -180,8 +184,9 @@ async fn native_openlane_model_and_adapter_matrix() -> TestResult {
         model: model_id.clone(),
     });
     auth.ensure_ready().await?;
-    let seed: Vec<Tuple> = serde_json::from_str(include_str!("../fga/legacy.json"))?;
-    auth.change(&seed, &[]).await?;
+    let seed: Vec<Tuple> =
+        serde_json::from_str(include_str!("../scenarios/openlane/fga/legacy.json"))?;
+    auth.apply(&seed, &[]).await?;
     // Exact seed lists cover inherited ownership, the explicit administrator
     // read grant, assignment, cross-organization sharing and an empty result.
     let expected_seed_lists: &[(&str, &[&str])] = &[
@@ -211,7 +216,9 @@ async fn native_openlane_model_and_adapter_matrix() -> TestResult {
         listed.sort();
         assert_eq!(&listed, expected, "seed list for {user}");
     }
-    let cases: Cases = serde_json::from_str(include_str!("fixtures/openlane-model-cases.json"))?;
+    let cases: Cases = serde_json::from_str(include_str!(
+        "../scenarios/openlane/tests/fixtures/openlane-model-cases.json"
+    ))?;
     assert_eq!(
         cases.source_revision,
         "1c38df0a53530c8c39eb0784862b06eaa3e26f58"
@@ -261,7 +268,7 @@ async fn native_openlane_model_and_adapter_matrix() -> TestResult {
                 deletes,
                 status,
             } => {
-                let result = auth.change(&writes, &deletes).await;
+                let result = auth.apply(&writes, &deletes).await;
                 if status == 200 {
                     result.map_err(|error| format!("{name}: {error}"))?;
                 } else {
@@ -298,68 +305,88 @@ async fn native_openlane_model_and_adapter_matrix() -> TestResult {
 #[ignore = "requires OPENFGA_TEST_BINARY pointing to official OpenFGA 1.10.3"]
 async fn native_idempotency_does_not_order_late_writes() -> TestResult {
     let mut server = NativeServer::start().await?;
-    let (store, model_id) = server.create_model().await?;
-    let path = format!("/stores/{store}/write");
-    let owner = |user: &str| json!({"user": format!("user:{user}"), "relation": "owner", "object": "organization:acme"});
-    server
-        .post(
-            &path,
-            &json!({
+    // The same backend ordering boundary applies to the independently loaded
+    // Openlane subset and to the exact default Lakekeeper model. These stores
+    // never share tuples, model IDs or the application's configured store.
+    let scenarios = [
+        (
+            "openlane-native-ordering",
+            OPENLANE_MODEL,
+            "owner",
+            "organization:acme",
+            ("can_view", "task:ownership-proof"),
+            vec![
+                json!({"user": "organization:acme", "relation": "parent_context", "object": "task:ownership-proof"}),
+                json!({"user": "user:dave", "relation": "assigner", "object": "task:ownership-proof"}),
+            ],
+        ),
+        (
+            "lakekeeper-native-ordering",
+            LAKEKEEPER_MODEL,
+            "ownership",
+            "lakekeeper_table:analytics/ordering-proof",
+            ("can_read_data", "lakekeeper_table:analytics/ordering-proof"),
+            vec![],
+        ),
+    ];
+    for (name, model, owner_relation, owner_object, derived_access, mut seed) in scenarios {
+        let (store, model_id) = server.create_model(name, model).await?;
+        let path = format!("/stores/{store}/write");
+        let owner = |user: &str| json!({"user": format!("user:{user}"), "relation": owner_relation, "object": owner_object});
+        seed.push(owner("alice"));
+        server
+            .post(
+                &path,
+                &json!({
+                    "authorization_model_id": model_id,
+                    "writes": {"tuple_keys": seed}
+                }),
+            )
+            .await?;
+        let transfer = |old: &str, next: &str| {
+            json!({
                 "authorization_model_id": model_id,
-                "writes": {"tuple_keys": [
-                    owner("alice"),
-                    {"user": "organization:acme", "relation": "parent_context", "object": "task:ownership-proof"},
-                    {"user": "user:dave", "relation": "assigner", "object": "task:ownership-proof"}
-                ]}
-            }),
-        )
-        .await?;
-    let transfer = |old: &str, next: &str| {
-        json!({
-            "authorization_model_id": model_id,
-            "writes": {"tuple_keys": [owner(next)], "on_duplicate": "ignore"},
-            "deletes": {"tuple_keys": [owner(old)], "on_missing": "ignore"}
-        })
-    };
-    let original = transfer("alice", "bob");
-    // Deliver a recovery replay while an identical original request is still
-    // delayed outside the server, then deliver a newer ownership transfer.
-    // The test controls delivery order; it does not pretend to cancel a real
-    // PostgreSQL transaction or to exercise the application's quarantine.
-    server.post(&path, &original).await?;
-    server.post(&path, &transfer("bob", "carol")).await?;
-    for late in [false, true] {
-        if late {
-            server.post(&path, &original).await?;
-        }
-        for (user, expected) in [("alice", false), ("bob", late), ("carol", true)] {
-            for (relation, object) in [
-                ("owner", "organization:acme"),
-                ("can_view", "task:ownership-proof"),
-            ] {
-                let result = server
-                    .post(
-                        &format!("/stores/{store}/check"),
-                        &json!({
-                            "authorization_model_id": model_id,
-                            "consistency": "HIGHER_CONSISTENCY",
-                            "tuple_key": {"user": format!("user:{user}"), "relation": relation, "object": object}
-                        }),
-                    )
-                    .await?;
-                assert_eq!(
-                    result["allowed"],
-                    json!(expected),
-                    "{user} {relation}, late={late}"
-                );
+                "writes": {"tuple_keys": [owner(next)], "on_duplicate": "ignore"},
+                "deletes": {"tuple_keys": [owner(old)], "on_missing": "ignore"}
+            })
+        };
+        let original = transfer("alice", "bob");
+        // Deliver a recovery replay while an identical original request is
+        // delayed outside the server, then deliver a newer ownership transfer.
+        // This controls delivery order; it does not cancel a PostgreSQL
+        // transaction or exercise the application's durable recovery fence.
+        server.post(&path, &original).await?;
+        server.post(&path, &transfer("bob", "carol")).await?;
+        for late in [false, true] {
+            if late {
+                server.post(&path, &original).await?;
+            }
+            for (user, expected) in [("alice", false), ("bob", late), ("carol", true)] {
+                for (relation, object) in [(owner_relation, owner_object), derived_access] {
+                    let result = server
+                        .post(
+                            &format!("/stores/{store}/check"),
+                            &json!({
+                                "authorization_model_id": model_id,
+                                "consistency": "HIGHER_CONSISTENCY",
+                                "tuple_key": {"user": format!("user:{user}"), "relation": relation, "object": object}
+                            }),
+                        )
+                        .await?;
+                    assert_eq!(
+                        result["allowed"],
+                        json!(expected),
+                        "{name}: {user} {relation}, late={late}"
+                    );
+                }
             }
         }
+        println!(
+            "{name}: real OpenFGA accepts the old late write and restores Bob alongside Carol; neither atomic Write nor an acknowledged replay provides request ordering."
+        );
     }
     server.child.kill().await?;
     server.child.wait().await?;
-    println!(
-        "Real OpenFGA witness: an acknowledged replay does not fence an older late write; the application must quarantine subsequent mutations after an ambiguous attempt."
-    );
     Ok(())
 }
 
@@ -401,14 +428,18 @@ fn model_semantics(model: &Value) -> Value {
 
 #[tokio::test]
 #[ignore = "requires FGA_CLI_TEST_BINARY pointing to official fga CLI"]
-async fn readable_model_matches_deployed_json() -> TestResult {
+async fn readable_openlane_model_matches_scenario_json() -> TestResult {
     let binary = std::env::var("FGA_CLI_TEST_BINARY")
         .map_err(|_| "set FGA_CLI_TEST_BINARY to the official fga CLI")?;
     let output = Command::new(binary)
         .args([
             "model",
             "transform",
-            concat!("--file=", env!("CARGO_MANIFEST_DIR"), "/fga/model.fga"),
+            concat!(
+                "--file=",
+                env!("CARGO_MANIFEST_DIR"),
+                "/scenarios/openlane/fga/model.fga"
+            ),
             "--output-format=json",
         ])
         .output()
@@ -419,7 +450,10 @@ async fn readable_model_matches_deployed_json() -> TestResult {
         String::from_utf8_lossy(&output.stderr)
     );
     let transformed: Value = serde_json::from_slice(&output.stdout)?;
-    let deployed: Value = serde_json::from_str(include_str!("../fga/model.json"))?;
-    assert_eq!(model_semantics(&transformed), model_semantics(&deployed));
+    let scenario_model: Value = serde_json::from_str(OPENLANE_MODEL)?;
+    assert_eq!(
+        model_semantics(&transformed),
+        model_semantics(&scenario_model)
+    );
     Ok(())
 }

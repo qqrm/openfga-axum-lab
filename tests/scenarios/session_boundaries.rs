@@ -92,7 +92,12 @@ async fn login_input_limits_and_unusable_credentials_fail_closed() -> TestResult
         stored.as_slice() != token.as_bytes(),
         "stored a raw session token"
     );
-    expect(api.call(M::GET, "/tasks", token), S::OK).await?;
+    let directory = expect(api.call(M::GET, "/catalog", token), S::OK).await?;
+    assert_eq!(
+        directory,
+        json!({"scopes": []}),
+        "a user without project membership must have an empty catalog"
+    );
     expect(api.call(M::DELETE, "/session", token), S::NO_CONTENT).await?;
     assert_eq!(session_count(&db).await?, 0);
 
@@ -120,7 +125,15 @@ async fn login_input_limits_and_unusable_credentials_fail_closed() -> TestResult
             .execute(&db)
             .await?;
         let restored = stack.login(&client, &app, "carol").await?;
-        expect(api.call(M::GET, "/tasks/access-review", &restored), S::OK).await?;
+        expect(
+            api.call(
+                M::GET,
+                "/projects/acme/warehouses/analytics/tables/requests",
+                &restored,
+            ),
+            S::OK,
+        )
+        .await?;
         expect(api.call(M::DELETE, "/session", &restored), S::NO_CONTENT).await?;
         assert_eq!(session_count(&db).await?, 0);
     }
@@ -141,15 +154,26 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
     let expired = stack.login(&client, &app, "carol").await?;
     assert!(live != expired, "separate logins reused a session token");
     for token in [&live, &expired] {
-        expect(api.call(M::GET, "/tasks/access-review", token), S::OK).await?;
+        expect(
+            api.call(
+                M::GET,
+                "/projects/acme/warehouses/analytics/tables/requests",
+                token,
+            ),
+            S::OK,
+        )
+        .await?;
     }
 
     // Authentication schemes are case-insensitive (RFC 9110, section 11.1),
     // including the current HTTP parser. The opaque token is unchanged.
     for scheme in ["bearer", "bEaReR"] {
         expect(
-            api.request(M::GET, "/tasks/access-review")
-                .header(AUTHORIZATION, format!("{scheme} {live}")),
+            api.request(
+                M::GET,
+                "/projects/acme/warehouses/analytics/tables/requests",
+            )
+            .header(AUTHORIZATION, format!("{scheme} {live}")),
             S::OK,
         )
         .await?;
@@ -198,7 +222,13 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
             ))?),
         ),
     ] {
-        for (method, path) in [(M::GET, "/tasks/access-review"), (M::DELETE, "/session")] {
+        for (method, path) in [
+            (
+                M::GET,
+                "/projects/acme/warehouses/analytics/tables/requests",
+            ),
+            (M::DELETE, "/session"),
+        ] {
             let mut request = api.request(method, path);
             if let Some(value) = &header {
                 request = request.header(AUTHORIZATION, value.clone());
@@ -212,7 +242,15 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         }
     }
     assert_eq!(session_count(&db).await?, 2);
-    expect(api.call(M::GET, "/tasks/access-review", &live), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &live,
+        ),
+        S::OK,
+    )
+    .await?;
 
     // Use PostgreSQL's own clock, not sleeps or a wall-clock race with expiry.
     let changed =
@@ -223,12 +261,24 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
             .rows_affected();
     assert_eq!(changed, 1);
     expect(
-        api.call(M::GET, "/tasks/access-review", &expired),
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &expired,
+        ),
         S::UNAUTHORIZED,
     )
     .await?;
     expect(api.call(M::DELETE, "/session", &expired), S::UNAUTHORIZED).await?;
-    expect(api.call(M::GET, "/tasks/access-review", &live), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &live,
+        ),
+        S::OK,
+    )
+    .await?;
 
     expect(
         api.request(M::DELETE, "/session")
@@ -238,7 +288,11 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
     .await?;
     expect(api.call(M::DELETE, "/session", &live), S::UNAUTHORIZED).await?;
     expect(
-        api.call(M::GET, "/tasks/access-review", &live),
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &live,
+        ),
         S::UNAUTHORIZED,
     )
     .await?;
@@ -248,10 +302,22 @@ async fn invalid_expired_and_revoked_sessions_cannot_be_reused() -> TestResult {
         fresh != live && fresh != expired,
         "new login reused an old token"
     );
-    expect(api.call(M::GET, "/tasks/access-review", &fresh), S::OK).await?;
+    expect(
+        api.call(
+            M::GET,
+            "/projects/acme/warehouses/analytics/tables/requests",
+            &fresh,
+        ),
+        S::OK,
+    )
+    .await?;
     for old in [&live, &expired] {
         expect(
-            api.call(M::GET, "/tasks/access-review", old),
+            api.call(
+                M::GET,
+                "/projects/acme/warehouses/analytics/tables/requests",
+                old,
+            ),
             S::UNAUTHORIZED,
         )
         .await?;

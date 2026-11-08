@@ -1,4 +1,4 @@
-//! Organization/task service and pure rules shared with the browser demonstration.
+//! Catalog authorization service and pure rules shared with the browser demonstration.
 //!
 //! The functions in [`domain`] do not perform authentication, database I/O or OpenFGA
 //! requests. An allowed lifecycle transition is a domain decision, not proof
@@ -6,7 +6,7 @@
 //!
 //! # Provisioning and deletion
 //!
-//! A task becomes visible only after provisioning. Beginning deletion hides it
+//! A table becomes visible only after provisioning. Beginning deletion hides it
 //! before its authorization tuples are removed.
 //!
 //! ```
@@ -44,28 +44,27 @@
 //! ```
 //! use openfga_axum_lab::domain::valid_id;
 //!
-//! assert!(valid_id("access-review-123"));
+//! assert!(valid_id("requests-123"));
 //! assert!(valid_id(&"x".repeat(64)));
 //! assert!(!valid_id(&"x".repeat(65)));
-//! assert!(!valid_id("task:review"));
+//! assert!(!valid_id("lakekeeper_table:requests"));
 //! assert!(!valid_id("../review"));
 //! ```
 //!
-//! Text limits count UTF-8 bytes, not characters. Titles must contain
-//! non-whitespace text; an empty description is allowed. Status is explicit.
+//! Text limits count UTF-8 bytes, not characters. Names must contain
+//! non-whitespace text; an empty description is allowed.
 //!
 //! ```
-//! use openfga_axum_lab::domain::valid_task;
+//! use openfga_axum_lab::domain::valid_table;
 //!
-//! assert!(valid_task("Review access", "", "todo"));
-//! assert!(!valid_task("   ", "", "todo"));
-//! assert!(!valid_task(&"я".repeat(81), "", "todo"));
-//! assert!(!valid_task("Review access", &"x".repeat(4001), "todo"));
+//! assert!(valid_table("Request metrics", ""));
+//! assert!(!valid_table("   ", ""));
+//! assert!(!valid_table(&"я".repeat(51), ""));
+//! assert!(!valid_table("Request metrics", &"x".repeat(2001)));
 //! ```
 
 pub mod application;
 mod authentication;
-mod authorization;
 pub mod authorization_migration;
 mod cached_authorizer;
 mod configuration;
@@ -76,7 +75,6 @@ pub mod infrastructure;
 mod metrics;
 pub mod model_binding;
 mod operations;
-mod organizations;
 mod server;
 mod use_cases;
 

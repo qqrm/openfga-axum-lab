@@ -36,7 +36,7 @@ impl Stand {
             "services:\n  openfga:\n    ports: [\"127.0.0.1::8080\"]\n",
         )?;
         Ok(Self {
-            project: format!("openlane-delivery-{}", uuid::Uuid::new_v4()),
+            project: format!("authzlab-delivery-{}", uuid::Uuid::new_v4()),
             environment: state.join("environment.env"),
             directory,
             overlay,
@@ -223,7 +223,9 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     let token = session["token"].as_str().ok_or("token")?;
     assert_eq!(
         client
-            .get(format!("{stable_url}/tasks/access-review"))
+            .get(format!(
+                "{stable_url}/projects/acme/warehouses/analytics/tables/requests"
+            ))
             .bearer_auth(token)
             .send()
             .await?
@@ -231,7 +233,9 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
         StatusCode::UNAUTHORIZED
     );
     let original: Value = client
-        .get(format!("{stage_url}/tasks/access-review"))
+        .get(format!(
+            "{stage_url}/projects/acme/warehouses/analytics/tables/requests"
+        ))
         .bearer_auth(token)
         .send()
         .await?
@@ -282,7 +286,7 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
-            "UPDATE tasks SET description='restore sentinel' WHERE id='access-review'",
+            "UPDATE catalog_tables SET description='restore sentinel' WHERE warehouse_id='analytics' AND id='requests'",
         ])
         .await?;
     for (database, dump) in dumps {
@@ -291,7 +295,9 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     stage.start().await?;
     let stage_url = stage.address("app", "3000").await?;
     let restored: Value = client
-        .get(format!("{stage_url}/tasks/access-review"))
+        .get(format!(
+            "{stage_url}/projects/acme/warehouses/analytics/tables/requests"
+        ))
         .bearer_auth(token)
         .send()
         .await?
@@ -314,7 +320,9 @@ async fn immutable_delivery_isolated_stands_and_recovery() -> TestResult {
     status(&client, &stable_url, "/readyz", StatusCode::OK).await?;
     assert_eq!(
         client
-            .get(format!("{stage_url}/tasks/access-review"))
+            .get(format!(
+                "{stage_url}/projects/acme/warehouses/analytics/tables/requests"
+            ))
             .bearer_auth(token)
             .send()
             .await?

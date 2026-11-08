@@ -12,5 +12,6 @@ cp "$repo_root/browser-demo/index.html" "$repo_root/browser-demo/style.css" "$re
 cp "$repo_root/fga/model.json" "$repo_root/fga/provenance.json" "$output_dir/"
 cp "$repo_root/NOTICE" "$output_dir/"
 mkdir -p "$output_dir/LICENSES"
-cp "$repo_root/LICENSES/Apache-2.0-Openlane.txt" "$output_dir/LICENSES/"
+cp "$repo_root/fga/upstream/lakekeeper.LICENSE" "$output_dir/LICENSES/Apache-2.0-Lakekeeper.txt"
+cp "$repo_root/fga/upstream/lakekeeper.NOTICE" "$output_dir/LICENSES/Lakekeeper.NOTICE"
 printf 'Browser demo built in %s\n' "$output_dir"

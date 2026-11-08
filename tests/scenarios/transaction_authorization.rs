@@ -1,11 +1,13 @@
-//! Revoke task authority while an authenticated handler waits for its SQL lock.
+//! Revoke catalog authority while an authenticated handler waits for its SQL lock.
 //!
-//! A real PostgreSQL row lock holds the handler at SELECT ... FOR UPDATE. We
-//! observe its lock dependency, rather than guessing when middleware finished.
-//! Assigner changes are administrative fixtures because the task API does not
-//! replace its immutable assigner. Each completed real OpenFGA write explicitly
-//! advances the shared cache generation; this does not claim that arbitrary
-//! out-of-band OpenFGA writes automatically invalidate cached decisions.
+//! The handler first takes the project lock, then waits for the table row lock.
+//! Observe that PostgreSQL dependency instead of guessing from request timing.
+//! An administrative fixture removes Carol's real ownership tuple while SQL
+//! still names her as owner: only a fresh OpenFGA decision after acquiring the
+//! locks may authorize the mutation. A normal API transfer takes the same
+//! project lock, so the fixture deliberately writes to OpenFGA directly. Each
+//! acknowledged fixture write advances the shared cache generation explicitly;
+//! arbitrary out-of-band writes do not automatically invalidate the cache.
 
 use crate::{
     api::{Api, expect},
@@ -14,15 +16,19 @@ use crate::{
 use reqwest::{Client, Method as M, RequestBuilder, StatusCode as S};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 use tokio::time::{interval, timeout};
+
+const TABLE_PATH: &str = "/projects/acme/warehouses/analytics/tables/requests";
+const GRANT_PATH: &str = "/projects/acme/warehouses/analytics/tables/requests/grants/select";
+const TABLE_OBJECT: &str = "lakekeeper_table:analytics/requests";
 
 #[derive(Clone, Copy, Debug)]
 enum Mutation {
     Edit,
     Delete,
-    GrantViewer,
-    RevokeViewer,
+    GrantSelect,
+    RevokeSelect,
 }
 
 #[derive(serde::Deserialize)]
@@ -34,39 +40,38 @@ struct TuplePage {
 }
 
 fn edit_body() -> Value {
-    json!({"title": "Reauthorized task", "description": "Assigner access restored.", "status": "done"})
+    json!({"name": "Reauthorized table", "description": "Ownership access restored."})
 }
 
 impl Mutation {
     fn request(self, api: &Api, token: &str) -> RequestBuilder {
+        let subject = json!({"subject": {"type": "user", "id": "dave"}});
         let request = match self {
-            Self::Edit => api
-                .call(M::PATCH, "/tasks/access-review", token)
-                .json(&edit_body()),
-            Self::Delete => api.call(M::DELETE, "/tasks/access-review", token),
-            Self::GrantViewer => {
-                api.call(M::PUT, "/tasks/access-review/relations/viewer/dave", token)
-            }
-            Self::RevokeViewer => api.call(
-                M::DELETE,
-                "/tasks/access-review/relations/viewer/dave",
-                token,
-            ),
+            Self::Edit => api.call(M::PATCH, TABLE_PATH, token).json(&edit_body()),
+            Self::Delete => api.call(M::DELETE, TABLE_PATH, token),
+            Self::GrantSelect => api.call(M::PUT, GRANT_PATH, token).json(&subject),
+            Self::RevokeSelect => api.call(M::DELETE, GRANT_PATH, token).json(&subject),
         };
         request.timeout(Duration::from_secs(30))
     }
 
     fn permission(self) -> &'static str {
         match self {
-            Self::Edit => "can_edit",
-            _ => "can_delete",
+            Self::Edit => "can_commit",
+            Self::Delete => "can_drop",
+            Self::GrantSelect => "can_grant_select",
+            Self::RevokeSelect => "can_revoke_select",
         }
     }
 
     fn handler_query(self) -> &'static str {
         match self {
-            Self::Delete => "SELECT status,delete_actor FROM tasks WHERE id=$1 FOR UPDATE",
-            _ => "SELECT status FROM tasks WHERE id=$1 FOR UPDATE",
+            Self::Delete => {
+                "SELECT status,delete_actor,namespace_id FROM catalog_tables WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 FOR UPDATE"
+            }
+            _ => {
+                "SELECT id,project_id,warehouse_id,namespace_id,owner_id,name,description,status FROM catalog_tables WHERE project_id=$1 AND warehouse_id=$2 AND id=$3 FOR UPDATE"
+            }
         }
     }
 }
@@ -96,57 +101,70 @@ async fn wait_for_handler(pool: &PgPool, blocker: i32, query: &str) -> TestResul
     Ok(())
 }
 
-async fn task_row(pool: &PgPool) -> TestResult<Value> {
+async fn table_row(pool: &PgPool) -> TestResult<Value> {
     let row: String =
-        sqlx::query_scalar("SELECT row_to_json(tasks)::text FROM tasks WHERE id='access-review'")
+        sqlx::query_scalar("SELECT row_to_json(catalog_tables)::text FROM catalog_tables WHERE project_id='acme' AND warehouse_id='analytics' AND id='requests'")
             .fetch_one(pool)
             .await?;
     Ok(serde_json::from_str(&row)?)
 }
 
-async fn task_tuples(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
+async fn table_tuples(client: &Client, stack: &Stack) -> TestResult<Vec<Value>> {
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
-    let response: TuplePage = client
-        .post(format!("{}/stores/{store}/read", stack.fga_http_url))
-        .json(
-            &json!({"tuple_key": {"object": "task:access-review"}, "page_size": 100,
-            "consistency": "HIGHER_CONSISTENCY"}),
-        )
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    assert!(
-        response.continuation_token.is_empty(),
-        "fixture tuple snapshot must contain every page"
-    );
-    let mut tuples = Vec::with_capacity(response.tuples.len());
-    for tuple in response.tuples {
-        let mut key = tuple["key"].clone();
-        let fields = key.as_object_mut().ok_or("missing tuple key object")?;
-        // The protobuf JSON response may include an absent message as null.
-        // Preserve every other key field and reject conditional fixture tuples.
-        let condition = fields.remove("condition");
+    let mut cursor = String::new();
+    let mut seen = BTreeSet::new();
+    let mut tuples = Vec::new();
+    loop {
+        let response: TuplePage = client
+            .post(format!("{}/stores/{store}/read", stack.fga_http_url))
+            .json(&json!({"page_size": 100, "continuation_token": cursor,
+                "consistency": "HIGHER_CONSISTENCY"}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        for tuple in response.tuples {
+            let mut key = tuple["key"].clone();
+            let fields = key.as_object_mut().ok_or("missing tuple key object")?;
+            // Include the reverse namespace child tuple as well as the table's
+            // own relationships, so successful deletion must remove both sides.
+            if fields.get("object").and_then(Value::as_str) != Some(TABLE_OBJECT)
+                && fields.get("user").and_then(Value::as_str) != Some(TABLE_OBJECT)
+            {
+                continue;
+            }
+            // Protobuf JSON may encode an absent message as null. Preserve all
+            // other fields and reject conditional fixtures instead of ignoring them.
+            let condition = fields.remove("condition");
+            assert!(
+                condition.as_ref().is_none_or(Value::is_null),
+                "fixture requires an unconditional tuple: condition={condition:?}, key={key}"
+            );
+            tuples.push(key);
+        }
+        if response.continuation_token.is_empty() {
+            break;
+        }
         assert!(
-            condition.as_ref().is_none_or(Value::is_null),
-            "fixture requires an unconditional tuple: condition={condition:?}, key={key}"
+            seen.insert(response.continuation_token.clone()),
+            "repeating tuple snapshot cursor"
         );
-        tuples.push(key);
+        cursor = response.continuation_token;
     }
     tuples.sort_unstable_by_key(Value::to_string);
     Ok(tuples)
 }
 
-async fn assigner_allowed(client: &Client, stack: &Stack, permission: &str) -> TestResult<bool> {
+async fn owner_allowed(client: &Client, stack: &Stack, permission: &str) -> TestResult<bool> {
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     let response: Value = client
         .post(format!("{}/stores/{store}/check", stack.fga_http_url))
         .json(&json!({"authorization_model_id": config["model_id"],
         "consistency": "HIGHER_CONSISTENCY", "tuple_key": {
-            "user": "user:carol", "relation": permission, "object": "task:access-review"
+            "user": "user:carol", "relation": permission, "object": TABLE_OBJECT
         }}))
         .send()
         .await?
@@ -158,27 +176,27 @@ async fn assigner_allowed(client: &Client, stack: &Stack, permission: &str) -> T
         .ok_or("missing decision".into())
 }
 
-fn assigner_tuple() -> Value {
-    json!({"user": "user:carol", "relation": "assigner", "object": "task:access-review"})
+fn owner_tuple() -> Value {
+    json!({"user": "user:carol", "relation": "ownership", "object": TABLE_OBJECT})
 }
 
-fn viewer_tuple() -> Value {
-    json!({"user": "user:dave", "relation": "viewer", "object": "task:access-review"})
+fn select_tuple() -> Value {
+    json!({"user": "user:dave", "relation": "select", "object": TABLE_OBJECT})
 }
 
-async fn set_assigner(client: &Client, stack: &Stack, pool: &PgPool, add: bool) -> TestResult {
+async fn set_ownership(client: &Client, stack: &Stack, pool: &PgPool, add: bool) -> TestResult {
     let config = stack.config()?;
     let store = config["store_id"].as_str().ok_or("missing store id")?;
     let mut body = json!({"authorization_model_id": config["model_id"]});
-    body[if add { "writes" } else { "deletes" }] = json!({"tuple_keys": [assigner_tuple()]});
+    body[if add { "writes" } else { "deletes" }] = json!({"tuple_keys": [owner_tuple()]});
     client
         .post(format!("{}/stores/{store}/write", stack.fga_http_url))
         .json(&body)
         .send()
         .await?
         .error_for_status()?;
-    // Only the blocked request is in flight. Establish a completed, externally
-    // coordinated assigner change; do not wait for the decision cache's TTL.
+    // Only the blocked request is in flight. Complete this externally
+    // coordinated ownership change without waiting for the denial cache's TTL.
     let changed = sqlx::query(
         "UPDATE authz_cache_state SET generation = generation + 1 WHERE singleton AND pending = 0",
     )
@@ -187,7 +205,7 @@ async fn set_assigner(client: &Client, stack: &Stack, pool: &PgPool, add: bool) 
     .rows_affected();
     assert_eq!(
         changed, 1,
-        "assigner fixture requires a quiescent cache fence"
+        "ownership fixture requires a quiescent cache fence"
     );
     Ok(())
 }
@@ -200,27 +218,30 @@ async fn exercise_revocation(mutation: Mutation) -> TestResult {
     let carol = stack.login(&client, &app, "carol").await?;
     let dave = stack.login(&client, &app, "dave").await?;
     let pool = stack.pool().await?;
-    if matches!(mutation, Mutation::RevokeViewer) {
-        expect(
-            api.call(M::PUT, "/tasks/access-review/relations/viewer/dave", &carol),
-            S::NO_CONTENT,
-        )
-        .await?;
+    if matches!(mutation, Mutation::RevokeSelect) {
+        expect(Mutation::GrantSelect.request(&api, &carol), S::NO_CONTENT).await?;
     }
-    assert!(assigner_allowed(&client, &stack, mutation.permission()).await?);
-    let original_row = task_row(&pool).await?;
+    assert!(owner_allowed(&client, &stack, mutation.permission()).await?);
+    let original_row = table_row(&pool).await?;
+    assert_eq!(original_row["owner_id"], json!("carol"));
     let original_projection = stack.domain_snapshot().await?;
-    let original_tuples = task_tuples(&client, &stack).await?;
+    let original_tuples = table_tuples(&client, &stack).await?;
     assert!(
-        original_tuples.contains(&assigner_tuple()),
-        "missing Carol assigner in real OpenFGA tuples: {original_tuples:#?}"
+        original_tuples.contains(&owner_tuple()),
+        "missing Carol ownership in real OpenFGA tuples: {original_tuples:#?}"
+    );
+    assert!(
+        original_tuples.contains(&json!({
+            "user": TABLE_OBJECT, "relation": "child", "object": "namespace:metrics"
+        })),
+        "fixture must include the reverse namespace link"
     );
 
     let mut lock = pool.begin().await?;
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *lock)
         .await?;
-    sqlx::query("SELECT id FROM tasks WHERE id='access-review' FOR UPDATE")
+    sqlx::query("SELECT id FROM catalog_tables WHERE project_id='acme' AND warehouse_id='analytics' AND id='requests' FOR UPDATE")
         .execute(&mut *lock)
         .await?;
     let request = mutation.request(&api, &carol);
@@ -230,73 +251,67 @@ async fn exercise_revocation(mutation: Mutation) -> TestResult {
         !pending.is_finished(),
         "request must still wait for the lock"
     );
-    println!("{mutation:?}: authentication passed; handler waits for PostgreSQL backend {blocker}");
+    println!(
+        "{mutation:?}: authenticated handler holds the project lock and waits for table-lock backend {blocker}"
+    );
 
-    set_assigner(&client, &stack, &pool, false).await?;
-    assert!(!assigner_allowed(&client, &stack, mutation.permission()).await?);
+    set_ownership(&client, &stack, &pool, false).await?;
+    assert!(!owner_allowed(&client, &stack, mutation.permission()).await?);
     let denied_tuples: Vec<_> = original_tuples
         .iter()
-        .filter(|tuple| **tuple != assigner_tuple())
+        .filter(|tuple| **tuple != owner_tuple())
         .cloned()
         .collect();
-    assert_eq!(task_tuples(&client, &stack).await?, denied_tuples);
+    assert_eq!(table_tuples(&client, &stack).await?, denied_tuples);
     lock.commit().await?;
     pending.await??;
-    assert_eq!(task_row(&pool).await?, original_row, "denial mutated SQL");
+    assert_eq!(table_row(&pool).await?, original_row, "denial mutated SQL");
     assert_eq!(
         stack.domain_snapshot().await?,
         original_projection,
-        "denial mutated desired grants, membership or durable intent"
+        "denial mutated catalog state, membership or durable intent"
     );
     assert_eq!(
-        task_tuples(&client, &stack).await?,
+        table_tuples(&client, &stack).await?,
         denied_tuples,
         "denial mutated authorization tuples"
     );
 
-    // The identical request succeeds once assigner authority is restored, so a broken
-    // dependency, invalid payload or permanently denied fixture cannot pass.
-    set_assigner(&client, &stack, &pool, true).await?;
-    assert!(assigner_allowed(&client, &stack, mutation.permission()).await?);
+    // The identical request succeeds once ownership authority is restored, so
+    // a broken dependency, invalid payload or permanently denied fixture cannot pass.
+    set_ownership(&client, &stack, &pool, true).await?;
+    assert!(owner_allowed(&client, &stack, mutation.permission()).await?);
     expect(mutation.request(&api, &carol), S::NO_CONTENT).await?;
     let mut expected_row = original_row;
     let mut expected_tuples = original_tuples;
     match mutation {
         Mutation::Edit => {
             let edited = edit_body();
-            for field in ["title", "description"] {
+            for field in ["name", "description"] {
                 expected_row[field] = edited[field].clone();
             }
-            expected_row["task_status"] = edited["status"].clone();
-            let task = expect(api.call(M::GET, "/tasks/access-review", &carol), S::OK).await?;
-            assert_eq!(task["description"], edited["description"]);
+            let table = expect(api.call(M::GET, TABLE_PATH, &carol), S::OK).await?;
+            assert_eq!(table["name"], edited["name"]);
+            assert_eq!(table["description"], edited["description"]);
         }
         Mutation::Delete => {
             expected_row["status"] = json!("deleted");
             expected_row["delete_actor"] = json!("carol");
             expected_tuples.clear();
-            expect(
-                api.call(M::GET, "/tasks/access-review", &carol),
-                S::NOT_FOUND,
-            )
-            .await?;
+            expect(api.call(M::GET, TABLE_PATH, &carol), S::NOT_FOUND).await?;
         }
-        Mutation::GrantViewer => {
-            expected_tuples.push(viewer_tuple());
+        Mutation::GrantSelect => {
+            expected_tuples.push(select_tuple());
             expected_tuples.sort_unstable_by_key(Value::to_string);
-            expect(api.call(M::GET, "/tasks/access-review", &dave), S::OK).await?;
+            expect(api.call(M::GET, TABLE_PATH, &dave), S::OK).await?;
         }
-        Mutation::RevokeViewer => {
-            expected_tuples.retain(|tuple| *tuple != viewer_tuple());
-            expect(
-                api.call(M::GET, "/tasks/access-review", &dave),
-                S::FORBIDDEN,
-            )
-            .await?;
+        Mutation::RevokeSelect => {
+            expected_tuples.retain(|tuple| *tuple != select_tuple());
+            expect(api.call(M::GET, TABLE_PATH, &dave), S::FORBIDDEN).await?;
         }
     }
-    assert_eq!(task_row(&pool).await?, expected_row);
-    assert_eq!(task_tuples(&client, &stack).await?, expected_tuples);
+    assert_eq!(table_row(&pool).await?, expected_row);
+    assert_eq!(table_tuples(&client, &stack).await?, expected_tuples);
     pool.close().await;
     app.stop().await?;
     Ok(())
@@ -304,24 +319,24 @@ async fn exercise_revocation(mutation: Mutation) -> TestResult {
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn edit_rechecks_authorization_after_waiting_for_task_lock() -> TestResult {
+async fn edit_rechecks_authorization_after_waiting_for_table_lock() -> TestResult {
     exercise_revocation(Mutation::Edit).await
 }
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn delete_rechecks_authorization_after_waiting_for_task_lock() -> TestResult {
+async fn delete_rechecks_authorization_after_waiting_for_table_lock() -> TestResult {
     exercise_revocation(Mutation::Delete).await
 }
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn relation_grant_rechecks_authorization_after_waiting_for_task_lock() -> TestResult {
-    exercise_revocation(Mutation::GrantViewer).await
+async fn select_grant_rechecks_authorization_after_waiting_for_table_lock() -> TestResult {
+    exercise_revocation(Mutation::GrantSelect).await
 }
 
 #[tokio::test]
 #[ignore = "requires a local Docker engine"]
-async fn relation_revoke_rechecks_authorization_after_waiting_for_task_lock() -> TestResult {
-    exercise_revocation(Mutation::RevokeViewer).await
+async fn select_revoke_rechecks_authorization_after_waiting_for_table_lock() -> TestResult {
+    exercise_revocation(Mutation::RevokeSelect).await
 }

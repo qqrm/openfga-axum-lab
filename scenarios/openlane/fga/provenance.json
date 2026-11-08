@@ -1,0 +1,25 @@
+{
+  "project": "Openlane",
+  "repository": "https://github.com/theopenlane/core",
+  "commit": "1c38df0a53530c8c39eb0784862b06eaa3e26f58",
+  "path": "fga/model/fga.mod",
+  "source_paths": [
+    "fga/model/fga.mod",
+    "fga/model/base/organization.fga",
+    "fga/model/base/task.fga",
+    "fga/model/roles/roles.fga",
+    "fga/model/generated/crud.fga"
+  ],
+  "upstream_schema_version": "1.2",
+  "schema_version": "1.1",
+  "sha256": "c9186020ca60a129a82e3408f122689669302a447f34c54e70ea006d794d59f4",
+  "license": "Apache-2.0",
+  "source_url": "https://github.com/theopenlane/core/blob/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga/model/fga.mod",
+  "model_changes": true,
+  "adaptation": "Users-only organization/task subset. Modular schema 1.2 is flattened to schema 1.1. Parent task and organization hierarchies, service accounts, groups and specialized roles are omitted; retained relation rewrites preserve the documented Openlane semantics.",
+  "dataset": "Synthetic lab organizations, users and tasks; no upstream users or production data",
+  "api_scope": "Independent native model and shared-adapter workload for organizations, ownership, task assignment, grants, inheritance and explicit denial; no task API, SQL migration or server mode is provided",
+  "license_path": "LICENSES/Apache-2.0-Openlane.txt",
+  "notice_path": "NOTICE",
+  "path_base": "scenarios/openlane (license_path, notice_path and source_info.file are relative to this scenario root)"
+}

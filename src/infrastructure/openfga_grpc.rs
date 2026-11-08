@@ -85,14 +85,14 @@ impl Authorizer for OpenFgaGrpc {
     #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
     async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
         if add {
-            self.change(tuples, &[]).await
+            self.apply(tuples, &[]).await
         } else {
-            self.change(&[], tuples).await
+            self.apply(&[], tuples).await
         }
     }
 
-    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.change")]
-    async fn change(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
+    #[tracing::instrument(skip(self, writes, deletes), fields(writes = writes.len(), deletes = deletes.len()), name = "openfga.apply")]
+    async fn apply(&self, writes: &[Tuple], deletes: &[Tuple]) -> Result<(), AuthError> {
         if writes.is_empty() && deletes.is_empty() {
             return Ok(());
         }

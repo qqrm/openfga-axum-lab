@@ -106,7 +106,7 @@ impl Drop for Compose {
 impl Stack {
     pub async fn start(client: &Client) -> TestResult<Self> {
         let compose = Compose {
-            project: format!("openlane-test-{}", Uuid::new_v4()),
+            project: format!("authzlab-test-{}", Uuid::new_v4()),
             password: Uuid::new_v4().to_string(),
         };
         compose.run(&["up", "-d", "openfga"]).await?;
@@ -189,50 +189,11 @@ impl Stack {
         Ok(())
     }
 
-    pub fn app_command(&self, fga_url: &str) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
-        command
-            .env("DATABASE_URL", &self.database)
-            .env(
-                "MIGRATIONS_DIR",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
-            )
-            .env("FGA_URL", fga_url)
-            .env("FGA_HTTP_URL", &self.fga_http_url)
-            .env("FGA_CONFIG", self.config_path())
-            .env(
-                "FGA_MODEL",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
-            )
-            .env("AUTHZ_MODE", "openfga")
-            .env("DEMO_SEED", "true")
-            .env("DEMO_MIGRATE", "true")
-            .env("DEMO_PASSWORD", &self.password)
-            .env("LISTEN_ADDR", "127.0.0.1:0")
-            .env("RUST_LOG", "off")
-            .stdout(Stdio::piped())
-            .kill_on_drop(true);
-        command
-    }
-
-    /// The caller must stop every test application and prove the test proxy has
-    /// completed all captured writes before invoking this explicit operator step.
-    pub async fn recover_after_backend_drain(&self, fga_url: &str) -> TestResult {
-        let output = timeout(
-            Duration::from_secs(60),
-            self.app_command(fga_url)
-                .arg("--recover-authorization-after-backend-drain")
-                .output(),
-        )
-        .await??;
-        if !output.status.success() {
-            return Err(format!(
-                "drained authorization recovery failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
-        Ok(())
+    pub async fn pool(&self) -> TestResult<sqlx::PgPool> {
+        Ok(sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&self.database)
+            .await?)
     }
 
     pub fn migration_command(&self) -> Command {
@@ -240,25 +201,18 @@ impl Stack {
         command
             .arg("migrate-authorization")
             .env("DATABASE_URL", &self.database)
-            .env(
-                "MIGRATIONS_DIR",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
-            )
             .env("FGA_URL", &self.fga_http_url)
             .env("FGA_CONFIG", self.config_path())
             .env(
                 "FGA_MODEL",
                 concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
             )
+            .env(
+                "MIGRATIONS_DIR",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
+            )
             .kill_on_drop(true);
         command
-    }
-
-    pub async fn pool(&self) -> TestResult<sqlx::PgPool> {
-        Ok(sqlx::postgres::PgPoolOptions::new()
-            .max_connections(4)
-            .connect(&self.database)
-            .await?)
     }
 
     pub async fn app(&self, fga_url: &str) -> TestResult<App> {
@@ -269,6 +223,40 @@ impl Stack {
         let mut command = self.app_command(fga_url);
         command.env("DEMO_MIGRATE", "false");
         Self::spawn_app(command).await
+    }
+
+    pub async fn app_in_mode(&self, fga_url: &str, mode: &str) -> TestResult<App> {
+        let mut command = self.app_command(fga_url);
+        // Preserve DEMO_MIGRATE=true from the normal demo configuration: the
+        // emergency deny switch must skip it even if OpenFGA is unreachable.
+        command.env("AUTHZ_MODE", mode);
+        Self::spawn_app(command).await
+    }
+
+    pub fn app_command(&self, fga_url: &str) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_openfga-axum-lab"));
+        command
+            .env("DATABASE_URL", &self.database)
+            .env(
+                "MIGRATIONS_DIR",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"),
+            )
+            .env("FGA_URL", fga_url)
+            .env("FGA_HTTP_URL", &self.fga_http_url)
+            .env(
+                "FGA_MODEL",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/fga/model.json"),
+            )
+            .env("DEMO_MIGRATE", "true")
+            .env("FGA_CONFIG", self.config_path())
+            .env("AUTHZ_MODE", "openfga")
+            .env("DEMO_SEED", "true")
+            .env("DEMO_PASSWORD", &self.password)
+            .env("LISTEN_ADDR", "127.0.0.1:0")
+            .env("RUST_LOG", "off")
+            .stdout(Stdio::piped())
+            .kill_on_drop(true);
+        command
     }
 
     pub async fn spawn_app(mut command: Command) -> TestResult<App> {
@@ -387,19 +375,23 @@ impl Stack {
         let db = self.pool().await?;
         let snapshot: String = sqlx::query_scalar(
             "SELECT jsonb_build_object(
-                'tasks',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.id),'[]'::jsonb) FROM tasks t),
-                'relations',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.task_id,r.user_id,r.relation),'[]'::jsonb) FROM task_relations r),
-                'organizations',(SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY o.id),'[]'::jsonb) FROM organizations o),
-                'members',(SELECT coalesce(jsonb_agg(to_jsonb(m) ORDER BY m.organization_id,m.user_id),'[]'::jsonb) FROM organization_members m),
-                'permissions',(SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.organization_id,p.user_id,p.relation),'[]'::jsonb) FROM organization_permissions p),
-                'jobs',(SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY j.organization_id),'[]'::jsonb) FROM authorization_jobs j)
+                'tables',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.project_id,t.warehouse_id,t.id),'[]'::jsonb) FROM catalog_tables t),
+                'updates',(SELECT coalesce(jsonb_agg(to_jsonb(u) ORDER BY u.project_id,u.warehouse_id,u.table_id),'[]'::jsonb) FROM catalog_pending_updates u),
+                'projects',(SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.id),'[]'::jsonb) FROM catalog_projects p),
+                'warehouses',(SELECT coalesce(jsonb_agg(to_jsonb(w) ORDER BY w.id),'[]'::jsonb) FROM catalog_warehouses w),
+                'namespaces',(SELECT coalesce(jsonb_agg(to_jsonb(n) ORDER BY n.id),'[]'::jsonb) FROM catalog_namespaces n),
+                'roles',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]'::jsonb) FROM catalog_roles r),
+                'memberships',(SELECT coalesce(jsonb_agg(to_jsonb(m) ORDER BY m.project_id,m.user_id),'[]'::jsonb) FROM catalog_memberships m),
+                'project_grants',(SELECT coalesce(jsonb_agg(to_jsonb(g) ORDER BY g.project_id,g.subject_kind,g.subject_id,g.relation),'[]'::jsonb) FROM legacy_project_grants g),
+                'resource_grants',(SELECT coalesce(jsonb_agg(to_jsonb(g) ORDER BY g.object_kind,g.object_id,g.subject_kind,g.subject_id,g.relation),'[]'::jsonb) FROM legacy_resource_grants g),
+                'role_assignments',(SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.role_id,a.subject_kind,a.subject_id),'[]'::jsonb) FROM legacy_role_assignments a)
             )::text"
         ).fetch_one(&db).await?;
         db.close().await;
         Ok(serde_json::from_str(&snapshot)?)
     }
 
-    pub async fn task_row_is_locked(&self, id: &str) -> TestResult<bool> {
+    pub async fn table_row_is_locked(&self, id: &str) -> TestResult<bool> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&self.database)
@@ -407,88 +399,19 @@ impl Stack {
         // This independent autocommit probe releases any acquired lock before
         // returning, including when it discovers a missing mutation lock.
         let result =
-            sqlx::query_scalar::<_, String>("SELECT id FROM tasks WHERE id=$1 FOR UPDATE NOWAIT")
+            sqlx::query_scalar::<_, String>("SELECT id FROM catalog_tables WHERE warehouse_id='analytics' AND id=$1 FOR UPDATE NOWAIT")
                 .bind(id)
                 .fetch_optional(&pool)
                 .await;
         pool.close().await;
         match result {
             Ok(Some(_)) => Ok(false),
-            Ok(None) => Err("task lock probe requires an existing task".into()),
+            Ok(None) => Err("table lock probe requires an existing table".into()),
             Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
                 Ok(true)
             }
             Err(error) => Err(error.into()),
         }
-    }
-
-    pub async fn organization_row_is_locked(&self, id: &str) -> TestResult<bool> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&self.database)
-            .await?;
-        let result = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM organizations WHERE id=$1 FOR UPDATE NOWAIT",
-        )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await;
-        pool.close().await;
-        match result {
-            Ok(Some(_)) => Ok(false),
-            Ok(None) => Err("organization lock probe requires an existing organization".into()),
-            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => {
-                Ok(true)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    pub async fn authorization_pending(&self, organization: &str) -> TestResult<bool> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&self.database)
-            .await?;
-        let result =
-            sqlx::query_scalar::<_, bool>("SELECT authz_pending FROM organizations WHERE id=$1")
-                .bind(organization)
-                .fetch_one(&pool)
-                .await;
-        pool.close().await;
-        Ok(result?)
-    }
-
-    pub async fn assert_single_owner(
-        &self,
-        client: &Client,
-        organization: &str,
-        owner: &str,
-    ) -> TestResult {
-        let config = self.config()?;
-        let store = config["store_id"].as_str().ok_or("missing store id")?;
-        let response: TuplePage = client
-            .post(format!("{}/stores/{store}/read", self.fga_http_url))
-            .json(&json!({
-                "tuple_key": {"object": format!("organization:{organization}"), "relation": "owner"},
-                "page_size": 100,
-                "consistency": "HIGHER_CONSISTENCY"
-            }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        assert!(
-            response.continuation_token.is_empty(),
-            "unexpected additional owners"
-        );
-        assert_eq!(
-            response.tuples.len(),
-            1,
-            "organization must have exactly one owner tuple"
-        );
-        assert_eq!(response.tuples[0]["key"]["user"], format!("user:{owner}"));
-        Ok(())
     }
 
     pub async fn restart_dependencies(&mut self, client: &Client) -> TestResult {
@@ -517,22 +440,40 @@ impl Stack {
         Ok(())
     }
 
-    pub async fn assert_no_tuples(&self, client: &Client, task: &str) -> TestResult {
+    pub async fn assert_no_tuples(&self, client: &Client, id: &str) -> TestResult {
         let config = self.config()?;
         let store = config["store_id"].as_str().ok_or("missing store id")?;
-        let response: TuplePage = client
-            .post(format!("{}/stores/{store}/read", self.fga_http_url))
-            .json(&json!({"tuple_key": {"object": format!("task:{task}")},
-                "consistency": "HIGHER_CONSISTENCY"}))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        assert!(
-            response.tuples.is_empty() && response.continuation_token.is_empty(),
-            "deleted task still has authorization tuples"
-        );
+        let object = format!("lakekeeper_table:analytics/{id}");
+        let mut cursor = String::new();
+        let mut seen = std::collections::BTreeSet::new();
+        loop {
+            let response: TuplePage = client
+                .post(format!("{}/stores/{store}/read", self.fga_http_url))
+                .json(&json!({"consistency": "HIGHER_CONSISTENCY", "continuation_token": cursor}))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            for tuple in response.tuples {
+                assert_ne!(
+                    tuple["key"]["object"], object,
+                    "deleted table still has direct tuples"
+                );
+                assert_ne!(
+                    tuple["key"]["user"], object,
+                    "deleted table still has a hierarchy backlink"
+                );
+            }
+            if response.continuation_token.is_empty() {
+                break;
+            }
+            assert!(
+                seen.insert(response.continuation_token.clone()),
+                "repeating tuple cursor"
+            );
+            cursor = response.continuation_token;
+        }
         Ok(())
     }
 

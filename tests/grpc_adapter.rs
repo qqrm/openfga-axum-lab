@@ -192,7 +192,7 @@ fn assert_owner_transfer(request: &WriteRequest) {
 async fn ownership_transfer_is_one_atomic_idempotent_write() -> TestResult {
     let stub = Stub::start(Vec::new(), false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-    auth.change(&[owner("carol")], &[owner("alice")]).await?;
+    auth.apply(&[owner("carol")], &[owner("alice")]).await?;
     let requests = stub.requests::<WriteRequest>("Write").await?;
     assert_eq!(requests.len(), 1, "ownership transfer must be one RPC");
     assert_owner_transfer(&requests[0]);
@@ -204,7 +204,7 @@ async fn ownership_transfer_is_one_atomic_idempotent_write() -> TestResult {
 async fn empty_changes_do_not_send_an_invalid_write() -> TestResult {
     let stub = Stub::start(Vec::new(), false).await?;
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
-    auth.change(&[], &[]).await?;
+    auth.apply(&[], &[]).await?;
     auth.write(&[], true).await?;
     auth.write(&[], false).await?;
     assert!(stub.state.requests.lock().await.is_empty());
@@ -217,7 +217,7 @@ async fn ownership_transfer_rejects_rpc_failure_without_retrying() -> TestResult
     *stub.state.fail_operation.lock().await = Some("Write");
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     assert!(
-        auth.change(&[owner("carol")], &[owner("alice")])
+        auth.apply(&[owner("carol")], &[owner("alice")])
             .await
             .is_err()
     );
@@ -233,7 +233,7 @@ async fn ownership_transfer_rejects_stalled_trailers_without_retrying() -> TestR
     let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
     let writes = [owner("carol")];
     let deletes = [owner("alice")];
-    let result = tokio::time::timeout(Duration::from_secs(3), auth.change(&writes, &deletes))
+    let result = tokio::time::timeout(Duration::from_secs(3), auth.apply(&writes, &deletes))
         .await
         .expect("mutation deadline must include response trailers");
     assert!(result.is_err(), "unacknowledged transfer must not succeed");
@@ -486,5 +486,40 @@ async fn readiness_rejects_store_or_model_identity_mismatches() -> TestResult {
     }
     *stub.state.model_response.lock().await = None;
     auth.ensure_ready().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn positive_check_does_not_replace_live_store_availability() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    auth.ensure_available().await?;
+    assert!(
+        auth.check(
+            "alice",
+            "can_get_metadata",
+            "lakekeeper_table:warehouse/table"
+        )
+        .await?
+    );
+    // The server still returns an allow payload, while GetStore ends in
+    // NOT_FOUND trailers. Earlier successful probes must never mask this.
+    *stub.state.fail_operation.lock().await = Some("GetStore");
+    assert!(
+        auth.check(
+            "alice",
+            "can_get_metadata",
+            "lakekeeper_table:warehouse/table"
+        )
+        .await?
+    );
+    assert!(auth.ensure_available().await.is_err());
+    assert_eq!(stub.requests::<CheckRequest>("Check").await?.len(), 2);
+    assert_eq!(stub.requests::<GetStoreRequest>("GetStore").await?.len(), 2);
+    assert!(
+        stub.requests::<ReadAuthorizationModelRequest>("ReadAuthorizationModel")
+            .await?
+            .is_empty()
+    );
     Ok(())
 }

@@ -15,21 +15,15 @@ type RunResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub async fn run() -> RunResult {
     tracing_subscriber::fmt::init();
-    let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let after_backend_drain = match arguments.as_slice() {
-        [] => false,
-        [flag] if flag == "--recover-authorization-after-backend-drain" => true,
-        _ => return Err("usage: app [--recover-authorization-after-backend-drain]".into()),
-    };
+    if std::env::args().len() != 1 {
+        return Err("usage: app; catalog recovery requires explicit graph reconciliation".into());
+    }
     // Configuration errors must not seed or modify SQL as a side effect.
     let openfga = match std::env::var("AUTHZ_MODE").as_deref() {
         Ok("openfga") | Err(std::env::VarError::NotPresent) => true,
         Ok("deny") => false,
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
-    if after_backend_drain && !openfga {
-        return Err("authorization recovery requires the real backend".into());
-    }
     let config_path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let model_path = std::env::var("FGA_MODEL").unwrap_or_else(|_| "fga/model.json".into());
     let migration_url = std::env::var("FGA_HTTP_URL").unwrap_or_else(|_| {
@@ -120,11 +114,10 @@ pub async fn run() -> RunResult {
     }
     let metrics = metrics::Metrics::new()?;
     let mut auth = auth;
-    let mut authz_coordinator = db.clone();
     if let Some(target) = &authorization_target {
         // Domain mutations hold a main-pool transaction while independently
         // committing the durable attempt marker and global cache fence.
-        authz_coordinator = PgPoolOptions::new()
+        let authz_coordinator = PgPoolOptions::new()
             .max_connections(4)
             .acquire_timeout(Duration::from_secs(2))
             .connect(&database)
@@ -142,25 +135,12 @@ pub async fn run() -> RunResult {
         )
         .await
         .is_ok();
-        if after_backend_drain && !active {
-            return Err("activate the verified Openlane migration before drained recovery".into());
-        }
         if active {
             // Replaying acknowledged intent does not clear earlier uncertainty.
             // Wrapped readiness may remain false; the server still listens so
             // health/operations can report the durable fence to an operator.
-            infrastructure::recover_pending(
-                &db,
-                &authz_coordinator,
-                auth.as_ref(),
-                after_backend_drain,
-            )
-            .await?;
+            infrastructure::recover_pending(&db, auth.as_ref()).await?;
         }
-    }
-    if after_backend_drain {
-        tracing::info!("authorization recovery completed after operator-confirmed backend drain");
-        return Ok(());
     }
     let readiness =
         operations::Readiness::new(db.clone(), auth.clone(), authorization_target.clone());
@@ -193,7 +173,6 @@ pub async fn run() -> RunResult {
         listener,
         http::router(App {
             db,
-            authz_coordinator,
             auth,
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,

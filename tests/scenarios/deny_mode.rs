@@ -10,6 +10,9 @@ use reqwest::{Client, Method as M, StatusCode as S};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
+const TABLES: &str = "/projects/acme/warehouses/analytics/tables";
+const TABLE: &str = "/projects/acme/warehouses/analytics/tables/requests";
+
 async fn cache_revision(db: &PgPool) -> TestResult<(i64, i64)> {
     Ok(
         sqlx::query_as("SELECT generation,pending FROM authz_cache_state WHERE singleton")
@@ -57,28 +60,34 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
     let bob = stack.login(&client, &normal, "bob").await?;
     let carol = stack.login(&client, &normal, "carol").await?;
     let dave = stack.login(&client, &normal, "dave").await?;
-    let viewer = "/tasks/access-review/relations/viewer/dave";
-    expect(api.call(M::PUT, viewer, &carol), S::NO_CONTENT).await?;
+    let grant = format!("{TABLE}/grants/select");
+    let subject = json!({"subject":{"type":"user","id":"dave"}});
+    expect(
+        api.call(M::PUT, &grant, &carol).json(&subject),
+        S::NO_CONTENT,
+    )
+    .await?;
     for token in [&alice, &bob, &carol, &dave] {
-        expect(api.call(M::GET, "/tasks/access-review", token), S::OK).await?;
+        expect(api.call(M::GET, TABLE, token), S::OK).await?;
     }
-    let input = crate::task_input();
-    let creation = crate::create_input("acme");
+    let input = json!({"name":"Updated observations","description":"Deny-mode control"});
+    let creation = json!({"namespace_id":"metrics","name":"Deletion control","description":"Deny-mode fixture"});
     let created = expect(
-        api.call(M::POST, "/tasks", &alice)
+        api.call(M::POST, TABLES, &alice)
             .header("Idempotency-Key", "deny-mode-deleted-fixture")
             .json(&creation),
         S::CREATED,
     )
     .await?;
-    let id = created["id"].as_str().ok_or("missing created task id")?;
-    let deleted = format!("/tasks/{id}");
+    let id = created["id"].as_str().ok_or("missing created table id")?;
+    let deleted = format!("{TABLES}/{id}");
     expect(api.call(M::DELETE, &deleted, &alice), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, id).await?;
     normal.stop().await?;
 
-    // Deny mode must leave interrupted lifecycle work untouched. Explicit drained recovery
-    // will reconcile these fixtures after the real backend returns.
+    // These are known interrupted SQL lifecycle intents with no ambiguous
+    // remote request. Deny mode must leave both untouched; a normal startup
+    // can replay them after the backend returns without clearing any debt.
     stack
         .sql(include_str!("../../scripts/recovery-fixture.sql"))
         .await?;
@@ -117,76 +126,84 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
         .await?;
     assert_eq!(health, "ok");
     expect(api.request(M::GET, "/readyz"), S::SERVICE_UNAVAILABLE).await?;
-    // This new login, plus existing sessions from the first process, must work
-    // without OpenFGA. Authorization failure must not masquerade as bad login.
+    // New and existing sessions work without OpenFGA. A denied authorization
+    // decision must not masquerade as invalid credentials.
     let fresh = stack.login(&client, &denied, "carol").await?;
-    expect(api.request(M::GET, "/tasks"), S::UNAUTHORIZED).await?;
+    expect(api.request(M::GET, TABLES), S::UNAUTHORIZED).await?;
     for token in [&alice, &bob, &carol, &dave, &fresh] {
-        expect(api.call(M::GET, "/tasks", token), S::SERVICE_UNAVAILABLE).await?;
-        expect(
-            api.call(M::GET, "/organizations", token),
-            S::SERVICE_UNAVAILABLE,
+        let visible = expect(api.call(M::GET, TABLES, token), S::OK).await?;
+        assert!(
+            visible["items"]
+                .as_array()
+                .ok_or("missing table page")?
+                .is_empty()
+        );
+        assert!(visible["next_cursor"].is_null());
+        let catalog = expect(api.call(M::GET, "/catalog", token), S::OK).await?;
+        assert!(
+            catalog["scopes"]
+                .as_array()
+                .ok_or("missing scopes")?
+                .is_empty()
+        );
+        expect(api.call(M::GET, TABLE, token), S::FORBIDDEN).await?;
+        let checked = expect(
+            api.call(M::POST, &format!("{TABLE}/check"), token)
+                .json(&json!({"action":"can_get_metadata"})),
+            S::OK,
         )
         .await?;
-        expect(
-            api.call(M::GET, "/tasks/access-review", token),
-            S::FORBIDDEN,
-        )
-        .await?;
+        assert_eq!(checked["allowed"], false);
     }
     expect(
-        api.call(M::POST, "/tasks", &alice)
+        api.call(M::POST, TABLES, &alice)
             .header("Idempotency-Key", "deny-mode-must-not-create")
             .json(&creation),
         S::FORBIDDEN,
     )
     .await?;
-    expect(
-        api.call(M::PATCH, "/tasks/access-review", &carol)
-            .json(&input),
-        S::FORBIDDEN,
-    )
-    .await?;
-    expect(
-        api.call(M::DELETE, "/tasks/access-review", &carol),
-        S::FORBIDDEN,
-    )
-    .await?;
-    expect(
-        api.call(M::PUT, "/tasks/access-review/relations/editor/dave", &carol),
-        S::FORBIDDEN,
-    )
-    .await?;
-    expect(api.call(M::DELETE, viewer, &carol), S::FORBIDDEN).await?;
-    expect(
-        api.call(M::PUT, "/organizations/acme/owner", &alice)
-            .json(&json!({"expected_owner": "alice", "new_owner": "bob"})),
-        S::FORBIDDEN,
-    )
-    .await?;
-    expect(
-        api.call(M::PUT, "/organizations/acme/members/dave", &alice)
-            .json(&json!({"role": "admin"})),
-        S::FORBIDDEN,
-    )
-    .await?;
-    expect(
-        api.call(
-            M::PUT,
-            "/organizations/acme/permissions/can_edit_task/dave",
-            &alice,
-        ),
-        S::FORBIDDEN,
-    )
-    .await?;
-    for path in ["/tasks/recovery-fixture", "/tasks/incident-response"] {
-        expect(api.call(M::GET, path, &alice), S::NOT_FOUND).await?;
+    expect(api.call(M::PATCH, TABLE, &carol).json(&input), S::FORBIDDEN).await?;
+    expect(api.call(M::DELETE, TABLE, &carol), S::FORBIDDEN).await?;
+    for method in [M::PUT, M::DELETE] {
+        expect(
+            api.call(method.clone(), &grant, &carol).json(&subject),
+            S::FORBIDDEN,
+        )
+        .await?;
+        expect(
+            api.call(
+                method,
+                "/projects/acme/roles/analysts/assignees/bob",
+                &alice,
+            ),
+            S::FORBIDDEN,
+        )
+        .await?;
     }
-    // The unjournaled deleting fixture is not an active task. Even an already
-    // completed deletion cannot report success when backend readiness is denied.
     expect(
-        api.call(M::DELETE, "/tasks/incident-response", &bob),
-        S::NOT_FOUND,
+        api.call(M::PUT, &format!("{TABLE}/owner"), &carol)
+            .json(&json!({"owner_id":"dave"})),
+        S::FORBIDDEN,
+    )
+    .await?;
+    expect(
+        api.call(M::PUT, &format!("{TABLE}/namespace"), &alice)
+            .json(&json!({"namespace_id":"restricted"})),
+        S::FORBIDDEN,
+    )
+    .await?;
+    for id in ["recovery-fixture", "errors"] {
+        expect(
+            api.call(M::GET, &format!("{TABLES}/{id}"), &alice),
+            S::NOT_FOUND,
+        )
+        .await?;
+    }
+    // Continuing an authorized deletion fails at the deny backend without
+    // mutating SQL. Its already-completed counterpart also requires availability.
+    expect(
+        api.call(M::DELETE, &format!("{TABLES}/errors"), &bob),
+        S::SERVICE_UNAVAILABLE,
     )
     .await?;
     expect(
@@ -196,11 +213,11 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
     .await?;
     expect(api.call(M::DELETE, &deleted, &carol), S::NOT_FOUND).await?;
     expect(api.call(M::DELETE, "/session", &fresh), S::NO_CONTENT).await?;
-    expect(api.call(M::GET, "/tasks", &fresh), S::UNAUTHORIZED).await?;
+    expect(api.call(M::GET, TABLES, &fresh), S::UNAUTHORIZED).await?;
     assert_eq!(
         stack.domain_snapshot().await?,
         before_rows,
-        "deny mode changed durable domain data"
+        "deny mode changed durable catalog data"
     );
     assert_eq!(
         cache_revision(&db).await?,
@@ -210,31 +227,42 @@ async fn deny_mode_blocks_access_and_recovery_with_openfga_offline() -> TestResu
     denied.stop().await?;
     db.close().await;
 
-    // Read the actual stored tuples after the backend returns, before normal
-    // startup can legitimately replay pending recovery and change them.
+    // Inspect stored tuples before startup can legitimately replay the intents.
     stack.restart_dependencies(&client).await?;
     assert_eq!(tuple_keys(&client, &stack).await?, before_tuples);
-    // All application writers are stopped; deny mode issued no remote requests.
-    // Only an explicit drained recovery may clear conservative lifecycle debt.
-    stack.recover_after_backend_drain(&stack.fga_url).await?;
     let restored = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &restored);
+    let db = stack.pool().await?;
+    assert_eq!(cache_revision(&db).await?.1, 0);
+    expect(api.request(M::GET, "/readyz"), S::OK).await?;
     for token in [&alice, &bob, &carol, &dave] {
-        expect(api.call(M::GET, "/tasks/access-review", token), S::OK).await?;
+        expect(api.call(M::GET, TABLE, token), S::OK).await?;
     }
-    expect(api.call(M::GET, "/tasks/recovery-fixture", &carol), S::OK).await?;
+    let recovered = expect(
+        api.call(M::GET, &format!("{TABLES}/recovery-fixture"), &carol),
+        S::OK,
+    )
+    .await?;
+    assert_eq!(recovered["owner_id"], "carol");
     expect(
-        api.call(M::GET, "/tasks/incident-response", &bob),
+        api.call(M::GET, &format!("{TABLES}/recovery-fixture"), &dave),
+        S::FORBIDDEN,
+    )
+    .await?;
+    expect(
+        api.call(M::GET, &format!("{TABLES}/errors"), &bob),
         S::NOT_FOUND,
     )
     .await?;
-    stack.assert_no_tuples(&client, "incident-response").await?;
+    stack.assert_no_tuples(&client, "errors").await?;
     expect(
-        api.call(M::PATCH, "/tasks/access-review", &carol)
-            .json(&input),
+        api.call(M::PATCH, TABLE, &carol).json(&input),
         S::NO_CONTENT,
     )
     .await?;
+    let changed = expect(api.call(M::GET, TABLE, &carol), S::OK).await?;
+    assert_eq!(changed["name"], input["name"]);
+    db.close().await;
     restored.stop().await?;
     Ok(())
 }

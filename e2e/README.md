@@ -1,11 +1,11 @@
 # Browser acceptance tests
 
 These tests drive the served Axum UI and the real HTTP API. They require a fresh,
-disposable PostgreSQL/OpenFGA lab seeded with the Openlane scenario. They do not
+disposable PostgreSQL/OpenFGA lab seeded with the Lakekeeper catalog. They do not
 stub authorization decisions. A session-race test delays an unchanged response
 fetched from the real server to verify that an old session cannot repopulate the
-new session's view. The organization tests temporarily transfer Acme
-ownership and change roles; their cleanup restores the original seed state.
+new session's view. Ownership, role and grant tests restore their changed
+fixtures during cleanup; creation tests delete the tables they created.
 
 Set `BASE_URL` to the running application and provide its configured
 `DEMO_PASSWORD` through the environment, then run:
@@ -40,16 +40,18 @@ headers and session tokens are deliberately not recorded.
 The locked Playwright version is pinned exactly, and browser request traces are
 explicitly disabled.
 
-The suite covers role-specific task lists, task creation/editing/deletion,
-external viewers, assignment, direct grant/revoke, `blocked`, independent
-inheritance paths, role promotion/demotion, owner transfer and transfer back,
-forbidden requests made directly to the API, session revocation and immediate
-warm-cache invalidation. Revocation tests use the same authenticated session
-without waiting for a cache TTL. The 18 scenarios also cover an old response
-arriving after a new identity has signed in, untrusted task metadata rendered as
-literal text, public Openlane provenance, and no-store/CSP headers on successful
-and rejected requests. Dedicated Rust integration tests cover
-backend outages, restart recovery and two-replica races.
+The nine scenarios cover actor-specific catalog lists, table creation, editing
+and deletion, grant/revoke through the same session without waiting for a TTL,
+reader escalation rejection, ownership transfer and transfer back, nested role
+assignment/removal, cross-project substitutions and forbidden namespace moves.
+They also verify session revocation, an unchanged real response arriving after a
+new identity signs in, untrusted metadata rendered literally, public Lakekeeper
+provenance, and no-store/CSP headers on successful and rejected requests.
+Dedicated Rust integration tests cover cursor binding, same-ID warehouse
+isolation, backend outages, initial migration, restart recovery and two-replica
+races. The independent Openlane model workload under `scenarios/openlane` runs
+against native OpenFGA through both adapters; it is not a second browser/API
+application.
 
 `npm test --prefix e2e -- --list` validates test collection only; it does not run
 browser or backend assertions. The static `browser-demo` page is not used as a

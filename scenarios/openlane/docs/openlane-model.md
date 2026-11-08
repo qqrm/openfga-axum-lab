@@ -1,10 +1,10 @@
 # Openlane organization and task authorization
 
-This laboratory uses a deliberately small, modified subset of the real
+This independent scenario uses a deliberately small, modified subset of the real
 [Openlane core authorization model](https://github.com/theopenlane/core/tree/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga/model).
 The source snapshot is **`1c38df0a53530c8c39eb0784862b06eaa3e26f58`** (observed on 2026-11-08).
-It is not the complete Openlane application and does not claim affiliation with
-Openlane. The sample users, organizations and task records are fictional local
+The main application continues to use Lakekeeper. This scenario is not the
+complete Openlane application and does not claim affiliation with Openlane. The sample users, organizations and task records are fictional local
 fixtures; the authorization rules come from the public project.
 
 ## Source and license
@@ -37,9 +37,9 @@ would not produce a usable model here.
 The subset has three types: `user`, `organization` and `task`. It omits
 services, groups, specialized and super-admin roles, conditions, task templates,
 organization hierarchy, audit logs, and all other compliance objects. It also
-omits task-to-task parents. Every task has exactly one organization through
-`parent_context`; this preserves a useful real inheritance path without
-introducing another hierarchy. No permissions are added to organization
+omits task-to-task parents. Every fixture task has one organization through `parent_context`. This supplies
+a real inheritance path, but the model alone does not enforce one-parent or
+one-owner cardinality. No permissions are added to organization
 members or admins to compensate for the omitted roles.
 
 The JSON model and DSL express the same reduced rules. In particular:
@@ -57,7 +57,7 @@ The JSON model and DSL express the same reduced rules. In particular:
 
 A member can view their organization, but membership alone does **not** reveal
 its tasks. An admin can create a task, but admin status alone does **not** reveal
-or edit every task in the organization. In the demo, Bob has a separate explicit
+or edit every task in the organization. In the fixture, Bob has a separate explicit
 `can_view_task` grant so users can distinguish that grant from his admin role.
 
 ### Task permissions
@@ -97,46 +97,40 @@ Consequently:
 
 `blocked` is not a universal emergency revocation in this model. It denies
 viewing and ordinary editing while retaining the privileged edit/delete path.
-The UI and tests must describe and exercise that distinction. A complete access
+The ordered fixture exercises that distinction. A complete access
 revocation requires removing **all** independent grants or roles that still
 supply the relevant permission. Removing an explicit viewer grant does not
 remove inherited organization access; removing an assignee tuple does not remove
 an independent editor or assigner relationship.
 
-## Application invariants and endpoint policies
+## Model behavior and service boundaries
 
-OpenFGA decides whether a tuple graph grants a permission; it does not by itself
-enforce the application's ownership and consistency invariants.
+OpenFGA evaluates the tuple graph. It does not enforce a single owner, immutable
+assigner, an existing-member transfer target, or authority to call the raw Write
+API. A real service must enforce those invariants in its domain and mutation
+protocol; the native scenario deliberately makes no task-service claim.
 
-- Organization ownership is separate from task assignment. Tasks use
-  `assigner` and `assignee`; they do not acquire an invented `task.owner`
-  relation. The creator is the immutable assigner.
-- The organization has one direct owner. Only that owner may transfer ownership
-  or change the organization's roles and task-wide grants. Admins cannot promote
-  themselves or take ownership.
-- An ownership transfer replaces the owner tuple atomically, targets an existing
-  organization member, and preserves unrelated direct memberships and task
-  grants. The old owner's continued access must be evaluated from those
-  remaining relationships, rather than assumed to disappear.
-- The laboratory authorizes task grant/revoke operations using `can_delete`.
-  This is an explicit API policy layered on the imported model; Openlane's FGA
-  task model does not define a separate `can_manage` permission.
-- Grant mutations only accept the intended direct relationships, and must not
-  let users write derived permissions or change `assigner` or
-  `parent_context` through a generic tuple API.
+- Organization ownership is separate from task assignment. The model defines
+  task `assigner` and `assignee`, with no `task.owner` relationship.
+- The fixture transfers ownership using one atomic Write that deletes the old
+  owner and adds the new one, then checks the remaining independent paths. That
+  proves the graph rewrite's behavior, not authorization of an API caller.
+- Derived relationships and invalid parent types are rejected by the server.
+  This is schema validation, not proof that a generic tuple-write endpoint is
+  safe to expose to application users.
 - Cross-organization sharing is explicit: Dave's membership of the second
   organization grants nothing in Acme, but his direct viewer tuple on
-  `vendor-review` does.
-- A successful parent role/grant change invalidates cached child decisions.
-  Ambiguous authorization writes, failed restoration, or an unavailable
-  authorization service must not produce a successful unauthorized mutation.
-  SQL/OpenFGA recovery and replica cache coordination remain service concerns.
+  `vendor-review` grants access. Membership revocation alone cannot remove all
+  such independent grants.
+- A role removal, assignment change or explicit denial changes the relevant
+  graph paths. Application cache coordination, SQL recovery and error handling
+  are separately exercised by the primary catalog's tests.
 
 ## Demonstration fixtures
 
-[fga/legacy.json](../fga/legacy.json) is the bootstrap seed filename retained for
-compatibility with the existing loader. It contains only the new domain;
-there is no old-model compatibility mode.
+[fga/legacy.json](../fga/legacy.json) is a synthetic native-test seed. Its
+historical filename is retained, but the application bootstrap and SQL importer
+do not read it.
 
 | Organization | Direct owner | Other role and permission tuples |
 | --- | --- | --- |
@@ -150,39 +144,35 @@ there is no old-model compatibility mode.
 | `incident-response` | `acme` | Bob | Carol assignee |
 | `other-review` | `other` | Erin | — |
 
-The bootstrap model hash changes with this migration. Existing persisted
-OpenFGA configuration intentionally fails the model-hash check; it must not
-silently accept the old graph or reset user data. Start a separate disposable
-Compose project for this demonstration or follow an explicit migration plan.
-Never remove existing volumes merely to make the new demo start.
+The scenario has a different model fingerprint and object namespace from the
+catalog. Tests install it into a fresh isolated store. There is no model switch
+in the main application and no conversion of existing permissions. See
+[the migration boundary](openlane-migration.md).
 
 ## Verification expectations
 
-The permission tables are the behavioral specification, not a statement that
-tests have run. Integration tests must exercise the actual PostgreSQL/OpenFGA
-stack, and the HTTP and gRPC adapters where supported. Cover successful and
-rejected transfers, last-owner protection, roles, assignment, direct and
-inherited grant/revoke, cross-organization isolation, and the privileged
-`blocked` exception. Mutation failure, recovery and cross-replica warm-cache
-tests remain necessary because a static model cannot prove those properties.
-See the delivered verification report for the checks actually executed and
-any environment limitations.
+The permission tables describe expected behavior. The committed native fixture
+checks successful atomic transfer/replay, role downgrade, assignment,
+independent and inherited grant/revoke, cross-organization sharing, privileged
+blocking and whole-request rejection of an invalid compound write. The fixture
+does not claim API-level owner cardinality, last-owner protection or validated
+transfer targets. It also does not prove SQL durability or failure recovery.
 
 ### Native model and adapter gate
 
-`tests/fga_model.rs` can run the committed model against an actual **OpenFGA
+`tests/fga_model.rs` at the repository root runs this explicitly selected model against an actual **OpenFGA
 1.10.3** process without Docker. It creates an isolated in-memory datastore,
 binds HTTP/gRPC to ephemeral loopback ports, seeds the model, and stops the
 process on completion or failure. The ordered fixture in
-`tests/fixtures/openlane-model-cases.json` contains 272 expected decisions and
+`scenarios/openlane/tests/fixtures/openlane-model-cases.json` contains 272 expected decisions and
 40 mutations after the initial seed, including three rejected invalid writes.
 Each adapter decision is also compared with a direct HTTP Check. The DSL parity
 test uses the official CLI to compare permission rewrites and direct subject
 type restrictions; source-location metadata is intentionally not compared.
 
-The CI Rust job runs `bash scripts/test-openlane-model.sh`, which uses the pinned
-checksummed official binaries below (or explicitly supplied local paths), then
-tests both transport builds.
+Run `bash scripts/test-openlane-model.sh` from the repository root. It uses the
+pinned checksummed official binaries below (or explicitly supplied local paths),
+then tests both transport builds.
 
 The tests are explicitly ignored by default because they execute supplied
 external binaries. They do not download tools automatically. With verified
@@ -205,12 +195,11 @@ exercise both adapters. The normal wire tests separately verify a single
 atomic ownership Write, both idempotency options, no automatic mutation retry,
 and fail-closed response deadlines. A separate raw-server ordering witness
 shows why idempotent writes cannot replace application quarantine; see
-[write ordering and recovery](openfga-write-ordering.md). The HTTP wire tests also distinguish a
-healthy server from an unavailable configured store.
+[write ordering and recovery](../../../docs/openfga-write-ordering.md). The HTTP
+wire tests also distinguish a healthy server from an unavailable configured store.
 
-Tools used for the 2026-11-08 verification were downloaded from the official
-release assets. Archive SHA-256 digests were checked against each release's
-checksum manifest before extraction:
+The runner downloads official release assets and verifies these archive
+SHA-256 digests before extraction:
 
 | Official artifact | Verified archive SHA-256 |
 | --- | --- |
@@ -221,8 +210,8 @@ The server reported build commit
 `293893b22a53d8a130a5f7c97cab4bc8e91bcaa4`; the CLI reported
 `f2015b8e6d55a7fbc77813791e21f8c7cded26f3`.
 
-This gate proves the reduced model's behavior on the real server and exercises
-the compiled HTTP/gRPC adapters. It does **not** cover PostgreSQL persistence,
+This finite gate verifies the fixture's expected behavior on the real server and
+exercises the compiled HTTP/gRPC adapters. It does **not** cover PostgreSQL persistence,
 Axum endpoint authorization, transaction recovery, cross-replica cache races,
 Compose networking, or browser behavior. Those remain distinct integration and
 end-to-end gates.

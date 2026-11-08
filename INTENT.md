@@ -1,11 +1,17 @@
-# Intent: first-class engineering for a focused authorization laboratory
+# Intent: a strict Rust authorization integration lab
 
-Build an understandable organization/task service adapted from the real
-Openlane OpenFGA model. Demonstrate Rust engineering with object authorization,
-ownership transfer, assignment, inherited permissions, persistence and failures.
-Retain the upstream provenance/license and describe local application policies.
-The example accounts, organizations and local credentials are demonstration
-data. The goal is credible, reviewable engineering, not production certification.
+Build an understandable catalog authorization service using a pinned, unchanged
+model from the public Lakekeeper project. Demonstrate Rust engineering with real
+OpenFGA checks, tenant isolation, roles, ownership, hierarchy changes, SQL migration
+and failure recovery. The lab identities and catalog data are synthetic. The goal
+is credible, reviewable engineering with conservative denial, not a claim of
+production certification.
+
+Lakekeeper remains the primary application and migration contract. Other public
+models belong in independent scenarios with their own provenance, fixtures and
+stores. The Openlane scenario tests organization/task semantics against the real
+engine through the shared adapters; it does not replace the catalog API or reuse
+its database, model binding or migration journal.
 
 ## What the project should demonstrate
 

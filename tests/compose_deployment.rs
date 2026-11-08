@@ -59,7 +59,7 @@ impl Drop for Deployment {
 #[ignore = "requires Docker and builds the production images"]
 async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
     let deployment = Deployment {
-        project: format!("openlane-deployment-{}", uuid::Uuid::new_v4()),
+        project: format!("authzlab-deployment-{}", uuid::Uuid::new_v4()),
         password: uuid::Uuid::new_v4().to_string(),
     };
     let output = timeout(
@@ -92,7 +92,7 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(5))
         .build()?;
-    timeout(Duration::from_secs(60), async {
+    timeout(Duration::from_secs(120), async {
         loop {
             if matches!(client.get(format!("{base}/healthz")).send().await,
                 Ok(response) if response.status() == StatusCode::OK)
@@ -117,14 +117,20 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         .json()
         .await?;
     let token = session["token"].as_str().ok_or("missing session token")?;
-    let tasks: Vec<Value> = client
-        .get(format!("{base}/tasks"))
+    let page: Value = client
+        .get(format!("{base}/projects/acme/warehouses/analytics/tables"))
         .bearer_auth(token)
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
-    assert!(tasks.iter().any(|task| task["id"] == "access-review"));
+    assert!(
+        page["items"]
+            .as_array()
+            .ok_or("missing table page")?
+            .iter()
+            .any(|table| table["id"] == "requests")
+    );
     Ok(())
 }
