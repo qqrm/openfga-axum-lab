@@ -88,6 +88,30 @@ test("identity change clears privileged data and rejects a delayed real response
   await page.route(pattern, handler);
   let failure;
   try {
+    await page.evaluate(() => {
+      const original = window.refreshWorkspace;
+      if (typeof original !== "function") throw new Error("refreshWorkspace is unavailable");
+      if (window.__delayedRefreshObserver) throw new Error("refresh observer is already installed");
+      let finish;
+      const observer = {
+        calls: 0,
+        settled: false,
+        completion: new Promise((resolve) => { finish = resolve; }),
+        restore() { if (window.refreshWorkspace === observeOnce) window.refreshWorkspace = original; },
+      };
+      function observeOnce(...args) {
+        // Restore before invoking Alice's operation: Dave's later refresh is
+        // never wrapped. The actual function, arguments and Promise are intact.
+        observer.restore();
+        observer.calls += 1;
+        const pending = Reflect.apply(original, this, args);
+        const settled = () => { observer.settled = true; finish(); };
+        pending.then(settled, settled);
+        return pending;
+      }
+      window.__delayedRefreshObserver = observer;
+      window.refreshWorkspace = observeOnce;
+    });
     await test.step("capture Alice's real authorized response before switching accounts", async () => {
       await page.click("#refresh");
       await expect.poll(() => {
@@ -109,6 +133,7 @@ test("identity change clears privileged data and rejects a delayed real response
     // Stay in the same document, so the old request can still reach its handler.
     await signIn(page, "dave");
     await expectIds(page, ["vendor-review"]);
+    expect(await page.evaluate(() => ({ calls: window.__delayedRefreshObserver.calls, settled: window.__delayedRefreshObserver.settled }))).toEqual({ calls: 1, settled: false });
     await test.step("deliver that same Alice response into Dave's current session", async () => {
       // headers() is provisional and may omit security headers. Correlate the
       // exact intercepted Request instead of depending on a bearer header.
@@ -116,10 +141,11 @@ test("identity change clears privileged data and rejects a delayed real response
       release();
       const response = await delayed;
       expect(response.status()).toBe(200);
-      await within(response.finished(), "delayed response completion");
-      // A foreground page avoids animation-frame throttling in headless CI.
-      await page.bringToFront();
-      await within(page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))), "browser processing of the delayed response", 3000);
+      await within(handlerFinished, "delayed route delivery");
+      // The identity guard rejects a stale Response before consuming its body.
+      // Observe the real UI operation, rather than waiting for network-body EOF.
+      await within(page.evaluate(() => window.__delayedRefreshObserver.completion), "Alice's original refresh processing");
+      expect(await page.evaluate(() => ({ calls: window.__delayedRefreshObserver.calls, settled: window.__delayedRefreshObserver.settled }))).toEqual({ calls: 1, settled: true });
     }, { timeout: 15000 });
     await expect(page.locator("#session-status")).toHaveText("Сеанс: dave");
     await expectIds(page, ["vendor-review"]);
@@ -134,6 +160,10 @@ test("identity change clears privileged data and rejects a delayed real response
     const cleanup = await Promise.allSettled([
       within(handlerFinished, "delayed route cleanup", 5000),
       page.isClosed() ? Promise.resolve() : within(page.unroute(pattern, handler), "route removal", 5000),
+      page.isClosed() ? Promise.resolve() : within(page.evaluate(() => {
+        window.__delayedRefreshObserver?.restore();
+        delete window.__delayedRefreshObserver;
+      }), "refresh observer removal", 5000),
     ]);
     const cleanupErrors = cleanup.filter((result) => result.status === "rejected").map((result) => result.reason);
     if (cleanupErrors.length) {
