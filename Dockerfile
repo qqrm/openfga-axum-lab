@@ -1,4 +1,4 @@
-FROM rust:1.99-slim-bookworm AS build
+FROM rust:1.99.1-slim-bookworm AS build
 WORKDIR /app
 ARG APP_REVISION=unknown
 ENV APP_REVISION=$APP_REVISION

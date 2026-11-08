@@ -31,19 +31,19 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
-          toolchain: '1.99.0'
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037
+          toolchain: '1.99.1'
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest@0.9.151
           fallback: none
       - name: Require reviewed environment and successful exact-SHA checks
         run: |
           registry_config=$(mktemp -d "$RUNNER_TEMP/authzlab-registry.XXXXXX")
           echo "DOCKER_CONFIG=$registry_config" >> "$GITHUB_ENV"
           mkdir -p artifacts
-          cargo +1.99.0 build --locked --bin lab-tool
+          cargo +1.99.1 build --locked --bin lab-tool
           target/debug/lab-tool delivery-policy tag "$RELEASE_TAG"
-          version=$(cargo +1.99.0 metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "openfga-axum-lab") | .version')
+          version=$(cargo +1.99.1 metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "openfga-axum-lab") | .version')
           test "$RELEASE_TAG" = "v$version" || [[ "$RELEASE_TAG" == "v$version-rc."* ]]
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           gh api "repos/$GITHUB_REPOSITORY/environments/release" > artifacts/environment.json
@@ -64,7 +64,7 @@ jobs:
             echo "DELIVERY_IMAGE=$(docker image inspect authzlab-release:ci --format '{{.Id}}')"
           } >> "$GITHUB_ENV"
       - name: Test the actual candidate image
-        run: cargo +1.99.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
+        run: cargo +1.99.1 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Push candidate and verify fresh authenticated pull
         run: |
           image_tag="ghcr.io/${GITHUB_REPOSITORY,,}:candidate-$GITHUB_RUN_ID"
@@ -80,7 +80,7 @@ jobs:
             echo "DELIVERY_IMAGE=$image"
           } >> "$GITHUB_ENV"
       - name: Verify pulled distribution, not a rebuild
-        run: cargo +1.99.0 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
+        run: cargo +1.99.1 nextest run --locked --release --profile ci --test delivery --run-ignored only --success-output immediate
       - name: Package a complete image-only distribution
         run: |
           mkdir -p dist/package/db dist/package/docs

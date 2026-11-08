@@ -1,13 +1,19 @@
 //! Pure domain decisions. Persistence and authorization are external effects.
 
+/// Persisted lifecycle of a task; only [`Lifecycle::Active`] is visible.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lifecycle {
+    /// The record exists, but authorization provisioning has not completed.
     Pending,
+    /// Provisioning completed and the record may be shown to authorized users.
     Active,
+    /// Deletion began; the record is hidden while authorization is removed.
     Deleting,
+    /// Deletion completed; this state cannot transition back to active.
     Deleted,
 }
 impl Lifecycle {
+    /// Parses a stored state, returning `None` for unknown values.
     pub fn from_storage(value: &str) -> Option<Self> {
         match value {
             "pending" => Some(Self::Pending),
@@ -19,13 +25,21 @@ impl Lifecycle {
     }
 }
 
+/// A completed application action that can advance a task's lifecycle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
+    /// The required authorization tuples have been provisioned.
     Provisioned,
+    /// An authorized actor has started deletion.
     BeginDeletion,
+    /// All authorization tuples belonging to the task have been removed.
     TuplesRemoved,
 }
 
+/// Returns the next state, or `None` when this event is invalid for the state.
+///
+/// This function validates a transition only; callers perform and verify the
+/// external operation before committing the corresponding state change.
 pub const fn transition(state: Lifecycle, event: Event) -> Option<Lifecycle> {
     match (state, event) {
         (Lifecycle::Pending, Event::Provisioned) => Some(Lifecycle::Active),
@@ -35,10 +49,16 @@ pub const fn transition(state: Lifecycle, event: Event) -> Option<Lifecycle> {
     }
 }
 
+/// Whether a record in this state is eligible for authorization and display.
+///
+/// Visibility does not itself grant any user access.
 pub const fn is_visible(state: Lifecycle) -> bool {
     matches!(state, Lifecycle::Active)
 }
 
+/// Accepts 1–64 ASCII letters, digits, hyphens or underscores.
+///
+/// OpenFGA type prefixes, whitespace and path separators are not identifiers.
 pub fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
@@ -47,6 +67,10 @@ pub fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
+/// Validates a nonblank title (at most 160 UTF-8 bytes), a description of at
+/// most 4000 bytes, and the task status `todo`, `in_progress` or `done`.
+///
+/// This function does not modify or trim input; the description may be empty.
 pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
     !title.trim().is_empty()
         && title.len() <= 160
@@ -54,6 +78,9 @@ pub fn valid_task(title: &str, description: &str, status: &str) -> bool {
         && matches!(status, "todo" | "in_progress" | "done")
 }
 
+/// Accepts an 8–128 byte ASCII letter/digit/hyphen/underscore request key.
+///
+/// Keys scope retries of task creation; they are not authentication tokens.
 pub fn valid_idempotency_key(key: &str) -> bool {
     (8..=128).contains(&key.len())
         && key
@@ -61,10 +88,15 @@ pub fn valid_idempotency_key(key: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// Accepts mutable task relations; the assigner and computed permissions
+/// cannot be granted through the generic relation API.
 pub fn valid_task_relation(relation: &str) -> bool {
     matches!(relation, "viewer" | "editor" | "assignee" | "blocked")
 }
 
+/// Accepts explicit task permission grants at the organization level.
+///
+/// Ownership and membership use separate, guarded operations.
 pub fn valid_organization_permission(relation: &str) -> bool {
     matches!(
         relation,
