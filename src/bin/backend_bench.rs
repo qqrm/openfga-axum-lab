@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let per_task = iters / conc;
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     let mut handles = Vec::new();
     for _ in 0..conc {
         let auth = auth.clone();
