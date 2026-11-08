@@ -163,15 +163,20 @@ async fn authorization_sessions_and_metrics() -> TestResult {
         S::NOT_FOUND,
     )
     .await?;
-    expect(
-        api.call(
-            M::DELETE,
-            "/projects/acme/warehouses/analytics/tables/invalid.id",
-            &carol,
-        ),
-        S::BAD_REQUEST,
-    )
-    .await?;
+    // Invalid typed path parameters are rejected by Axum before the handler;
+    // that extractor response is text/plain, not the application's JSON error.
+    let invalid_path = "/projects/acme/warehouses/analytics/tables/invalid.id";
+    let rejected = api.call(M::DELETE, invalid_path, &carol).send().await?;
+    assert_eq!(rejected.status(), S::BAD_REQUEST, "DELETE {invalid_path}");
+    assert_eq!(
+        rejected
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/plain; charset=utf-8"),
+        "DELETE {invalid_path}: extractor rejection content type"
+    );
+    assert_eq!(rejected.text().await?, "Invalid URL: invalid identifier");
     // A caller without manage permission cannot discover whether a subject exists.
     for subject_id in ["dave", "nonexistent"] {
         for method in [M::PUT, M::DELETE] {
