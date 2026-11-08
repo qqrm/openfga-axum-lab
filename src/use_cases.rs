@@ -75,25 +75,26 @@ impl App {
         }
     }
     pub(crate) async fn visible_pets(&self, user: &str) -> Result<Vec<Pet>> {
+        let objects = self
+            .auth
+            .list_objects(user, "can_view", "pet")
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        let ids: Vec<String> = objects
+            .into_iter()
+            .filter_map(|object| object.strip_prefix("pet:").map(str::to_owned))
+            .collect();
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let rows = sqlx::query(
-            "SELECT id,name,species,biography FROM pets WHERE status='active' ORDER BY id",
+            "SELECT id,name,species,biography FROM pets WHERE status='active' AND id = ANY($1) ORDER BY id",
         )
+        .bind(&ids)
         .fetch_all(&self.db)
         .await
         .map_err(|_| Error::Unavailable)?;
-        let mut pets = Vec::new();
-        for row in rows {
-            let pet = pet_from_row(row);
-            if self
-                .auth
-                .check(user, "can_view", &format!("pet:{}", pet.id))
-                .await
-                .map_err(|_| Error::Unavailable)?
-            {
-                pets.push(pet);
-            }
-        }
-        Ok(pets)
+        Ok(rows.into_iter().map(pet_from_row).collect())
     }
     pub(crate) async fn get_pet(&self, id: &str) -> Result<Pet> {
         sqlx::query("SELECT id,name,species,biography FROM pets WHERE id=$1 AND status='active'")

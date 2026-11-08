@@ -94,7 +94,16 @@ impl Authorizer for CachedAuthorizer {
         self.inner.ensure_ready().await
     }
 
-    #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "authz_cache.check")]
+    #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "authz_cache.list_objects")]
+    async fn list_objects(
+        &self,
+        user: &str,
+        relation: &str,
+        object_type: &str,
+    ) -> Result<Vec<String>, AuthError> {
+        self.inner.list_objects(user, relation, object_type).await
+    }
+
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         for _ in 0..3 {
             let before = self.revision().await?;

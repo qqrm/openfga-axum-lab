@@ -31,6 +31,9 @@ impl Authorizer for DenyAll {
     async fn check(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthError> {
         Ok(false)
     }
+    async fn list_objects(&self, _: &str, _: &str, _: &str) -> Result<Vec<String>, AuthError> {
+        Ok(Vec::new())
+    }
     async fn write(&self, _: &[Tuple], _: bool) -> Result<(), AuthError> {
         Err(AuthError)
     }
@@ -167,6 +170,11 @@ mod openfga_http {
         #[serde(default)]
         tuples: Vec<ReadTuple>,
     }
+    #[derive(Deserialize)]
+    struct ListObjectsResponse {
+        #[serde(default)]
+        objects: Vec<String>,
+    }
     #[async_trait]
     impl Authorizer for OpenFgaHttp {
         #[tracing::instrument(skip(self), name = "openfga.ensure_available")]
@@ -226,6 +234,33 @@ mod openfga_http {
                 .await
                 .map_err(|_| AuthError)?;
             Ok(response.allowed)
+        }
+        #[tracing::instrument(skip(self, user), fields(relation = %relation, object_type = %object_type), name = "openfga.list_objects")]
+        async fn list_objects(
+            &self,
+            user: &str,
+            relation: &str,
+            object_type: &str,
+        ) -> Result<Vec<String>, AuthError> {
+            let response: ListObjectsResponse = self
+                .client
+                .post(format!("{}/stores/{}/list-objects", self.url, self.store))
+                .json(&json!({
+                    "authorization_model_id": self.model,
+                    "consistency": "HIGHER_CONSISTENCY",
+                    "user": format!("user:{user}"),
+                    "relation": relation,
+                    "type": object_type
+                }))
+                .send()
+                .await
+                .map_err(|_| AuthError)?
+                .error_for_status()
+                .map_err(|_| AuthError)?
+                .json()
+                .await
+                .map_err(|_| AuthError)?;
+            Ok(response.objects)
         }
         #[tracing::instrument(skip(self, tuples), fields(count = tuples.len(), add), name = "openfga.write")]
         async fn write(&self, tuples: &[Tuple], add: bool) -> Result<(), AuthError> {
