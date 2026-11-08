@@ -1,0 +1,101 @@
+# Image-only delivery. Always use a distinct -p and environment.env per stand.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-bookworm}
+    environment:
+      POSTGRES_USER: petlab
+      POSTGRES_DB: petlab
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    secrets: [postgres-password]
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-create-openfga.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U petlab -d petlab]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [lab]
+  fga-migrate:
+    image: ${OPENFGA_IMAGE:-openfga/openfga:v1.10.3}
+    secrets:
+      - source: fga-config
+        target: /etc/openfga/config.yaml
+    command: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [lab]
+  openfga:
+    image: ${OPENFGA_IMAGE:-openfga/openfga:v1.10.3}
+    secrets:
+      - source: fga-config
+        target: /etc/openfga/config.yaml
+    command: run
+    depends_on:
+      fga-migrate:
+        condition: service_completed_successfully
+    networks: [lab]
+  bootstrap:
+    image: ${LAB_IMAGE:?set LAB_IMAGE to a verified digest}
+    user: "0:0"
+    entrypoint: [/usr/local/bin/lab-tool]
+    command: [bootstrap]
+    environment:
+      FGA_URL: http://openfga:8080
+      FGA_CONFIG: /data/config.json
+    depends_on: [openfga]
+    volumes: [fga-state:/data]
+    networks: [lab]
+  app:
+    image: ${LAB_IMAGE:?set LAB_IMAGE to a verified digest}
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database-url
+      DEMO_PASSWORD_FILE: /run/secrets/demo-password
+      DEMO_SEED: "true"
+      FGA_URL: ${FGA_APP_URL:-http://openfga:8081}
+      FGA_CONFIG: /data/config.json
+    secrets: [database-url, demo-password]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    volumes: [fga-state:/data:ro]
+    ports: ["127.0.0.1:${APP_PORT:-3000}:3000"]
+    healthcheck:
+      test: [CMD, /usr/local/bin/lab-tool, probe]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [lab]
+  acceptance:
+    image: ${LAB_IMAGE:?set LAB_IMAGE to a verified digest}
+    profiles: [tools]
+    entrypoint: [/usr/local/bin/lab-tool]
+    command: [acceptance]
+    environment:
+      SMOKE_BASE_URL: http://app:3000
+      SMOKE_ALLOW_MUTATIONS: "true"
+      DEMO_PASSWORD_FILE: /run/secrets/demo-password
+    secrets: [demo-password]
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [lab]
+secrets:
+  postgres-password:
+    file: ${LAB_STATE_DIR:?set per-environment state directory}/secrets/postgres-password
+  database-url:
+    file: ${LAB_STATE_DIR:?set per-environment state directory}/secrets/database-url
+  demo-password:
+    file: ${LAB_STATE_DIR:?set per-environment state directory}/secrets/demo-password
+  fga-config:
+    file: ${LAB_STATE_DIR:?set per-environment state directory}/secrets/openfga.yaml
+networks:
+  lab:
+volumes:
+  database:
+  fga-state:

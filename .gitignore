@@ -3,6 +3,13 @@
 /artifacts
 __pycache__/
 /browser-output/
+/dist/
+**/environment.env
+**/secrets/
+/staging/
+/stable/
+/local/
+/.lab/
 
 # Playwright
 /e2e/node_modules/

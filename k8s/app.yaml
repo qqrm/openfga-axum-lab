@@ -13,18 +13,25 @@ spec:
       labels:
         app: app
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
       initContainers:
         - name: bootstrap
-          image: python:3.13-slim-bookworm
-          command: ["python", "/app/scripts/bootstrap.py"]
+          image: openfga-axum-lab:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/lab-tool", "bootstrap"]
           env:
             - name: FGA_URL
               value: http://openfga:8080
+            - name: FGA_CONFIG
+              value: /data/config.json
           volumeMounts:
             - name: fga
               mountPath: /app/fga
-            - name: scripts
-              mountPath: /app/scripts
+              readOnly: true
             - name: data
               mountPath: /data
           resources:
@@ -54,6 +61,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -65,9 +73,6 @@ spec:
         - name: fga
           configMap:
             name: fga-model
-        - name: scripts
-          configMap:
-            name: fga-scripts
         - name: data
           emptyDir: {}
 ---

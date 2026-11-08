@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use openfga_client::{
     client::{
         CheckRequestTupleKey, ConsistencyPreference, GetStoreRequest, OpenFgaClient,
-        OpenFgaServiceClient, ReadRequestTupleKey, TupleKey, TupleKeyWithoutCondition,
-        WriteOptions,
+        OpenFgaServiceClient, ReadAuthorizationModelRequest, ReadRequestTupleKey, TupleKey,
+        TupleKeyWithoutCondition, WriteOptions,
     },
     tonic::transport::{Channel, Endpoint, Error},
 };
@@ -47,6 +47,20 @@ impl Authorizer for OpenFgaGrpc {
         bounded(self.client.client().get_store(GetStoreRequest {
             store_id: self.client.store_id().to_owned(),
         }))
+        .await?;
+        Ok(())
+    }
+
+    async fn ensure_ready(&self) -> Result<(), AuthError> {
+        self.ensure_available().await?;
+        bounded(
+            self.client
+                .client()
+                .read_authorization_model(ReadAuthorizationModelRequest {
+                    store_id: self.client.store_id().to_owned(),
+                    id: self.client.authorization_model_id().to_owned(),
+                }),
+        )
         .await?;
         Ok(())
     }

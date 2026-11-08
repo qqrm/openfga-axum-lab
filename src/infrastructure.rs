@@ -25,6 +25,9 @@ impl Authorizer for DenyAll {
     async fn ensure_available(&self) -> Result<(), AuthError> {
         Err(AuthError)
     }
+    async fn ensure_ready(&self) -> Result<(), AuthError> {
+        Err(AuthError)
+    }
     async fn check(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthError> {
         Ok(false)
     }
@@ -184,6 +187,26 @@ mod openfga_http {
             } else {
                 Err(AuthError)
             }
+        }
+        async fn ensure_ready(&self) -> Result<(), AuthError> {
+            self.ensure_available().await?;
+            // A model can remain readable after a soft-deleted store.
+            for path in [
+                format!("stores/{}", self.store),
+                format!("stores/{}/authorization-models/{}", self.store, self.model),
+            ] {
+                self.client
+                    .get(format!("{}/{}", self.url, path))
+                    .send()
+                    .await
+                    .map_err(|_| AuthError)?
+                    .error_for_status()
+                    .map_err(|_| AuthError)?
+                    .bytes()
+                    .await
+                    .map_err(|_| AuthError)?;
+            }
+            Ok(())
         }
         #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "openfga.check")]
         async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {

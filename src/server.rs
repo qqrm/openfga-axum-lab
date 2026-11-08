@@ -4,14 +4,14 @@ use crate::infrastructure::DenyAll;
 use crate::infrastructure::OpenFgaGrpc as OpenFga;
 #[cfg(all(feature = "http", not(feature = "grpc")))]
 use crate::infrastructure::OpenFgaHttp as OpenFga;
-use crate::{cached_authorizer, http, infrastructure, metrics};
+use crate::{cached_authorizer, configuration, http, infrastructure, metrics, operations};
 use serde_json::Value;
 use sqlx::postgres::PgPoolOptions;
 use std::{sync::Arc, time::Duration};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let database = std::env::var("DATABASE_URL")?;
+    let database = configuration::secret("DATABASE_URL")?;
     let db = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database)
@@ -22,7 +22,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .run(&db)
         .await?;
     if std::env::var("DEMO_SEED").as_deref() == Ok("true") {
-        let password = std::env::var("DEMO_PASSWORD")?;
+        let password = configuration::secret("DEMO_PASSWORD")?;
         if password.len() < 12 {
             return Err("DEMO_PASSWORD must have at least 12 bytes".into());
         }
@@ -50,6 +50,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(all(feature = "http", not(feature = "grpc")))]
             {
                 let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
                     .timeout(Duration::from_secs(2))
                     .build()?;
                 let url = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
@@ -69,6 +71,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
+    let readiness = operations::Readiness::new(db.clone(), auth.clone());
     let metrics = metrics::Metrics::new()?;
     let mut auth = auth;
     if std::env::var("AUTHZ_MODE").as_deref() != Ok("deny") {
@@ -101,7 +104,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             login_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             dummy_password_hash,
             metrics,
-        }),
+        })
+        .merge(operations::router(readiness)),
     )
     .await?;
     Ok(())

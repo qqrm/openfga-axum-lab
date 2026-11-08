@@ -36,6 +36,7 @@ impl Deployment {
                 },
             )
             .env("DEMO_PASSWORD", &self.password)
+            .env("POSTGRES_PASSWORD", &self.password)
             .args(["compose", "-p", &self.project, "-f", "compose.yaml"]);
         command
     }
@@ -102,6 +103,11 @@ async fn compose_runtime_bootstraps_and_serves_real_api() -> TestResult {
         }
     })
     .await?;
+    assert_eq!(
+        client.get(format!("{base}/readyz")).send().await?.status(),
+        StatusCode::OK,
+        "the packaged image must probe its selected transport and model"
+    );
     let session: Value = client
         .post(format!("{base}/session"))
         .json(&json!({"username": "alice", "password": deployment.password}))

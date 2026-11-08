@@ -95,6 +95,8 @@ impl Proxy {
         #[cfg(not(feature = "grpc"))]
         let router = Router::new()
             .route("/healthz", get(forward))
+            .route("/stores/{store}", get(forward))
+            .route("/stores/{store}/authorization-models/{model}", get(forward))
             .route("/stores/{store}/{operation}", post(forward))
             .with_state(upstream.clone());
         #[cfg(feature = "grpc")]

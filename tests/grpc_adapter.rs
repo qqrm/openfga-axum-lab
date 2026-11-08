@@ -13,8 +13,9 @@ use openfga_axum_lab::{
     infrastructure::OpenFgaGrpc,
 };
 use openfga_client::client::{
-    CheckRequest, CheckResponse, ConsistencyPreference, GetStoreRequest, GetStoreResponse,
-    ReadRequest, ReadResponse, Tuple as FgaTuple, TupleKey, WriteRequest, WriteResponse,
+    AuthorizationModel, CheckRequest, CheckResponse, ConsistencyPreference, GetStoreRequest,
+    GetStoreResponse, ReadAuthorizationModelRequest, ReadAuthorizationModelResponse, ReadRequest,
+    ReadResponse, Tuple as FgaTuple, TupleKey, WriteRequest, WriteResponse,
 };
 use prost::Message;
 use std::{collections::VecDeque, convert::Infallible, sync::Arc, time::Duration};
@@ -27,6 +28,7 @@ struct WireState {
     requests: Mutex<Vec<(String, Bytes)>>,
     reads: Mutex<VecDeque<ReadResponse>>,
     stall_trailers: bool,
+    fail_operation: Mutex<Option<&'static str>>,
 }
 
 struct Stub {
@@ -87,7 +89,9 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
         .lock()
         .await
         .push((uri.path().to_owned(), body));
-    let bytes = match uri.path().rsplit('/').next().unwrap_or("") {
+    let operation = uri.path().rsplit('/').next().unwrap_or("");
+    let fail = *state.fail_operation.lock().await == Some(operation);
+    let bytes = match operation {
         "Check" => frame(CheckResponse {
             allowed: true,
             ..Default::default()
@@ -95,6 +99,12 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
         "GetStore" => frame(GetStoreResponse {
             id: "store".to_owned(),
             ..Default::default()
+        }),
+        "ReadAuthorizationModel" => frame(ReadAuthorizationModelResponse {
+            authorization_model: Some(AuthorizationModel {
+                id: "model".to_owned(),
+                ..Default::default()
+            }),
         }),
         "Write" => frame(WriteResponse {}),
         "Read" => frame(state.reads.lock().await.pop_front().unwrap_or_default()),
@@ -105,7 +115,10 @@ async fn reply(State(state): State<Arc<WireState>>, uri: Uri, body: Bytes) -> Re
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
         let mut trailers = HeaderMap::new();
-        trailers.insert("grpc-status", HeaderValue::from_static("0"));
+        trailers.insert(
+            "grpc-status",
+            HeaderValue::from_static(if fail { "5" } else { "0" }),
+        );
         Some(Ok::<_, Infallible>(trailers))
     });
     Response::builder()
@@ -223,5 +236,44 @@ async fn grpc_timeout_covers_stalled_response_trailers() -> TestResult {
     .await
     .expect("adapter must bound the full response, not only the headers");
     assert!(response.is_err(), "missing gRPC trailers must fail closed");
+    Ok(())
+}
+
+#[tokio::test]
+async fn readiness_probes_store_and_model_without_cached_success() -> TestResult {
+    let stub = Stub::start(Vec::new(), false).await?;
+    let auth = OpenFgaGrpc::connect(stub.url.clone(), "store", "model").await?;
+    auth.ensure_ready().await?;
+    let stores = stub.requests::<GetStoreRequest>("GetStore").await?;
+    assert_eq!(stores.len(), 1);
+    assert_eq!(stores[0].store_id, "store");
+    let models = stub
+        .requests::<ReadAuthorizationModelRequest>("ReadAuthorizationModel")
+        .await?;
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].store_id, "store");
+    assert_eq!(models[0].id, "model");
+
+    *stub.state.fail_operation.lock().await = Some("ReadAuthorizationModel");
+    assert!(auth.ensure_ready().await.is_err());
+    assert_eq!(stub.requests::<GetStoreRequest>("GetStore").await?.len(), 2);
+    assert_eq!(
+        stub.requests::<ReadAuthorizationModelRequest>("ReadAuthorizationModel")
+            .await?
+            .len(),
+        2
+    );
+
+    *stub.state.fail_operation.lock().await = Some("GetStore");
+    assert!(auth.ensure_ready().await.is_err());
+    assert_eq!(stub.requests::<GetStoreRequest>("GetStore").await?.len(), 3);
+    assert_eq!(
+        stub.requests::<ReadAuthorizationModelRequest>("ReadAuthorizationModel")
+            .await?
+            .len(),
+        2,
+        "an unavailable store must fail even if its model remains readable"
+    );
+    assert!(stub.requests::<CheckRequest>("Check").await?.is_empty());
     Ok(())
 }

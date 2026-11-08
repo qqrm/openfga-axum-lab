@@ -3,7 +3,7 @@ services:
     image: postgres:17-bookworm
     environment:
       POSTGRES_USER: petlab
-      POSTGRES_PASSWORD: petlab-local-only
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: petlab
     volumes:
       - database:/var/lib/postgresql/data
@@ -21,7 +21,7 @@ services:
         condition: service_healthy
     environment: &fga-db
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://petlab:petlab-local-only@postgres:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_URI: postgres://petlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/openfga?sslmode=disable
     command: migrate
     networks: [lab]
   openfga:
@@ -57,11 +57,11 @@ services:
         FGA_TRANSPORT: ${FGA_TRANSPORT:-grpc}
     image: openfga-axum-lab:local
     environment:
-      DATABASE_URL: postgres://petlab:petlab-local-only@postgres:5432/petlab?sslmode=disable
+      DATABASE_URL: postgres://petlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/petlab?sslmode=disable
       FGA_URL: ${FGA_APP_URL:-http://openfga:8081}
       FGA_CONFIG: /data/config.json
       DEMO_SEED: "true"
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-local-demo-password}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?set DEMO_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

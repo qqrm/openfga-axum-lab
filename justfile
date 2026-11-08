@@ -36,9 +36,12 @@ clean:
 logs:
     docker compose logs -f app
 
-# Интеграционные e2e-тесты
+# Интеграционные тесты с PostgreSQL и OpenFGA (требуют Docker и cargo-nextest)
 test:
-    docker compose --profile test run --rm test
+    cargo nextest run --locked --release --profile ci \
+        --no-default-features --features "${FGA_TRANSPORT:-grpc}" \
+        --test system --test cache_replicas --test compose_deployment --test performance \
+        --run-ignored only -E 'not test(paired_aa_calibration)' --success-output immediate
 
 # Проверка кэша на двух репликах (требует Docker и cargo-nextest)
 cache-test:
@@ -47,7 +50,6 @@ cache-test:
 k8s-config:
     kubectl create namespace openfga-axum-lab --dry-run=client -o yaml | kubectl apply -f -
     kubectl -n openfga-axum-lab create configmap fga-model --from-file=fga/model.json --from-file=fga/legacy.json --dry-run=client -o yaml | kubectl apply -f -
-    kubectl -n openfga-axum-lab create configmap fga-scripts --from-file=scripts/bootstrap.py --dry-run=client -o yaml | kubectl apply -f -
 
 k8s-start:
     just k8s-config

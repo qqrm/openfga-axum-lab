@@ -1,6 +1,9 @@
 const { test, expect } = require("@playwright/test");
 
-const PASSWORD = "local-demo-password";
+const PASSWORD = process.env.DEMO_PASSWORD;
+if (!PASSWORD) {
+  throw new Error("Set DEMO_PASSWORD to the password used by the running lab before running Playwright.");
+}
 
 async function token(request, username) {
   const response = await request.post("/session", {

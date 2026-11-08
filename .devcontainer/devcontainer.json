@@ -1,21 +1,23 @@
 {
-  "name": "openfga-axum-lab",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
-  },
+  "name": "OpenFGA + Axum: real private laboratory",
+  "build": { "dockerfile": "Dockerfile" },
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:4.1.2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "cargo fetch",
+  "remoteUser": "root",
+  "hostRequirements": { "cpus": 2, "memory": "8gb", "storage": "32gb" },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Real Axum + PostgreSQL + OpenFGA lab (private)", "onAutoForward": "notify", "protocol": "http" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "postStartCommand": "bash scripts/codespace-lab.sh start",
+  "postAttachCommand": "bash scripts/codespace-lab.sh private",
   "customizations": {
     "vscode": {
-      "extensions": [
-        "rust-lang.rust-analyzer",
-        "tamasfe.even-better-toml"
-      ]
+      "extensions": ["rust-lang.rust-analyzer"],
+      "settings": { "remote.autoForwardPorts": false }
     }
-  },
-  "forwardPorts": [3000],
-  "remoteUser": "vscode"
+  }
 }

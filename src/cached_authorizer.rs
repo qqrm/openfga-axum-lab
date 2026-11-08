@@ -90,6 +90,10 @@ impl Authorizer for CachedAuthorizer {
         self.inner.ensure_available().await
     }
 
+    async fn ensure_ready(&self) -> Result<(), AuthError> {
+        self.inner.ensure_ready().await
+    }
+
     #[tracing::instrument(skip(self, user, object), fields(relation = %relation), name = "authz_cache.check")]
     async fn check(&self, user: &str, relation: &str, object: &str) -> Result<bool, AuthError> {
         for _ in 0..3 {
