@@ -1,16 +1,20 @@
 //! Offline negative controls for public-entry-point policy and lifecycle configuration.
 use std::process::{Command, Output};
 
-fn script(args: &[&str], email: &str, password: &str, minutes: &str) -> Output {
-    Command::new("bash")
+fn script(args: &[&str], email: &str, password: Option<&str>, minutes: &str) -> Output {
+    let mut command = Command::new("bash");
+    command
         .arg("scripts/live-lab.sh")
         .args(args)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("LIVE_LAB_ALLOWED_EMAIL", email)
-        .env("LIVE_LAB_PASSWORD", password)
-        .env("LIVE_LAB_MINUTES", minutes)
+        .env("LIVE_LAB_MINUTES", minutes);
+    if let Some(password) = password {
+        command.env("LIVE_LAB_PASSWORD", password);
+    }
+    command
         .output()
         .expect("run infrastructure policy without Docker or network")
 }
@@ -26,17 +30,35 @@ fn invitation_and_duration_fail_closed_without_disclosing_values() {
         "--help",
     ];
     for email in emails {
-        let result = script(&["validate"], email, &password, "30");
+        let result = script(&["validate"], email, Some(&password), "30");
         assert!(!result.status.success());
         assert!(!String::from_utf8_lossy(&result.stderr).contains(&password));
     }
     for duration in ["0", "360", "999999", "30;exit", "-1"] {
-        let result = script(&["validate"], "tester@example.invalid", &password, duration);
+        let result = script(
+            &["validate"],
+            "tester@example.invalid",
+            Some(&password),
+            duration,
+        );
         assert!(!result.status.success());
     }
-    let empty = script(&["validate"], "tester@example.invalid", &String::new(), "30");
-    let valid = script(&["validate"], "tester@example.invalid", &password, "30");
+    let empty_password = String::new();
+    let empty = script(
+        &["validate"],
+        "tester@example.invalid",
+        Some(&empty_password),
+        "30",
+    );
+    let missing = script(&["validate"], "tester@example.invalid", None, "30");
+    let valid = script(
+        &["validate"],
+        "tester@example.invalid",
+        Some(&password),
+        "30",
+    );
     assert!(!empty.status.success());
+    assert!(!missing.status.success());
     assert!(valid.status.success());
 }
 
@@ -50,11 +72,11 @@ fn only_the_actual_email_login_redirect_counts_as_protection() {
         ("302", "https://login.trycloudflare.com@attacker.invalid/"),
         ("302", "http://login.trycloudflare.com/"),
     ] {
-        let result = script(&["classify-gate", status, location], "", &String::new(), "");
+        let result = script(&["classify-gate", status, location], "", None, "");
         assert!(!result.status.success());
     }
     let args = ["classify-gate", "302", "https://login.trycloudflare.com/"];
-    assert!(script(&args, "", &String::new(), "").status.success());
+    assert!(script(&args, "", None, "").status.success());
 }
 
 #[test]

@@ -42,17 +42,25 @@ PostgreSQL и OpenFGA там не запускаются. Постоянные �
 
 ## Локальный запуск
 
-Нужны Git, Docker Engine и Docker Compose v2. Rust на хосте не нужен.
-Команды для Linux/WSL2:
+Нужны Git, Docker Engine, Docker Compose v2 и OpenSSL. Rust на хосте не нужен.
+Команды для нового локального стенда в Linux/WSL2:
 
 ```sh
 git clone https://github.com/qqrm/openfga-axum-lab.git
 cd openfga-axum-lab
-POSTGRES_PASSWORD=petlab-local-only DEMO_PASSWORD=local-demo-password docker compose up -d --build app
+export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+export DEMO_PASSWORD="$(openssl rand -hex 24)"
+docker compose up -d --build app
 ```
 
+Пароли создаются один раз. Экспортированные переменные нужны всем последующим
+командам Compose в этой оболочке, включая диагностику и остановку. Сохраните
+значения у себя и восстановите их при открытии новой оболочки. Не генерируйте
+новые значения для существующих томов PostgreSQL.
+
 Откройте `http://localhost:3000`. Локальный исходный стенд использует пароль
-`local-demo-password`: `alice` — администратор, `bob` — сотрудник,
+из `DEMO_PASSWORD` (посмотреть в своём терминале: `printenv DEMO_PASSWORD`):
+`alice` — администратор, `bob` — сотрудник,
 `carol` — владелец лисы Mika, `dave` изначально видит кота Pixel, но не лису.
 Это не пароль личного Codespace или защищённой Actions-сессии.
 

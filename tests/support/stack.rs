@@ -47,6 +47,8 @@ impl Compose {
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env("CACHE_TEST_PASSWORD", &self.password)
             .env("POSTGRES_PASSWORD", &self.password)
+            // Compose interpolates every service, including the unused app.
+            .env("DEMO_PASSWORD", &self.password)
             .args([
                 "compose",
                 "-p",
