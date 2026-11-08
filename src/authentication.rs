@@ -103,7 +103,6 @@ mod tests {
             .expect("valid lazy database URL");
         db.close().await;
         let app = App {
-            authz_coordinator: db.clone(),
             db,
             authorization_target: None,
             auth: Arc::new(DenyAll),

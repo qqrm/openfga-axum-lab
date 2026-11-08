@@ -1,6 +1,7 @@
 //! Fault boundary around the real HTTP migration backend. A detached bounded
 //! worker can retain a request after its client has died, including before the
-//! upstream commit; idle means every captured worker actually finished.
+//! upstream commit; idle means every captured worker actually finished. A
+//! per-pause receipt separately proves a successful real backend acknowledgement.
 use super::stack::TestResult;
 use axum::{
     Router,
@@ -36,6 +37,7 @@ enum Fault {
         before: bool,
         captured: oneshot::Sender<()>,
         release: oneshot::Receiver<()>,
+        acknowledged: oneshot::Sender<()>,
     },
 }
 #[derive(Clone)]
@@ -54,10 +56,23 @@ pub struct Proxy {
 pub struct Pause {
     captured: oneshot::Receiver<()>,
     release: Option<oneshot::Sender<()>>,
+    acknowledged: oneshot::Receiver<()>,
 }
 impl Pause {
     pub async fn captured(&mut self) -> TestResult {
         Ok(timeout(Duration::from_secs(30), &mut self.captured).await??)
+    }
+    pub async fn release_and_wait_for_ack(mut self) -> TestResult {
+        self.release
+            .take()
+            .ok_or("paused migration batch was already released")?
+            .send(())
+            .map_err(|_| "paused migration batch expired before its explicit release")?;
+        timeout(Duration::from_secs(30), &mut self.acknowledged)
+            .await
+            .map_err(|_| "paused migration batch received no backend acknowledgement in time")?
+            .map_err(|_| "paused migration batch did not receive a successful OpenFGA Write acknowledgement")?;
+        Ok(())
     }
 }
 impl Drop for Pause {
@@ -117,15 +132,18 @@ impl Proxy {
         assert!(nth > 0);
         let (capture_tx, captured) = oneshot::channel();
         let (release, release_rx) = oneshot::channel();
+        let (acknowledged_tx, acknowledged) = oneshot::channel();
         *self.upstream.fault.lock().await = Fault::PauseWrite {
             remaining: nth,
             before,
             captured: capture_tx,
             release: release_rx,
+            acknowledged: acknowledged_tx,
         };
         Pause {
             captured,
             release: Some(release),
+            acknowledged,
         }
     }
     pub async fn wait_idle(&self) -> TestResult {
@@ -138,18 +156,27 @@ impl Proxy {
         Ok(())
     }
 }
-async fn pause_write(fault: Fault) -> Result<(), StatusCode> {
-    if let Fault::PauseWrite {
-        captured, release, ..
+async fn pause_write(fault: Fault) -> Result<oneshot::Sender<()>, StatusCode> {
+    let Fault::PauseWrite {
+        before,
+        captured,
+        release,
+        acknowledged,
+        ..
     } = fault
-    {
-        let _ = captured.send(());
-        timeout(Duration::from_secs(60), release)
-            .await
-            .map_err(|_| StatusCode::GATEWAY_TIMEOUT)?
-            .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    }
-    Ok(())
+    else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+    let _ = captured.send(());
+    // Before-forward tests run the full bounded equivalence matrix (180s) and
+    // restart an app (60s) while this worker remains held. Keep a finite margin
+    // for SQL/HTTP assertions; expiry is an explicit test failure, never an ACK.
+    let hold = if before { 300 } else { 60 };
+    timeout(Duration::from_secs(hold), release)
+        .await
+        .map_err(|_| StatusCode::GATEWAY_TIMEOUT)?
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    Ok(acknowledged)
 }
 async fn forward(
     State(upstream): State<Upstream>,
@@ -204,8 +231,9 @@ async fn forward_worker(
             _ => {}
         }
     }
+    let mut acknowledged = None;
     if matches!(paused, Some(Fault::PauseWrite { before: true, .. })) {
-        pause_write(paused.take().unwrap()).await?;
+        acknowledged = Some(pause_write(paused.take().unwrap()).await?);
     }
     let response = upstream
         .client
@@ -234,7 +262,24 @@ async fn forward_worker(
         }
     }
     if let Some(pause) = paused {
-        pause_write(pause).await?;
+        acknowledged = Some(pause_write(pause).await?);
+    }
+    if let Some(acknowledged) = acknowledged {
+        // This receipt belongs only to the selected held write. Idle alone
+        // cannot distinguish delivery from a dropped/timed-out worker.
+        let json = content_type
+            .as_ref()
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::trim)
+            == Some("application/json");
+        let empty_object = matches!(
+            serde_json::from_slice::<serde_json::Value>(&bytes),
+            Ok(serde_json::Value::Object(value)) if value.is_empty()
+        );
+        if status == StatusCode::OK && json && empty_object {
+            let _ = acknowledged.send(());
+        }
     }
     let mut result = (status, bytes).into_response();
     if let Some(content_type) = content_type {

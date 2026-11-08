@@ -17,7 +17,7 @@ export FGA_APP_URL="$expected_fga_url"
 # Always allocate a separate project and an ephemeral loopback port. A user's
 # existing Compose project and its database volumes must not be reused.
 export APP_PORT=0
-project="openlane-browser-${FGA_TRANSPORT}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$BASHPID"
+project="catalog-browser-${FGA_TRANSPORT}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$BASHPID"
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 artifact_dir="$repo_dir/artifacts"
 mkdir -p "$artifact_dir"

@@ -25,7 +25,7 @@ cargo llvm-cov report --show-missing-lines
 ```
 
 The first run executes ordinary native tests; the second explicitly runs the
-ignored system scenarios, including organization/owner transitions, and
+ignored system scenarios, including catalog ownership and pagination transitions, and
 the multi-replica cache/fault scenarios against
 real PostgreSQL and OpenFGA over the default HTTP adapter. The independent
 release integration matrix still verifies HTTP and gRPC; this coverage report
@@ -52,16 +52,17 @@ performance evidence; the separate Criterion benchmarks are not selected.
 ## Login and session boundary scenarios
 
 The native `system` suite also ports the useful, previously unmerged cases from
-PRs #18 and #19 to the organization/task application:
+PRs #18 and #19 to the catalog application:
 
 - The twentieth per-user login succeeds, subsequent requests are throttled,
   independent users continue, and PostgreSQL's clock controls window reset.
 - Four real login requests are observed waiting on a held PostgreSQL table
   lock. A fifth is rejected without consuming quota; two complete rounds prove
   that password-failure paths return all semaphore permits.
-- Invalid and inclusive username/password limits, malformed JSON and unusable
-  stored password hashes cannot produce sessions. Successful login stores only
-  the token hash and returns explicit no-store/expiry metadata.
+- Invalid username/password lengths, malformed JSON and unusable stored password
+  hashes cannot produce sessions. The inclusive limits permit a real login,
+  which stores only the token hash and returns explicit no-store/expiry metadata.
+  An authenticated user without project membership receives an empty catalog.
 - Invalid bearer headers, expired tokens and repeated logout cannot reuse an
   old token or revoke another live session. Expiry uses the database clock.
 
@@ -84,7 +85,7 @@ test profiles in cargo-llvm-cov's target directory. After normal exit, the test
 requires that child's profile to exist and be nonempty. Cargo-llvm-cov merges
 the profiles with its default strict failure mode. CI also requires executed
 functions from main/server, HTTP/authentication, authorization cache,
-infrastructure, task/organization use cases and durable authorization source files, so client-only coverage cannot pass.
+infrastructure, catalog use cases and verified authorization migration source files, so client-only coverage cannot pass.
 
 The `native-rust-coverage` artifact retains HTML, LLVM JSON, LCOV, annotated
 source, summary/missing lines, both JUnit reports, environment metadata, raw

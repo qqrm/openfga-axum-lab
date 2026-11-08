@@ -3,6 +3,7 @@
 /artifacts
 __pycache__/
 /browser-output/
+/browser-demo/target/
 /dist/
 **/environment.env
 **/secrets/

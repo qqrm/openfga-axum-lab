@@ -1,112 +1,89 @@
-# Verification and instrument evidence
+# Verification and its limits
 
-| Instrument | Actual target | Negative control | Boundary |
-| --- | --- | --- | --- |
-| rustfmt | Rust formatting | malformed formatting fixture | Formatting only |
-| Clippy | Rust warnings | needless-return fixture | Not semantic correctness |
-| ShellCheck | project shell scripts | unquoted expansion fixture (SC2086) | Not runtime correctness |
-| cargo-audit | lockfile advisories | known vulnerable RSA fixture | Advisory DB and dependency graph limits |
-| cargo-deny | advisories, bans, sources | wildcard dependency fixture in CI | Not a full vulnerability audit |
-| cargo-machete | unused dependencies | deliberately unused dependency fixture | Static usage heuristics |
-| Gitleaks | Git history secret patterns | synthetically constructed fake AWS key | Pattern coverage is incomplete; two old demo values are narrowly allowlisted |
-| actionlint / zizmor | workflow syntax and security patterns | intentionally invalid / unsafe workflow fixtures | Does not prove GitHub settings or authorization |
-| Rust Dependabot provenance | signed bot commits and expected head | seven unit tests including bad actor, stale head and missing SHA | Does not prove a live merge occurred |
-| Rust bootstrap | model fingerprint, persisted store/model, atomic config publication | changed model, missing identifiers, deleted store | No proof of crash consistency across PostgreSQL and filesystem |
-| Kani | pure lifecycle functions | mutate visibility to expose deleting state; proof must fail | No proof of SQL, HTTP, OpenFGA, networking, or concurrency |
-| nextest system suite | real API, PostgreSQL and OpenFGA | denied roles, bad credentials, outage, concurrent retries, recovery | Bounded scenarios, not exhaustive |
-| nextest cache suite | two actual Axum replicas | delayed allow, concurrent revoke, unavailable health endpoint, lost write response and restart | Not an exhaustive distributed-system proof |
-| nextest Compose deployment | actual Dockerfile and Rust bootstrap service | HTTP login and authorized data read after image build | Local deployment smoke test, not production certification |
-| nextest workflow contract | tracked sources and explicit CI suite selection | rejection of Python files/runtime references and missing suites | String-level guard; actionlint still validates workflow syntax |
+Tests are executable evidence for specific scenarios. A test file, a configured
+workflow or a skipped Docker test is not evidence that the scenario passed.
+Use the CI run for the exact commit and its JUnit/job output.
 
-## Behavior retained from the former scripts
+| Suite | Concrete target |
+| --- | --- |
+| `model_provenance` | Exact default Lakekeeper model SHA-256 and separate Openlane scenario provenance, pinned commits and preserved licenses/notices |
+| `fga_model` | Native real-engine Openlane decisions/mutations/ListObjects through HTTP and gRPC; separate late-owner-write witnesses for both models |
+| Domain / HTTP unit tests | Typed identifier grammar, lifecycle transitions, explicit routes/actions, strict DTOs, ambiguous bearer rejection |
+| `http_adapter` | Real loopback HTTP with malformed/duplicate decisions, unexpected statuses, redirects, content type/size, stalled body, wrong target, soft-deleted store despite positive Check, pagination and mixed Write |
+| `grpc_adapter` | Real loopback gRPC framing, presence/status failures, consistency, target identity and tuple/mixed-write handling |
+| `system` | Real Axum + PostgreSQL + OpenFGA: role matrix, sessions, metrics, concurrent idempotency, deletion/grant race, held locks, create/delete recovery, persistence and outage |
+| `cache_replicas` | Two real replicas: every allow checks live, negative-cache invalidation, delayed decision, Check-only failure, ambiguous grant/revoke, HTTP redirect without forwarding, restart fence |
+| `authorization_migration` | Real SQL source and CLI: closed initial gate, role/owner/hierarchy equivalence, source/target rejection, checkpoints, lost response and restart, verification mismatch, late pre-forward batch debt across app/storage restarts, foreign-scenario rejection and post-cutover revocation |
+| `compose_deployment` | Actual Dockerfile and provisioning/migration startup, selected runtime transport, authenticated catalog read |
+| Browser E2E | Actual API: actor visibility, grant/revoke, escalation denial, owner transfer, role inheritance, scope substitution, moves, session revocation, stale real responses, XSS text rendering, no-store/CSP headers |
+| `delivery` | Actual image on two isolated stands; store/session/volume isolation, quiesced two-database dump/restore, dependency failure and deleted store |
+| `performance` | Report-only raw request latency and errors; separate manual A/A calibration, no capacity verdict |
+| Kani | Finite production lifecycle transition/visibility functions, including hidden `updating`; no SQL/network/distributed-system proof |
 
-`tests/system.rs` covers authorization and sessions, normalized metrics without
-credentials, idempotent grants/revokes, six concurrent creates with one key,
-conflicting payloads, deleted-key reuse, an eight-operation delete/grant race,
-and direct checks that deleted tasks have no remaining OpenFGA tuples.
+The system tests retain six concurrent creates with one key, conflicting
+payload rejection, deleted-key tombstones, eight-operation delete/grant racing,
+and direct graph inspection after deletion, including reverse hierarchy links.
+Persistence tests reuse old sessions after restarting the app and dependencies.
+Outage cases first obtain successful decisions, then require closed responses.
 
-Persistence stops Axum, OpenFGA and PostgreSQL, then restarts them without
-removing volumes. It checks saved data and relations, reuses the **old sessions**,
-and verifies that a subsequent revoke takes effect. Separate creation and
-deletion recovery tests apply the original SQL fixtures before restarting Axum.
-The outage test first completes successful live checks, then requires 503 for both single-task and
-list requests after OpenFGA is stopped.
+The migration compares both allow and deny outcomes, including an outsider,
+and exact graph equality before activation. Adapter fault tests cover protocol
+shapes that the real server normally would not emit. Real-stack proxy tests
+retain actual server state while delaying or replacing a response, which
+exercises the uncertain-outcome boundary without inventing a permissive backend.
 
-Each test owns a fresh Compose project and temporary configuration. Published
-ports are loopback-only and ephemeral; addresses are resolved again after a
-restart. The cache and system suites use the same stack support and the same
-`lab-tool bootstrap` implementation as the deployment. A separate test builds
-and starts the actual Compose application image.
+The native model workload is isolated from catalog SQL, bootstrap configuration
+and the live service. Run `bash scripts/test-openlane-model.sh` for its two
+transports; it is not a substitute for the catalog integration/browser matrix.
+[Native coverage](native-coverage.md) includes gracefully stopped Axum children,
+requires measured core source files and reports branch/function/line limits.
 
-Run unit and policy checks without Docker:
+## Running the gates
 
-```sh
-cargo nextest run --locked --profile ci
-```
-
-Run the ordinary full suite with Docker, including explicitly ignored tests:
+Without Docker:
 
 ```sh
-cargo nextest run --locked --release --profile ci --run-ignored all \
-  -E 'not test(paired_aa_calibration) and not binary(fga_model)' --success-output immediate
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo nextest run --locked --all-features --profile ci
 ```
 
-The CI integration job explicitly selects `system`, `cache_replicas`,
-`authorization_migration`, `compose_deployment` and `performance` with
-`--run-ignored only`. A normal
-nextest invocation without that option does **not** establish integration
-coverage. A/A calibration remains a separate manual workflow. The CI profile
-uses no retries, bounds test duration, serializes Docker-intensive tests and
-writes JUnit. RAII cleanup handles normal exits and panic; forced termination
-can leave containers/volumes on a local engine. Hosted CI runners are disposable.
-
-## Openlane scenario coverage
-
-`bash scripts/test-openlane-model.sh` runs the pinned native OpenFGA model
-matrix and HTTP/gRPC wire tests; CI includes it in the Rust job. Native tests
-are excluded from the Docker-only command above because they have their own
-binary requirements.
-
-`tests/scenarios/openlane.rs` is included in the real-stack `system` binary.
-It covers organization isolation, exact upstream blocked precedence, assignee
-limits, direct and inherited grants, role changes, owner-only transfer,
-competing transfers, cached denials and live allows, lost mutation responses,
-buffered old requests, startup journal replay and explicit drained recovery.
-It requires the global fence to block reads/readiness until recovery. Typed IDs,
-duplicate auth/idempotency headers, body limits and oversized enumeration are
-covered in the same real-stack binary. The existing HTTP/gRPC integration matrix selects it.
-
-`e2e/tests/` exercises the actual browser UI and API against a disposable
-PostgreSQL/OpenFGA stack. CI defines both transport jobs and includes them in
-`ci-gate`; merely collecting Playwright tests is not an E2E pass. The 18 cases
-include a genuinely delayed API response across identity switching, literal
-untrusted text and security headers/provenance.
-
-`tests/authorization_migration.rs` runs the real CLI, PostgreSQL and OpenFGA
-and checks SQL source validation/freezing, exact graph and independent decision
-equivalence, resumed checkpoints, immutable target binding and active reruns
-that do not restore revoked grants. Initial migration and uncertain-write
-fences are separate readiness gates. `tests/model_provenance.rs` verifies the
-active Openlane digest/license and retained historical model attribution.
-
-Record executed commands and unavailable environments in
-[the migration validation report](openlane-migration.md).
-
-## Formal and tooling boundaries
-
-Kani exhaustively explores the finite lifecycle/event choices in the two
-harnesses. The service calls the same visibility and transition functions, but
-database updates and external side effects are validated separately. Run:
+With Docker, separately for HTTP and gRPC:
 
 ```sh
-cargo kani --lib
-bash scripts/kani-negative.sh
-bash scripts/check-tooling.sh
-bash scripts/audit-negative.sh
+cargo nextest run --locked --release --profile ci \
+  --no-default-features --features http \
+  --test system --test cache_replicas --test authorization_migration \
+  --test compose_deployment --test performance \
+  --run-ignored only -E 'not test(paired_aa_calibration)' --success-output immediate
 ```
 
-Dependabot auto-merge checks live branch protection before enabling native
-auto-merge and otherwise leaves the PR open. The privileged workflow does not
-check out or execute PR code. The Rust provenance command runs only in the
-read-only workflow. A synthetic policy test is not evidence that a real
-Dependabot PR has merged.
+CI explicitly selects these suites for both transports. Nextest uses no retries
+and serializes Docker-heavy tests. Ordinary non-ignored runs cannot establish
+end-to-end coverage. The `browser-e2e` job builds a separate real stack and is a
+required dependency of `ci-gate`; traces are disabled to avoid persisting bearer
+credentials, and only failure screenshots are retained.
+
+Image delivery has its own workflow because it needs a built immutable image
+ID. Browser-lab verification exercises the actual devcontainer, not a live
+GitHub account login. Live tunnel verification is an explicit manual operation.
+Kubernetes is experimental and has no cluster-based CI evidence.
+
+## Tooling and negative controls
+
+Formatting, Clippy, ShellCheck, actionlint, zizmor, cargo-audit, cargo-deny,
+cargo-machete, Gitleaks and dependency provenance checks are retained. Several
+have deliberate failing fixtures to check instrument sensitivity. They do not
+replace semantic authorization tests. The RSA advisory exception requires RSA
+to be absent from the resolved dependency graph; it is not a blanket advisory
+ignore. The workflow contract also verifies real-stack suite selection.
+
+Kani's mutation control changes a visibility rule and expects proof failure.
+That establishes sensitivity of that bounded proof, not coverage of arbitrary
+HTTP failures. Structured logs/metrics can aid investigation; they are not an
+immutable audit trail or a test of operational incident response.
+
+Every test owns a unique disposable Compose project. Normal exit/panic cleanup
+removes only that project's resources. Forced process termination may leave
+resources on a developer's Docker engine; inspect the project before cleanup.
+Tests and benchmarks must not target the manually shared live laboratory.

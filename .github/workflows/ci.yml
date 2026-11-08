@@ -270,7 +270,7 @@ jobs:
           cargo llvm-cov report --show-missing-lines | tee artifacts/coverage/summary.txt
       - name: Require server execution and retained child profiles
         run: |
-          for source in main server http/mod http/auth authentication cached_authorizer infrastructure use_cases organizations authorization; do
+          for source in main server http/mod http/auth authentication cached_authorizer infrastructure use_cases authorization_migration; do
             jq -e --arg suffix "/src/$source.rs" '
               [.data[].files[] | select(.filename | endswith($suffix))]
               | length > 0 and all(.[]; .summary.functions.covered > 0)

@@ -9,10 +9,11 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn openlane_model_is_an_attributed_modified_subset() {
-    let bytes = include_bytes!("../fga/model.json");
+fn isolated_openlane_model_is_an_attributed_modified_subset() {
+    let bytes = include_bytes!("../scenarios/openlane/fga/model.json");
     let model: Value = serde_json::from_slice(bytes).unwrap();
-    let provenance: Value = serde_json::from_str(include_str!("../fga/provenance.json")).unwrap();
+    let provenance: Value =
+        serde_json::from_str(include_str!("../scenarios/openlane/fga/provenance.json")).unwrap();
     assert_eq!(provenance["sha256"], sha256(bytes));
     assert_eq!(provenance["project"], "Openlane");
     assert_eq!(
@@ -49,17 +50,19 @@ fn openlane_model_is_an_attributed_modified_subset() {
             "missing upstream source {source}"
         );
     }
-    assert!(include_str!("../LICENSES/Apache-2.0-Openlane.txt").contains("Apache License"));
-    let notice = include_str!("../NOTICE");
+    assert!(
+        include_str!("../scenarios/openlane/LICENSES/Apache-2.0-Openlane.txt")
+            .contains("Apache License")
+    );
+    let notice = include_str!("../scenarios/openlane/NOTICE");
     assert!(notice.contains("theopenlane"));
     assert!(notice.contains("1c38df0a53530c8c39eb0784862b06eaa3e26f58"));
 }
 
 #[test]
-fn retired_lakekeeper_model_retains_exact_provenance_and_license() {
-    let bytes = include_bytes!("../fga/upstream/lakekeeper-model.json");
-    let provenance: Value =
-        serde_json::from_str(include_str!("../fga/upstream/lakekeeper-provenance.json")).unwrap();
+fn default_lakekeeper_model_retains_exact_upstream_provenance_and_license() {
+    let bytes = include_bytes!("../fga/model.json");
+    let provenance: Value = serde_json::from_str(include_str!("../fga/provenance.json")).unwrap();
     assert_eq!(
         sha256(bytes),
         "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"

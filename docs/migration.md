@@ -1,39 +1,39 @@
-# Migrating SQL authorization to the Openlane-derived model
+# Migrating existing SQL authorization to OpenFGA
 
-The source is relational data, not a tuple JSON import. The lab adapts the
-public Openlane organization/task authorization semantics; it does not claim
-to use Openlane's database schema or its complete compliance domain.
-[Model provenance and adaptations](openlane-model.md) identify the pinned source.
+The real source is relational data, not a tuple JSON fixture. The lab's source
+contract intentionally differs from Lakekeeper's storage schema: only the
+unchanged public authorization model is reused.
 
 ## Source contract
 
 | Source | Meaning and validation |
 | --- | --- |
-| `users` | Known application users with valid identifiers |
-| `organizations` | Organization and exactly one known owner who is a member |
-| `organization_members` | Known users with the `member` or `admin` role |
-| `organization_permissions` | Explicit `can_view_task`, `can_edit_task`, `can_delete_task` grants |
-| `tasks` | Immutable organization and assigner, validated task/lifecycle state |
-| `task_relations` | Known users with `viewer`, `editor`, `assignee` or `blocked` relationships |
+| `users`, `catalog_memberships` | Known users and project membership |
+| `catalog_projects` | Tenant boundary |
+| `catalog_warehouses`, `catalog_namespaces` | Owners and parent hierarchy |
+| `catalog_tables` | Owner, warehouse/namespace, active lifecycle |
+| `catalog_roles` | Project-scoped role and owner |
+| `legacy_project_grants` | Subject type/ID and supported project privilege |
+| `legacy_resource_grants` | Direct privileges on existing scoped objects |
+| `legacy_role_assignments` | User or nested-role membership |
 
-IDs are validated before constructing graph strings. Unknown subjects, missing
-parents, owners outside membership, unsupported relations, unresolved lifecycle
-or authorization jobs, and oversized sources fail before tuple writes. External
-users may receive explicit task grants; membership removal does not erase
-independent task permissions. Those are intentional Openlane semantics.
+IDs are validated before constructing OpenFGA strings. Owners and role subjects
+must belong to the object's project. Unknown objects/users, conflicting scopes,
+unsupported relations, cyclic role membership, unresolved lifecycle records and
+oversized sources are rejected before writing any tuple. The source supports a
+documented flat namespace hierarchy under a warehouse; arbitrary recursive
+namespace imports need an explicit extension and equivalence tests.
 
-The exact expected graph contains organization owner/member/admin edges,
-explicit organization permissions, task assigner/parent_context and direct task
-relationships. Five demo users, two organizations and four tasks are merely a
-small initial SQL dataset; the importer derives the graph from the current SQL
-source rather than hard-coding those accounts.
+The generated graph includes project relationships, ownership, role assignees,
+resource grants, parent and reverse child links. Synthetic examples include a
+nested role and the same table ID in two different warehouses.
 
 ## Provision, load and cut over
 
-Use a dedicated empty target store. Bootstrap publishes configuration atomically
-and verifies the same pinned model on reuse. It imports no `legacy.json` tuples.
-Normal server startup applies schema migrations without implicitly seeding or
-activating authorization. Load the source according to the contract above.
+Prepare the target store/model using a dedicated, empty store. Configuration is
+published atomically and later reuse verifies the same model. Normal server
+startup applies schema migrations but does not seed or activate the catalog.
+Populate the relational source according to the contract above before cutover.
 
 ```sh
 export FGA_URL=http://127.0.0.1:8080
@@ -41,70 +41,93 @@ export FGA_CONFIG=/absolute/private/path/config.json
 export FGA_MODEL=fga/model.json
 cargo run --locked --bin lab-tool -- bootstrap
 
-# The application database, distinct from OpenFGA's own database.
+# DATABASE_URL must identify the catalog database, not the OpenFGA database.
 export DATABASE_URL='postgres://USER:PASSWORD@HOST/authzlab'
 export MIGRATIONS_DIR=migrations
 cargo run --locked --bin lab-tool -- migrate-authorization
 ```
 
-The CLI applies schema migrations but does not create demo users or overwrite
-source data. The application must use the same persisted config/database.
-`FGA_URL` is HTTP for bootstrap/migration even when the runtime uses gRPC;
-`FGA_HTTP_URL` supplies the migration/model-verification endpoint at startup.
-Demo Compose explicitly enables `DEMO_SEED` and `DEMO_MIGRATE`. `AUTHZ_MODE=deny`
-skips optional OpenFGA migration/recovery and does not become ready.
+The CLI applies schema migrations, but never creates demo users or overwrites
+production source data. Configure the application with the same persisted
+config and database. `FGA_URL` is HTTP for this CLI even if the runtime adapter
+uses gRPC. Demo Compose explicitly opts into both `DEMO_SEED` and `DEMO_MIGRATE`;
+these are not default production behavior.
 
-The migration preserves these gates from the previous implementation on main:
+The migration:
 
-1. Validate the pinned model bytes and live store/model contents.
-2. Lock, snapshot and validate SQL; bind the migration journal to the source
-   fingerprint and the target store, model and model hash.
-3. Freeze supported source edits while cutover is incomplete using SQL triggers.
-4. Require an empty initial target. A resume accepts only tuples from the
-   expected graph; additional target authority is an error.
-5. Commit the remote-attempt marker before each batch of at most 100 tuples.
-   Advance the checkpoint only after a complete valid acknowledgement.
-6. Compare exact tuple sets and every supported relevant action for each known
-   user plus an outsider against an independent Rust evaluator of the SQL source.
-   Both missing access and extra access prevent activation.
-7. Recheck the graph and source fingerprint before committing `active`.
+1. Validates the pinned model bytes and the live store/model content.
+2. Acquires the migration coordinator lock, snapshots/validates SQL under locks
+   and binds the journal to source SHA-256 plus target store/model/model hash.
+3. Freezes source edits using SQL triggers while cutover is incomplete. Legacy
+   ACL tables remain immutable after binding so an active rerun cannot replay a
+   modified snapshot.
+4. Requires an empty initial target. On resume, accepts only tuples from the
+   expected graph; unexpected additions cause a closed failure.
+5. Commits an `attempted` marker before each batch of at most 100 tuples. Each
+   acknowledged batch advances the durable checkpoint and clears its marker.
+   Resuming an unacknowledged attempt records global uncertainty debt before
+   replay, without assuming that the older request was absent or has finished.
+6. Requires exact tuple-set equality. Compares every supported relevant action
+   over known users plus an outsider against a separate Rust legacy evaluator.
+   Both missing access and extra access fail the comparison.
+7. Rechecks graph equality and source fingerprint before committing `active`.
 
-The Openlane journal is separate from the retained historical catalog journal.
-It progresses through `pending → writing → verifying → active`. The API requires
-an active binding matching the running target. Readiness also requires a live
-backend/model and zero durable pending debt. An active rerun checks the binding
-without replaying the old source graph over grants changed after cutover.
+The journal progresses through `pending → writing → verifying → active`.
+The API and readiness remain 503 until activation matches the running target.
+Failure leaves the journal closed and resumable. A retry in `verifying` verifies
+again; it cannot activate using a partial earlier comparison. An already active
+rerun validates the binding but does not replay old grants over current rights.
 
-A replayed attempted batch may still have an older request buffered in a proxy.
-It therefore adds durable global pending debt before retrying. Graph verification
-may complete, but **activation alone does not reopen access**: reads, mutations
-and readiness remain closed until the explicit backend-drained recovery procedure
-in [the transition guide](openlane-migration.md). A restart or successful Check
-is not proof that the old request cannot arrive later.
+Activation does not clear uncertainty debt. Even an exactly matching graph and
+successful decision matrix cannot rule out an earlier batch waiting to reach
+OpenFGA. After an ambiguous attempt, the catalog and readiness remain 503 even
+if the journal is `active`; another successful write or process/storage restart
+does not reopen access. Recovery requires stopping writers, draining or stopping
+all older remote requests, reconciling the complete current graph and SQL
+intents, and explicitly resetting the fence with an advanced revision while
+writers remain stopped. Runtime ACL changes are not fully journaled in SQL, so
+the legacy source snapshot is not a safe recovery authority after cutover.
+There is deliberately no blanket drained-recovery reset command.
 
-Bounds are explicit: at most 10,000 source/tuple entries and 100,000 decision
-comparisons. Exceeding them refuses migration rather than sampling verification.
-The API's smaller 256-candidate enumeration budget is a separate runtime limit.
+Limits are explicit: at most 10,000 source/tuple entries and 100,000 decision
+comparisons. Exceeding a bound refuses migration rather than sampling or skipping
+verification. This is a small migration demonstrator, not a bulk-scale importer.
 
-## Existing installations and operational boundaries
-
-Historical shelter/catalog SQL migrations, records and license material remain
-intact. The new model fingerprint deliberately rejects their old configuration.
-No catalog objects are guessed to be tasks, no store is reset, and no old database
-role is renamed automatically. Existing Lakekeeper data or a bound catalog
-migration is rejected by demo setup/import; use a separate Openlane database
-and store, or supply a separately reviewed source mapping and cutover plan.
+## Operational boundaries
 
 Quiesce source updates and administrative writes to the dedicated OpenFGA store
-throughout cutover. SQL triggers protect the supported source, but PostgreSQL and
-OpenFGA administration do not share a lock. Restrict direct tuple writers so they
-cannot race after verification. Back up the application DB, OpenFGA DB and model
-config together with writers stopped; restoring only one invalidates consistency.
+throughout cutover. Application traffic is gated, and SQL triggers protect the
+supported source, but OpenFGA administration and PostgreSQL do not share a lock.
+A hostile or uncoordinated external writer could race after the final graph
+read. Store credentials/network policy must enforce the single-writer boundary.
 
-An incompatible binding, changed source or extra target tuple is a closed error,
-not permission to erase state. Preserve the journal and investigate the mismatch.
-The real [migration suite](../tests/authorization_migration.rs) runs the CLI,
-Axum, PostgreSQL and OpenFGA to cover initial closure, exact graph and positive/
-negative decisions, source validation/freezing, active reruns after revocation,
-lost-response restart recovery and target substitution. Wire tests separately
-exercise malformed acknowledgements and protocol responses.
+An incompatible store/model, changed source or extra target tuple is an error,
+not permission to delete state and start again. Preserve the journal and resolve
+the mismatch explicitly. Back up the catalog DB, OpenFGA DB and model config
+while writers are quiesced. Restoring only one database invalidates consistency.
+
+## Upgrading or keeping another model
+
+All previously shipped SQL migrations remain byte-for-byte unchanged. The
+additive `202611090001_catalog_migration_attempt.sql` adds the attempted marker
+and conservatively fences unfinished migrations created by the older protocol.
+It cannot reconstruct a lost remote attempt from an already completed historical
+migration; quiesce and drain writers before upgrading that deployment.
+
+The retained Openlane tables are historical schema, not input to the catalog
+mapper. Populated organization/task/job rows or any partial or complete
+Openlane source/target binding cause a closed rejection, including an active
+catalog rerun. Keep existing Openlane data and configuration intact and start the
+catalog in a separate Compose project/database/store. No automatic rename,
+permission translation, tuple deletion or volume reset is performed. Independent
+Openlane model experiments live under `scenarios/openlane` and create fresh stores.
+
+Tests execute the real CLI, Axum, PostgreSQL and OpenFGA. They verify initial
+closure, legacy/new permission equivalence, roles/owners/links, repeat-run
+behavior, revocations after cutover, failures before activation and resumption
+after losing a response and restarting the databases. A separate regression
+holds the original batch before forwarding to the real engine, kills the
+importer, completes a replay, then delivers the late original batch and verifies
+that the durable fence still blocks reads and ownership changes after both app
+and storage restarts. See
+[`tests/authorization_migration.rs`](../tests/authorization_migration.rs).

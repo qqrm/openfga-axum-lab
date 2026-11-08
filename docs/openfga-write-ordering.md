@@ -32,9 +32,11 @@ cannot establish that certificate either.
 
 ## Real-server ordering witness
 
-A disposable test used the official OpenFGA 1.10.3 binary with its memory
-datastore and a local proxy that delayed forwarding the first request. The
-client timed out; the proxy later delivered that already-accepted request.
+The committed `native_idempotency_does_not_order_late_writes` test in
+[`tests/fga_model.rs`](../tests/fga_model.rs) sends an explicit delivery sequence
+to the official OpenFGA 1.10.3 binary with a memory datastore. It repeats the
+sequence in fresh stores with the exact default Lakekeeper model and the
+independent Openlane subset.
 
 | Event | OpenFGA owner tuples afterward |
 | --- | --- |
@@ -44,48 +46,51 @@ client timed out; the proxy later delivered that already-accepted request.
 | The original delayed Alice → Bob request arrives | **Bob and Carol** |
 
 The late request ignores the missing Alice tuple and inserts Bob again. It
-never mentions Carol, so Carol remains an owner. Bob also regains inherited
-task access. A PostgreSQL `owner_id` check on administrative endpoints alone
-would not protect reads authorized through this stale inherited path.
+never mentions Carol, so Carol remains an owner. Under Lakekeeper, Bob regains
+`ownership` and `can_read_data` on the table. Under Openlane, Bob regains
+organization `owner` and inherited task `can_view`. All witness checks request
+`HIGHER_CONSISTENCY`; the stale write has become actual current graph state.
 
-The committed native regression
-`native_idempotency_does_not_order_late_writes` in
-[`tests/fga_model.rs`](../tests/fga_model.rs) verifies the same delivery order
-against the real server, including inherited task visibility. It is a witness
-to the upstream ordering boundary, not an assertion that the application should
-permit the sequence. It does not simulate cancellation of a PostgreSQL
-transaction. The actual delayed-proxy run is recorded separately in
-`artifacts/openlane-validation/late-write-repro-results.json`.
+This test controls request delivery order directly. It does not simulate
+cancellation of a PostgreSQL transaction or exercise the application's recovery
+fence. Pre-forward proxy and SQL integration tests must independently establish
+that the service stays closed during that situation. The witness shows why
+checking a local `owner_id`, retrying idempotently or observing the current graph
+is insufficient to dismiss an outstanding remote write.
+
+An initial SQL import has the same ordering risk: replaying its old ownership
+tuple after a later successful owner transfer can recreate the previous owner.
+Migration batches therefore need the same durable evidence of attempted writes
+as normal catalog mutations.
 
 ## Application policy
 
-Before polling an authorization mutation, `apply` durably marks its job as
-attempted through a separate coordination pool. The main transaction retains
-the organization row lock. Consequently, process cancellation or a lost
-acknowledgement cannot erase the evidence that a remote write may exist.
+Before sending a catalog authorization mutation or import batch, record durable
+evidence that the request may reach OpenFGA. This evidence must survive rollback
+or cancellation of the transaction that was waiting for the response. An
+ambiguous write closes authorization across replicas, including checks, lists,
+mutations and readiness.
 
-Recovery can replay that same durable, idempotent operation. Once acknowledged,
-the organization journal is finalized, but `authz_uncertain` and global cache
-debt remain. Every check, list, mutation and readiness probe stays closed until
-backend-drained recovery. Replaying an attempted job explicitly adds global
-debt even if the original process died before the cache's own marker committed.
-The same rule applies to a previously attempted SQL migration import batch.
-This stronger policy preserves the global fail-closed behavior introduced on
-main and prevents a later conflicting grant/revoke from crossing the fence.
+Recovery may replay the original operation to reconcile local work, but a
+successful replay cannot establish that no older request remains in a proxy,
+queue or backend. The global uncertainty fence must therefore survive ordinary
+startup and replay. A reconstructed legacy job has no evidence that it was never
+attempted and requires the same conservative treatment.
 
-A reconstructed legacy lifecycle job has no durable evidence that it was never
-attempted. It must be treated conservatively as a replay as well.
+Release requires an explicit operator boundary: stop all writers/recovery
+workers and establish that old backend and forwarding requests can no longer
+arrive, then reconcile outstanding work in isolation before reopening service.
+Elapsed time, a healthy backend and equality of the current graph to SQL do not
+prove this precondition. See the primary
+[migration and recovery contract](migration.md) for the supported procedure.
 
-Normal startup must not clear this quarantine merely because a replay succeeds,
-enough time has elapsed, or current tuples match PostgreSQL. Release requires
-the explicit operator procedure in
-[`openlane-migration.md`](openlane-migration.md), including stopping all writers
-and draining backend/proxy requests. That operational precondition cannot be
-inferred from a local database flag.
+This requirement is separate from the Openlane workload. That workload has no
+application writer, SQL importer or recovery endpoint. Its purpose here is to
+preserve an independently attributed policy example while sharing protocol
+checks with the primary catalog.
 
-Fully automatic recovery without that operational boundary would require a
-larger protocol, such as immutable versioned authorization graphs. Versioning
-only organization objects is insufficient if late writes can restore old
-`parent_context` links on stable task objects. The quarantine policy keeps this
-small laboratory's uncertainty explicit instead of claiming that ordinary
-idempotency solves request ordering.
+Fully automatic recovery without a drain boundary would require a larger
+protocol, such as immutable versioned authorization graphs. Versioning only a
+parent object is insufficient if late writes can restore old parent links on
+stable child objects. The laboratory keeps this uncertainty explicit rather
+than treating ordinary Write idempotency as an ordering guarantee.

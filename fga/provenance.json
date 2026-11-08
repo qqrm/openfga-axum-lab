@@ -1,25 +1,13 @@
 {
-  "project": "Openlane",
-  "repository": "https://github.com/theopenlane/core",
-  "commit": "1c38df0a53530c8c39eb0784862b06eaa3e26f58",
-  "path": "fga/model/fga.mod",
-  "source_paths": [
-    "fga/model/fga.mod",
-    "fga/model/base/organization.fga",
-    "fga/model/base/task.fga",
-    "fga/model/roles/roles.fga",
-    "fga/model/generated/crud.fga"
-  ],
-  "upstream_schema_version": "1.2",
-  "schema_version": "1.1",
-  "sha256": "c9186020ca60a129a82e3408f122689669302a447f34c54e70ea006d794d59f4",
+  "project": "Lakekeeper",
+  "repository": "https://github.com/lakekeeper/lakekeeper",
+  "commit": "b73d5f8083a690ca4f533559e6ef3cbc6fbc13d6",
+  "path": "authz/openfga/v4.15/schema.json",
+  "version": "4.15",
+  "sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
   "license": "Apache-2.0",
-  "source_url": "https://github.com/theopenlane/core/blob/1c38df0a53530c8c39eb0784862b06eaa3e26f58/fga/model/fga.mod",
-  "model_changes": true,
-  "adaptation": "Users-only organization/task subset. Modular schema 1.2 is flattened to schema 1.1. Parent task and organization hierarchies, service accounts, groups and specialized roles are omitted; retained relation rewrites preserve the documented Openlane semantics.",
-  "dataset": "Synthetic lab organizations, users and tasks; no upstream users or production data",
-  "api_scope": "A Rust/Axum lab for organizations, ownership, task assignment, grants, inherited rights and explicit denial; this is not the Openlane server",
-  "license_path": "LICENSES/Apache-2.0-Openlane.txt",
-  "notice_path": "NOTICE",
-  "historical_model_archive": "fga/upstream/lakekeeper-model.json"
+  "source_url": "https://github.com/lakekeeper/lakekeeper/blob/b73d5f8083a690ca4f533559e6ef3cbc6fbc13d6/authz/openfga/v4.15/schema.json",
+  "model_changes": false,
+  "dataset": "Synthetic lab catalog; no upstream users or production data",
+  "api_scope": "A Rust/Axum lab for catalog tables, roles, ownership, grants and namespace moves; this is not the Lakekeeper server"
 }

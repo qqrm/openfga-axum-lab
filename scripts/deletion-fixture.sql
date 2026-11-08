@@ -1,1 +1,1 @@
-UPDATE tasks SET status='deleting', delete_actor='bob' WHERE id='incident-response' AND status='active';
+UPDATE catalog_tables SET status='deleting',delete_actor='bob' WHERE project_id='acme' AND warehouse_id='analytics' AND id='errors';

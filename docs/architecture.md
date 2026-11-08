@@ -1,166 +1,141 @@
 # Architecture and consistency
 
-The functional core in `src/domain.rs` validates identifiers/task input and
-lifecycle transitions. `use_cases.rs` owns tasks, `organizations.rs` owns
-membership/ownership, and `authorization.rs` journals remote graph changes.
-`authentication.rs` handles sessions, `infrastructure.rs` contains seeding and
-the HTTP adapter, `infrastructure/openfga_grpc.rs` the gRPC adapter, `http/`
-maps requests/errors, and `server.rs` composes the application. SQLx is used
-directly: PostgreSQL locks and transaction boundaries are part of the contract.
+`domain.rs` contains typed IDs, scope, subjects, actions, privileges and the pure
+lifecycle. Serde implementations live at the application boundary so the domain
+also compiles directly to WASM and under bounded Kani checks. Axum maps explicit
+routes to application operations. `use_cases.rs` owns SQL scope checks, locks,
+lifecycle transitions and OpenFGA mutations; the `Authorizer` trait isolates the
+HTTP and gRPC adapters. SQLx is used directly because transaction boundaries
+are part of the authorization contract.
 
-The three-type authorization graph is a users-only subset of the real Openlane
-organization/task model. See [source provenance and semantics](openlane-model.md).
-A task has an immutable organization and assigner. Ownership belongs to the
-organization. The graph does not invent a task owner or a universal deny policy.
+## Authority and routing
 
-## Invariants and ordering
+A bearer session resolves a server-side user ID. Client JSON never supplies the
+acting principal. `ProjectId`, `WarehouseId`, `TableId`, `NamespaceId`, `RoleId`
+and `UserId` have separate types and a restricted grammar. Table objects are
+`lakekeeper_table:{warehouse}/{id}`. SQL lookups also require project and
+warehouse, so an authorized object in one tenant cannot authorize the same ID
+in another. Role subjects serialize only as `role:{id}#assignee` after membership
+and project checks.
 
-- Only lifecycle `active` tasks are returned. Task business status (`todo`,
-  `in_progress`, `done`) is separate. Unknown HTTP route/method mappings fail
-  closed; authentication, database and OpenFGA errors never become an allow.
-- Creation keys are scoped by organization and assigner. The same key/payload
-  yields one ID; conflicting content yields 409; a deleted result yields 410.
-  Tombstones keep their keys. A matching, already-authorized pending creation
-  can resume its exact durable projection; its response stays 503 if uncertainty
-  remains. A fresh request cannot bypass a fence.
-- All mutations lock the organization first and the task second, then check
-  OpenFGA permission while holding those locks. Organization role changes
-  cannot interleave between a task mutation's check and staging/commit.
-  This is deliberately coarse serialization for a small lab, not a throughput claim.
-- Organization owner changes require both the current SQL owner and an OpenFGA
-  `owner` check, an exact expected owner, and an existing member as the target.
-  The replacement is one OpenFGA Write containing old-owner deletion and
-  new-owner insertion. Generic member/grant routes cannot write `owner`.
-- The current owner's membership cannot be removed. Changing/removing another
-  membership affects only that role. Direct task grants, assigner rights and
-  independent organization task permissions remain independent, as in Openlane.
-- Task grant management is a documented local API policy requiring `can_delete`.
-  Direct editors and assignees cannot delegate access. Only the four writable
-  relations viewer/editor/assignee/blocked are accepted; parent/assigner/computed
-  permissions cannot be written through this endpoint.
+The router uses a closed mapping. Unknown routes/methods cannot skip a guard.
+Single-table reads run the actual service check before returning metadata;
+mutations recheck inside the service. All app-owned security mutations first
+lock the project row, then the table where applicable. Reads take a project
+shared lock. This intentionally serializes project security writes in a small
+lab; it is not a claim of high write throughput or coordination with arbitrary
+external OpenFGA writers.
 
-## Durable projection and recovery
+## Lifecycle and uncertainty
 
-A transaction stages the desired SQL rows, an `authorization_jobs` record and
-`organizations.authz_pending=true`, incrementing `authorization_version`.
-It commits **before** any remote write. An apply transaction locks that
-organization. A separate coordinator connection first commits the job
-`attempted` marker, then the complete idempotent OpenFGA change is sent and its
-full response awaited. The separate pool prevents exhausted application-pool
-connections from deadlocking this independent commit. Only then does it activate/delete the lifecycle row where applicable,
-remove the journal, clear the fence, increment the version and commit together.
+Only `active` rows are visible. Creation requires an actor/scope-bound
+idempotency key; a different payload conflicts, and a deleted result remains a
+410 tombstone. The original creator is preserved when ownership changes.
+Creation commits `pending`, provisions ownership/parent/child tuples, then
+activates the row. Deletion commits `deleting`, removes direct tuples and the
+namespace backlink, then marks `deleted`. IDs are not reused.
 
-If the request is cancelled, the remote response is lost, or the final SQL commit
-fails, the durable journal/fence survives. A pending organization's public task
-and organization operations return 503, even when OpenFGA may already have
-applied the change. Startup replays jobs before serving requests. Acknowledged
-replay reconciles the desired graph, but an already-attempted job sets persistent
-`authz_uncertain` quarantine and durable global cache debt. Duplicate writes/missing deletes make that
-one operation idempotent; they do not order a late original request against a
-newer change. Checks, lists, further mutations and readiness stay 503 until explicit backend-drained
-recovery. No cached allow or partially recovered read bypasses the global fence.
-Historical pending/deleting lifecycle fixtures are also converted to projections.
-Multiple orphan lifecycle rows in the same organization can stop ordinary
-startup after the first replay establishes quarantine. The explicit drained
-recovery command reconciles the remaining rows; ordinary startup does not
-relax quarantine to improve availability. Normal API transactions stage the
-journal and organization fence together and do not produce these orphans.
+Ownership transfer and namespace move commit `updating` with an exact durable
+write/delete intent before touching OpenFGA. Replacement uses one mixed Write,
+not separate grant and revoke calls. The row stays hidden until OpenFGA confirms
+success and SQL metadata is committed. Startup replays unresolved intents
+idempotently only after the target-bound migration gate is active.
 
-A creation inserts a pending task and projects assigner/parent_context tuples
-before activation. Deletion first persists a deleting row with its actor, then
-removes every direct tuple for the object, then finalizes a deleted tombstone.
-The initiating actor can resume its pending deletion. Deleted IDs are not reused.
-The first OpenFGA Read page is reread after each deletion batch; pagination is
-not assumed stable during mutation. Cleanup has a finite safety bound.
+These lifecycle records are separate from the durable authorization fence.
+Replaying an intent does **not** erase an older uncertain mutation marker.
 
-A failed generic grant/role/owner mutation is replayed by restarting against
-the same store/database, reconciling the graph but retaining the global fence.
-The explicit one-shot `app --recover-authorization-after-backend-drain` command
-is required to restore service after all application writers, OpenFGA and proxy
-queues have been drained. It asserts that operator precondition rather than
-proving it; no fixed sleep or successful replay is treated as a drain barrier.
-Do not clear flags manually or re-seed. See the [recovery procedure](openlane-migration.md).
-A new process refuses to listen if replay itself fails.
+## Denial cache and replica fence
 
-## Reads and concurrent revocation
+Moka stores only denials (capacity 10,000, TTL two seconds). Every allow requires
+a fresh Check, bounded to two seconds and requesting `HIGHER_CONSISTENCY`, plus
+a live configured store. OpenFGA can still answer a Check from existing tuples
+after its store was soft-deleted, so a successful Check alone is insufficient.
+Both adapters reject that result if the store no longer exists. GetStore never
+substitutes for a Check. Errors are not cached.
 
-Task lists scan at most 257 active SQL IDs and evaluate each returned task's
-view/edit/delete capabilities. A maximum of 256 candidates, organizations,
-members or direct task relations can be enumerated by one request; exceeding
-the bound returns 503 instead of a misleading partial result. This small lab
-does not implement a production pagination protocol. `ListObjects` remains
-an adapter/model diagnostic, not the source of complete API lists. The complete
-scan sits inside an organization revision snapshot. Even an empty list probes
-the backend and revalidates the final version/global fence.
+Each decision reads a revision from the same PostgreSQL primary. Before a
+mutation, the wrapper commits a revision increment and a pending count; after a
+confirmed success it increments the revision again and clears only that
+operation's marker. A nonzero pending count rejects all decisions and readiness
+before using a cached denial or calling OpenFGA. This is intentionally global:
+a role change can affect descendants across a graph.
 
-Ordinary reads do not hold SQL locks over network calls, allowing a revoke to
-complete while an old check response is delayed. They capture the organization's
-version/fence with task data, evaluate permissions and revalidate the version
-before returning. A changed version retries; a pending fence or repeated
-contention returns 503. Task/organization lists also validate the complete
-organization version snapshot, so they cannot combine pre/post-change access
-from different checks. A list may return 503 when any scanned organization is
-pending. A global pending remote write also closes unrelated scopes until its
-acknowledgement, and an ambiguous result retains that fence until drained recovery.
+After a Check, the wrapper reads the revision/fence again. A change discards
+the response and retries, up to a finite bound. Thus a delayed pre-revoke allow
+cannot become a new post-revoke cached permission. A request whose authorization
+already completed may still finish; revocation cannot recall previously sent
+bytes or cancel arbitrary in-flight work.
 
-A request can finish after a revoke if it already passed the final revision
-check before that revoke began. Revocation does not cancel authorized in-flight
-responses. These protocols cover application writers sharing one PostgreSQL
-primary and one immutable OpenFGA store/model; direct external graph/SQL writes,
-manual ownership tuples, old-snapshot restores and multiple independent primaries
-are outside the contract. This is a durable projection with an availability
-fence, not a distributed transaction or an exhaustive concurrency proof.
+If a write times out, returns an unexpected response or is cancelled, the
+marker persists across replica and process restarts. Subsequent successful
+writes cannot clear it. Operator recovery requires stopping all writers,
+draining/stopping remote writes, reconciling the complete authoritative graph
+and SQL intents, then explicitly resetting the fence and advancing the revision
+while writers are still stopped. Blindly setting `pending=0`, restarting, or
+re-running bootstrap is not recovery. The repository does not automate that
+unsafe shortcut.
 
-## Authorization cache
+Initial SQL migration uses the same uncertainty boundary: it commits an
+`attempted` marker before sending a batch. Resuming an unacknowledged attempt
+records durable global debt before replay. Exact graph verification can finish
+and the migration can become active, but cannot prove that an older queued
+request will never arrive. The fence therefore remains closed across restarts.
+See [the migration contract](migration.md) for upgrades and recovery limits.
 
-Each replica uses Moka (10,000 entries, two-second TTL). Keys include a generation
-from the shared PostgreSQL primary. Before a remote mutation, the cache coordinator
-commits a generation increment and pending count; acknowledgement commits a second
-increment and removes that operation's count. Denial hits and live checks re-read the generation; changed generations retry. A delayed fill
-can populate only its old generation's key. Graph-wide invalidation includes
-organization permissions inherited by tasks.
+## HTTP boundary
 
-Only denials are cached. Every successful decision requires a live OpenFGA
-Check using HIGHER_CONSISTENCY, even after an earlier allow. Before returning
-true, the wrapper also probes the configured store: OpenFGA can still answer
-Check from retained tuples after a store is soft-deleted. HTTP validates
-exact statuses, endpoint, bounded JSON and typed responses; redirects and
-malformed acknowledgements fail closed. Readiness additionally compares the
-configured immutable model with the pinned source model. A healthy server with
-a deleted store or a substituted model is not ready. Errors are never cached.
-This costs network and SQL round trips; no latency improvement is claimed.
+The HTTP adapter disables redirects and validates the final endpoint, exact
+operation status, JSON content type, response size and full-body deadline.
+Check uses a strict bool DTO and rejects duplicate/unknown decision fields.
+Write requires the protocol's acknowledgement object. Tuple deletion rereads
+the first page after each removal and rejects an empty nonterminal page.
+Provisioning and migration apply corresponding strict protocol validation.
 
-The cache pending counter is separate from the durable organization job. An
-ambiguous remote response leaves its conservative cache marker across restarts;
-a successfully replayed job clears the organization fence but not an older
-uncertain cache count. Until reconciliation the global pending count rejects all checks, lists and
-readiness, including on other replicas. Replaying an attempted journal adds
-conservative debt even if the original cache marker may never have committed. The explicit one-shot recovery
-command clears both quarantine and cache debt only after pending jobs are
-reconciled and the operator has confirmed backend/proxy drain. Organization
-revisions and cache generation are incremented in the same committed reset.
-Do not reset counters merely because an app restarted.
+Configuration binds store ID, model ID and SHA-256 to the compiled model.
+Migration activation binds those values and the source snapshot in PostgreSQL.
+Both runtime requests and readiness enforce the binding.
+Startup validates configuration and the backend before applying schema changes
+or seeding. Explicit `AUTHZ_MODE=deny` needs no OpenFGA configuration, never
+allows a protected operation, and reports unready.
 
-## Authentication and demo boundary
+## Lists and directory
 
-Passwords use Argon2id; random opaque twelve-hour sessions are stored as SHA-256
-hashes and revoked on logout. Password work runs in the blocking pool with bounded
-concurrency; per-username attempts are rate limited in PostgreSQL. Browser tokens
-stay in memory, and account changes clear protected content immediately.
+Table pages accept limits 1–100 (default 50), scan at most 500 candidates in
+batches of 100 and issue at most eight concurrent checks. A failed check fails
+the whole page, never exposing the unverified remainder. Cursors are random
+stored capabilities bound to actor/project/warehouse, expire after 15 minutes,
+and do not encode a hidden object's ID. Pages reauthorize on every use.
+The directory itself filters warehouses, namespaces and roles using their
+upstream actions; membership enumeration needs assignment-reading permission.
+Directory work is capped rather than allowing an unbounded graph traversal.
 
-Bootstrap creates an empty store and pins the model; it does not import a JSON
-tuple dump. Seeding runs only with explicit DEMO_SEED and creates initial SQL rows without
-reinstating revoked membership/grant metadata on restart. Existing credentials,
-owner transfers, role changes and lifecycle tombstones are preserved. Explicit
-DEMO_MIGRATE (or the migration CLI) freezes and validates the SQL snapshot,
-checkpoints its graph import, and checks exact tuples and independent allow/deny
-decisions before activation. Active reruns never replay old grants. Startup
-and bootstrap both verify the model fingerprint before using the new scenario.
-Applied migration files remain unchanged, and previous-domain data are retained
-without old routes or implicit data conversion. Use an isolated new store for
-this incompatible scenario change; see [migration guide](openlane-migration.md).
+## Authentication, browser and deployment
 
-The local accounts, unencrypted private service transport and Compose setup are
-an isolated engineering lab. Real deployments need an identity lifecycle,
-transport security, abuse controls, secret management, operational revocation,
-backup/restore and independent review appropriate to their environment.
+Passwords use Argon2id. Random 12-hour bearer tokens are stored as SHA-256 hashes;
+logout revokes them. Password verification uses bounded blocking workers and
+per-username database throttling. Ambiguous Authorization headers are rejected.
+The browser stores a token only in memory, renders metadata as text and discards
+responses from an older session or scope. Responses use no-store, nosniff,
+no-referrer and a restrictive self-hosted CSP.
+
+Local Compose explicitly enables synthetic seeding and migration. Production
+startup leaves an unactivated catalog closed. Internal plaintext networking,
+demo passwords, broad lab database privileges and local-only OpenFGA access are
+lab boundaries. Public deployment requires real identity lifecycle, service
+credentials, TLS, scoped accounts, operational session cleanup, abuse controls,
+backup/restore policy and an independent threat-model review.
+
+PostgreSQL and OpenFGA do not share a transaction. The invariants above provide
+conservative failure behavior under app-controlled writes, not a distributed
+transaction or a proof against hostile administrators, direct graph mutations,
+DB rollback or all possible interleavings.
+
+## Independent model scenarios
+
+`fga/model.json` and the live catalog use pinned Lakekeeper v4.15. The
+[Openlane scenario](../scenarios/openlane/README.md) has independent model bytes,
+provenance, fixtures and a fresh disposable store. Its organization/task,
+assigner and blocked semantics are exercised through the same HTTP/gRPC adapters.
+It supplies no alternate Axum application or automatic conversion of permissions.
+Historical SQL migrations remain unchanged, but a populated or bound Openlane
+source is rejected before catalog seeding, cutover or runtime activation.

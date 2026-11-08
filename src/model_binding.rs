@@ -169,19 +169,20 @@ mod tests {
         let original = model();
         let expected = policy_model(&original).unwrap();
         let mut changed = original.clone();
-        named(&mut changed, "task")["relations"]["can_view"] = json!({"this":{}});
+        named(&mut changed, "lakekeeper_table")["relations"]["can_get_metadata"] =
+            json!({"this":{}});
         assert_ne!(expected, policy_model(&changed).unwrap());
         let mut changed = original.clone();
-        named(&mut changed, "task")["metadata"]["relations"]["viewer"]["directly_related_user_types"]
+        named(&mut changed, "lakekeeper_table")["metadata"]["relations"]["ownership"]["directly_related_user_types"]
             [0]["wildcard"] = json!({});
         assert_ne!(expected, policy_model(&changed).unwrap());
         let mut changed = original.clone();
-        named(&mut changed, "task")["metadata"]["relations"]["viewer"]["directly_related_user_types"]
+        named(&mut changed, "lakekeeper_table")["metadata"]["relations"]["ownership"]["directly_related_user_types"]
             [0]["condition"] = json!("requires_mfa");
         assert_ne!(expected, policy_model(&changed).unwrap());
         let mut changed = original.clone();
-        named(&mut changed, "task")["relations"]["parent_viewer"]["tupleToUserset"]["computedUserset"]
-            ["object"] = json!("organization:other");
+        named(&mut changed, "lakekeeper_table")["relations"]["can_get_metadata"]["computedUserset"]
+            ["object"] = json!("namespace:other");
         assert_ne!(expected, policy_model(&changed).unwrap());
         let mut changed = original;
         changed["conditions"] =
