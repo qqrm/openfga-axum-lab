@@ -1,7 +1,8 @@
 use openfga_axum_lab::application::Authorizer;
 use std::env;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
 #[cfg(feature = "grpc")]
 use openfga_axum_lab::infrastructure::OpenFgaGrpc;
@@ -11,11 +12,12 @@ use openfga_axum_lab::infrastructure::OpenFgaHttp;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = env::var("BACKEND").unwrap_or_else(|_| "grpc".into());
-    let mode = env::var("MODE").unwrap_or_else(|_| "check".into());
     let url = env::var("FGA_URL").expect("FGA_URL");
     let store = env::var("FGA_STORE").expect("FGA_STORE");
     let model = env::var("FGA_MODEL").expect("FGA_MODEL");
-    let iters: usize = env::var("ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+    let iters: usize = env::var("ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(2000);
+    let conc: usize = env::var("CONC").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let delay_ms: u64 = env::var("DELAY_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
 
     let auth: Arc<dyn Authorizer> = match backend.as_str() {
         #[cfg(feature = "grpc")]
@@ -26,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "http")]
         "http" => Arc::new(OpenFgaHttp {
-            client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build()?,
+            client: reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?,
             url,
             store,
             model,
@@ -34,30 +36,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("unsupported backend".into()),
     };
 
-    // Warm up.
-    for _ in 0..3 {
-        if mode == "list" {
-            let _ = auth.list_objects("alice", "can_view", "pet").await;
-        } else {
-            let _ = auth.check("alice", "can_view", "pet:cat").await;
-        }
+    for _ in 0..50 {
+        let _ = auth.check("alice", "can_view", "pet:cat").await;
     }
 
+    let per_task = iters / conc;
     let started = Instant::now();
-    for _ in 0..iters {
-        if mode == "list" {
-            let res = auth.list_objects("alice", "can_view", "pet").await.unwrap_or_default();
-            if res.is_empty() {
-                eprintln!("empty list");
+    let mut handles = Vec::new();
+    for _ in 0..conc {
+        let auth = auth.clone();
+        handles.push(tokio::spawn(async move {
+            for _ in 0..per_task {
+                if delay_ms > 0 {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                }
+                let _ = auth.check("alice", "can_view", "pet:cat").await;
             }
-        } else {
-            let _ = auth.check("alice", "can_view", "pet:cat").await;
-        }
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
     }
     let total = started.elapsed().as_secs_f64();
     println!(
-        "backend={} mode={} iters={} total_ms={:.1} avg_ms={:.3} rps={:.1}",
-        backend, mode, iters, total * 1000.0, total * 1000.0 / iters as f64, iters as f64 / total
+        "backend={} conc={} delay_ms={} iters={} total_ms={:.1} rps={:.1}",
+        backend, conc, delay_ms, iters, total * 1000.0, iters as f64 / total
     );
     Ok(())
 }
