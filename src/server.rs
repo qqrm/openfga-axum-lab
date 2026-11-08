@@ -168,6 +168,26 @@ pub async fn run() -> RunResult {
     let listener = tokio::net::TcpListener::bind(address).await?;
     let dummy_password_hash: Arc<str> =
         infrastructure::hash_password(&uuid::Uuid::new_v4().to_string())?.into();
+    // Register before announcing readiness: an immediate SIGTERM must still
+    // drain the server and return from main, including LLVM's profile flush.
+    #[cfg(unix)]
+    let shutdown = {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut interrupt = signal(SignalKind::interrupt())?;
+        let mut terminate = signal(SignalKind::terminate())?;
+        async move {
+            tokio::select! {
+                _ = interrupt.recv() => {},
+                _ = terminate.recv() => {},
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let shutdown = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
     println!("Listening on {}", listener.local_addr()?);
     axum::serve(
         listener,
@@ -183,6 +203,7 @@ pub async fn run() -> RunResult {
         .merge(operations::router(readiness))
         .layer(axum::middleware::from_fn(http::security_headers)),
     )
+    .with_graceful_shutdown(shutdown)
     .await?;
     Ok(())
 }

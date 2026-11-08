@@ -170,6 +170,7 @@ async fn organization_roles_replace_without_creating_implicit_task_access() -> T
     .await?;
     expect(api.call(M::GET, &format!("/tasks/{created}"), &bob), S::OK).await?;
     stack.assert_single_owner(&client, "acme", "alice").await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -271,6 +272,7 @@ async fn direct_grants_assignees_and_inherited_permissions_remain_distinct() -> 
     expect(api.call(M::DELETE, &path, &dave), S::FORBIDDEN).await?;
     expect(api.call(M::DELETE, &path, &bob), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, &id).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -329,6 +331,7 @@ async fn blocked_preserves_the_upstream_owner_and_assigner_precedence() -> TestR
     }
     expect(api.call(M::DELETE, &path, &bob), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, &id).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -414,6 +417,8 @@ async fn ownership_transfer_revokes_warm_inherited_access_on_both_replicas() -> 
     stack.assert_single_owner(&client, "acme", "carol").await?;
     let organizations = expect(first_api.call(M::GET, "/organizations", &carol), S::OK).await?;
     assert_eq!(organizations[0]["owner_id"], "carol");
+    first.stop().await?;
+    second.stop().await?;
     Ok(())
 }
 
@@ -486,6 +491,7 @@ async fn competing_owner_transfers_cannot_leave_two_owners() -> TestResult {
         S::FORBIDDEN,
     )
     .await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -625,6 +631,7 @@ async fn uncertain_owner_transfer_fences_the_organization_and_replays_after_rest
     )
     .await?;
     stack.assert_single_owner(&client, "acme", "carol").await?;
+    drained.stop().await?;
     Ok(())
 }
 
@@ -714,6 +721,7 @@ async fn buffered_old_write_cannot_cross_quarantine_into_a_new_owner_transfer() 
         S::FORBIDDEN,
     )
     .await?;
+    resumed.stop().await?;
     Ok(())
 }
 
@@ -830,5 +838,6 @@ async fn uncertain_creation_replays_without_duplicate_tasks_or_authority() -> Te
         S::GONE,
     )
     .await?;
+    app.stop().await?;
     Ok(())
 }

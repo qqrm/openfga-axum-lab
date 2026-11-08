@@ -205,6 +205,8 @@ async fn fresh_allows_and_denial_invalidation_work_across_replicas() -> TestResu
     fault?;
     check?;
     scenario.check(&second, StatusCode::OK).await?;
+    first.stop().await?;
+    second.stop().await?;
     Ok(())
 }
 
@@ -318,6 +320,8 @@ async fn uncertain_change(add: bool) -> TestResult {
     println!(
         "Ambiguous grant/revoke stayed read-fenced across replay; explicit drained recovery restored live Checks and mutations"
     );
+    first.stop().await?;
+    second.stop().await?;
     Ok(())
 }
 
@@ -359,5 +363,7 @@ async fn redirected_revoke_is_never_reported_as_committed() -> TestResult {
     for replica in [&first, &second] {
         reads_are_fenced(&scenario, replica).await?;
     }
+    first.stop().await?;
+    second.stop().await?;
     Ok(())
 }

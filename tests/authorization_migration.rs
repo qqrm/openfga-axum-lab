@@ -517,7 +517,7 @@ async fn lost_runtime_relationship_acknowledgement(operation: &str) -> TestResul
     let request = api.call(M::PUT, path, &alice).json(&payload);
     let request = tokio::spawn(async move { request.send().await });
     pause.captured().await?;
-    app.stop().await?;
+    app.crash().await?;
     assert!(
         timeout(Duration::from_secs(10), request).await??.is_err(),
         "killed process cannot acknowledge a mutation"

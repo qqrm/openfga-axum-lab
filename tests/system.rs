@@ -238,6 +238,7 @@ async fn authorization_sessions_and_metrics() -> TestResult {
     stack.sql("INSERT INTO tasks(id,organization_id,title,description,task_status,assigner_id,status) SELECT 'bound-' || n,'acme','List bound','','todo','alice','active' FROM generate_series(1,257) AS n").await?;
     expect(api.call(M::GET, "/tasks", &alice), S::SERVICE_UNAVAILABLE).await?;
     expect(api.call(M::GET, "/tasks/access-review", &alice), S::OK).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -376,6 +377,7 @@ async fn concurrent_idempotency_and_deletion_leave_no_tuples() -> TestResult {
         expect(api.call(M::PUT, &relation, &bob), S::NOT_FOUND).await?;
     }
     stack.assert_no_tuples(&client, id).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -438,6 +440,7 @@ async fn mutations_authorize_while_holding_task_lifecycle_lock() -> TestResult {
         .await?;
         stack.assert_no_tuples(&client, id).await?;
     }
+    app.stop().await?;
     Ok(())
 }
 
@@ -477,6 +480,7 @@ async fn data_relations_and_sessions_survive_full_restart() -> TestResult {
         S::FORBIDDEN,
     )
     .await?;
+    restarted.stop().await?;
     Ok(())
 }
 
@@ -509,6 +513,7 @@ async fn pending_creation_recovers_after_restart() -> TestResult {
     expect(api.request(M::GET, "/readyz"), S::OK).await?;
     expect(api.call(M::DELETE, path, &carol), S::NO_CONTENT).await?;
     stack.assert_no_tuples(&client, "recovery-fixture").await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -537,6 +542,7 @@ async fn pending_deletion_recovers_and_removes_all_tuples() -> TestResult {
     let app = stack.app(&stack.fga_url).await?;
     let api = Api::new(client.clone(), &app);
     expect(api.request(M::GET, "/readyz"), S::OK).await?;
+    app.stop().await?;
     Ok(())
 }
 
@@ -605,6 +611,7 @@ async fn openfga_outage_fails_closed_even_with_warm_allows() -> TestResult {
         !stack.authorization_pending("acme").await?,
         "an authorization failure must not enqueue a privileged mutation"
     );
+    app.stop().await?;
     Ok(())
 }
 
@@ -667,5 +674,6 @@ async fn bootstrap_reuses_state_and_refuses_implicit_resets() -> TestResult {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("refusing silent reset"));
     assert_eq!(std::fs::read(stack.config_path())?, original);
+    app.stop().await?;
     Ok(())
 }

@@ -272,6 +272,14 @@ impl Stack {
     }
 
     pub async fn spawn_app(mut command: Command) -> TestResult<App> {
+        // Keep profiles in cargo-llvm-cov's directory, but give this child a
+        // distinct prefix so a test-client profile cannot satisfy its check.
+        let coverage_profile = std::env::var_os("LLVM_PROFILE_FILE").map(|pattern| {
+            let prefix = format!("axum-{}", Uuid::new_v4());
+            let path = PathBuf::from(pattern).with_file_name(format!("{prefix}-%p-%m.profraw"));
+            command.env("LLVM_PROFILE_FILE", &path);
+            (path, prefix)
+        });
         let mut child = command.spawn()?;
         let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let address = timeout(Duration::from_secs(60), async {
@@ -297,6 +305,7 @@ impl Stack {
         Ok(App {
             url: format!("http://{address}"),
             child,
+            coverage_profile,
         })
     }
 
@@ -499,11 +508,92 @@ impl Stack {
 pub struct App {
     pub url: String,
     child: Child,
+    coverage_profile: Option<(PathBuf, String)>,
 }
 
 impl App {
+    /// Inject an abrupt process failure. This deliberately cannot flush a
+    /// coverage profile and is only used by the release-mode crash scenarios.
+    pub async fn crash(mut self) -> TestResult {
+        if let Some(status) = self.child.try_wait()? {
+            return Err(format!("Axum exited before the injected crash: {status}").into());
+        }
+        self.child.start_kill()?;
+        let status = timeout(Duration::from_secs(5), self.child.wait()).await??;
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(status.signal(), Some(9), "expected the injected SIGKILL");
+        }
+        assert!(!status.success(), "crash injection exited successfully");
+        Ok(())
+    }
+
     pub async fn stop(mut self) -> TestResult {
-        self.child.kill().await?;
+        let pid = self
+            .child
+            .id()
+            .ok_or("Axum child has already been reaped")?;
+        let stopped = timeout(Duration::from_secs(15), async {
+            if let Some(status) = self.child.try_wait()? {
+                return Err(format!("Axum child {pid} exited before shutdown: {status}").into());
+            }
+            // These real-stack tests run on Linux, where SIGTERM lets Axum
+            // drain requests and LLVM flush profiles on normal process exit.
+            let signal = Command::new("kill")
+                .args(["-TERM", "--", &pid.to_string()])
+                .kill_on_drop(true)
+                .status()
+                .await?;
+            if !signal.success() {
+                return Err(format!("could not signal Axum child {pid}: {signal}").into());
+            }
+            let status = self.child.wait().await?;
+            if !status.success() {
+                return Err(format!("Axum child {pid} did not exit cleanly: {status}").into());
+            }
+            Ok::<(), Box<dyn Error + Send + Sync>>(())
+        })
+        .await;
+        let stopped = match stopped {
+            Ok(result) => result,
+            Err(error) => Err(format!("Axum child {pid} shutdown timed out: {error}").into()),
+        };
+        if let Err(error) = stopped {
+            // Force-kill/reap is failure cleanup, never a successful teardown.
+            let _ = timeout(Duration::from_secs(5), self.child.kill()).await;
+            return Err(error);
+        }
+        if let Some((pattern, prefix)) = &self.coverage_profile {
+            let directory = pattern
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."));
+            let prefix = format!("{prefix}-{pid}-");
+            let mut found = false;
+            for entry in std::fs::read_dir(directory)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with(&prefix) && name.ends_with(".profraw") {
+                    let metadata = entry.metadata()?;
+                    if !metadata.is_file() || metadata.len() == 0 {
+                        return Err(
+                            format!("empty Axum profile: {}", entry.path().display()).into()
+                        );
+                    }
+                    println!(
+                        "Axum child {pid} exited successfully; profile {} ({} bytes)",
+                        entry.path().display(),
+                        metadata.len()
+                    );
+                    found = true;
+                }
+            }
+            if !found {
+                return Err(format!("Axum child {pid} did not save its LLVM profile").into());
+            }
+        }
         Ok(())
     }
 }

@@ -50,7 +50,9 @@ fn manual_ci_keeps_all_real_stack_suites_enabled() {
             "missing CI suite: {suite}"
         );
     }
-    assert!(ci.contains("needs: [rust, integration, shell, formal, browser-demo, browser-e2e]"));
+    assert!(ci.contains(
+        "needs: [rust, integration, shell, formal, browser-demo, browser-e2e, coverage]"
+    ));
     assert!(ci.contains("BROWSER_E2E_RESULT: ${{ needs.browser-e2e.result }}"));
     assert!(ci.contains("test \"$BROWSER_E2E_RESULT\" = success"));
     assert_eq!(ci.matches("\n  browser-e2e:\n").count(), 1);

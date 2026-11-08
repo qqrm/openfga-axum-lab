@@ -89,7 +89,7 @@ existing JS interface; the size-oriented settings are expressed in Cargo's
 `wasm` profile rather than a hand-written rustc invocation.
 
 CI uploads browser JUnit and HTML as `browser-cargo-results`. It retains the
-normal `rust`, `integration`, `shell`, `formal`, `browser-demo`, `browser-e2e` dependency list
+normal `rust`, `integration`, `shell`, `formal`, `browser-demo`, `browser-e2e`, `coverage` dependency list
 of `ci-gate` and the `workflow_dispatch` entry point. A/A remains separately
 manual. Neither Pages publication nor release publication is run by this PR.
 
@@ -97,7 +97,8 @@ manual. Neither Pages publication nor release publication is run by this PR.
 
 No authorization decisions, wire/storage formats, cache consistency protocol,
 cryptography, SQL behavior or runtime abstraction have been changed here.
-Coverage of native Axum child processes, property/mutation tests, applicable
-sanitizers, further semantic newtypes, dispatch/allocation changes and custom harness
-simplification still require separate implementation and execution evidence.
+[Native Axum child-process coverage](native-coverage.md) is implemented in a
+separate required job. Property/mutation tests, applicable sanitizers, further
+semantic newtypes, dispatch/allocation changes and custom harness simplification
+still require separate implementation and execution evidence.
 No performance improvement is asserted by adding Cargo or documentation checks.
