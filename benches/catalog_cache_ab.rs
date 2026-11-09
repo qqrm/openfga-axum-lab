@@ -9,7 +9,8 @@ use std::{path::PathBuf, time::Duration};
 use support::{Case, Fixture, Mode, write_json};
 
 fn configuration() -> Criterion {
-    let pair = PathBuf::from(std::env::var("AUTHZ_BENCH_PAIR_DIR").expect("set isolated pair directory"));
+    let pair =
+        PathBuf::from(std::env::var("AUTHZ_BENCH_PAIR_DIR").expect("set isolated pair directory"));
     Criterion::default()
         .sample_size(40)
         .warm_up_time(Duration::from_secs(1))
@@ -26,31 +27,49 @@ fn catalog(c: &mut Criterion) {
     let label = std::env::var("AUTHZ_BENCH_LABEL").expect("set first or second");
     assert!(label == "first" || label == "second");
     let pair = PathBuf::from(std::env::var("AUTHZ_BENCH_PAIR_DIR").expect("pair directory"));
-    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2)
-        .enable_all().build().expect("Tokio benchmark runtime");
-    let fixture = runtime.block_on(Fixture::connect(mode)).expect("isolated Lakekeeper fixture");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("Tokio benchmark runtime");
+    let fixture = runtime
+        .block_on(Fixture::connect(mode))
+        .expect("isolated Lakekeeper fixture");
     let mut group = c.benchmark_group("lakekeeper_catalog_http");
     group.throughput(Throughput::Elements(1));
     for case in [Case::AllowFresh, Case::DenyHot] {
-        let before = runtime.block_on(fixture.snapshot()).expect("before counters");
+        let before = runtime
+            .block_on(fixture.snapshot())
+            .expect("before counters");
         group.bench_function(case.name(), |b| {
             b.to_async(&runtime).iter(|| async {
-                fixture.read(case).await.expect("incorrect authorization invalidates measurement");
+                fixture
+                    .read(case)
+                    .await
+                    .expect("incorrect authorization invalidates measurement");
             });
         });
-        let after = runtime.block_on(fixture.snapshot()).expect("after counters");
+        let after = runtime
+            .block_on(fixture.snapshot())
+            .expect("after counters");
         let delta = after.subtract(&before).expect("monotonic counters");
-        let count = delta.validate(mode, case).expect("cache-mode/fresh-Check gate");
-        write_json(&pair.join(format!("{label}-{}-counters.json", case.name())), &json!({
-            "mode":mode.name(), "case":case.name(), "decisions":count,
-            "window":"Criterion warmup and measurement, not only timed samples",
-            "before":before, "after":after, "delta":delta,
-            "client":"single in-flight reused HTTP/1.1 pool; response body validated each time",
-            "criterion_version":"0.5.x as locked in Cargo.lock",
-            "sample_size":40, "warmup_seconds":1, "measurement_seconds":3,
-            "nresamples":10_000,"confidence":0.95,
-            "arguments":std::env::args().skip(1).collect::<Vec<_>>()
-        })).expect("persist counter evidence");
+        let count = delta
+            .validate(mode, case)
+            .expect("cache-mode/fresh-Check gate");
+        write_json(
+            &pair.join(format!("{label}-{}-counters.json", case.name())),
+            &json!({
+                "mode":mode.name(), "case":case.name(), "decisions":count,
+                "window":"Criterion warmup and measurement, not only timed samples",
+                "before":before, "after":after, "delta":delta,
+                "client":"single in-flight reused HTTP/1.1 pool; response body validated each time",
+                "criterion_version":"0.5.x as locked in Cargo.lock",
+                "sample_size":40, "warmup_seconds":1, "measurement_seconds":3,
+                "nresamples":10_000,"confidence":0.95,
+                "arguments":std::env::args().skip(1).collect::<Vec<_>>()
+            }),
+        )
+        .expect("persist counter evidence");
     }
     group.finish();
 }
