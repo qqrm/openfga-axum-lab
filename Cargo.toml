@@ -48,3 +48,7 @@ tokio = { version = "1", features = ["io-util", "process", "time"] }
 [[bench]]
 name = "authz_cache"
 harness = false
+
+[[bench]]
+name = "catalog_cache_ab"
+harness = false

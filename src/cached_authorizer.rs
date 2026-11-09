@@ -24,6 +24,7 @@ pub(crate) struct CachedAuthorizer {
     inner: Arc<dyn Authorizer>,
     coordinator: PgPool,
     denials: Cache<Key, ()>,
+    denial_cache_enabled: bool,
     events: IntCounterVec,
 }
 
@@ -32,6 +33,7 @@ impl CachedAuthorizer {
         inner: Arc<dyn Authorizer>,
         coordinator: PgPool,
         events: IntCounterVec,
+        denial_cache_enabled: bool,
     ) -> Self {
         Self {
             inner,
@@ -40,6 +42,7 @@ impl CachedAuthorizer {
                 .max_capacity(10_000)
                 .time_to_live(Duration::from_secs(2))
                 .build(),
+            denial_cache_enabled,
             events,
         }
     }
@@ -142,7 +145,7 @@ impl Authorizer for CachedAuthorizer {
                 relation: relation.into(),
                 object: object.into(),
             };
-            let hit = self.denials.get(&key).await.is_some();
+            let hit = self.denial_cache_enabled && self.denials.get(&key).await.is_some();
             // A healthy probe is not evidence that Check succeeded. Never cache
             // permission to access an object: every allow needs a live Check.
             let allowed = if hit {
@@ -163,7 +166,9 @@ impl Authorizer for CachedAuthorizer {
                 self.events.with_label_values(&["retry"]).inc();
                 continue;
             }
-            let event = if hit {
+            let event = if !self.denial_cache_enabled {
+                "uncached"
+            } else if hit {
                 "hit_deny"
             } else {
                 if !allowed {
