@@ -105,6 +105,8 @@ jobs:
             cargo-machete@0.9.2
           fallback: none
       - run: cargo nextest run --locked --all-features --profile ci
+      - name: Test Lakekeeper Criterion experiment safety helpers (no Docker or performance run)
+        run: cargo test --locked --example catalog_cache_experiment
       - name: Verify the Openlane model and both adapters against pinned OpenFGA
         run: bash scripts/test-openlane-model.sh
       - run: bash scripts/audit-dependencies.sh
