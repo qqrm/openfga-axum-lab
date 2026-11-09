@@ -103,14 +103,20 @@ fn assert_identical_server_binaries() -> BenchResult<Value> {
 fn read_json(path: &Path) -> BenchResult<Value> {
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
 }
-fn bench_arm(bin: &Path, pair: &Path, label: &str, mode: Mode, fixture: &Fixture) -> BenchResult {
-    let option = if label == "first" {
-        "--save-baseline"
-    } else {
-        "--baseline"
+fn benchmark_cli_args(label: &str) -> BenchResult<[&'static str; 4]> {
+    let baseline = match label {
+        "first" => "--save-baseline",
+        "second" => "--baseline",
+        _ => return Err("benchmark arm label must be first or second".into()),
     };
+    Ok(["--bench", baseline, "reference", "--noplot"])
+}
+fn bench_arm(bin: &Path, pair: &Path, label: &str, mode: Mode, fixture: &Fixture) -> BenchResult {
+    // Criterion defaults to smoke-test mode when invoked without Cargo.
+    // An explicit --bench is mandatory for measured samples and estimates.
+    let args = benchmark_cli_args(label)?;
     let output = Command::new(bin)
-        .args([option, "reference", "--noplot"])
+        .args(args)
         .env("AUTHZ_BENCH_PAIR_DIR", pair)
         .env("AUTHZ_BENCH_LABEL", label)
         .env("AUTHZ_BENCH_MODE", mode.name())
@@ -126,6 +132,15 @@ fn bench_arm(bin: &Path, pair: &Path, label: &str, mode: Mode, fixture: &Fixture
             mode.name()
         )
         .into());
+    }
+    // Smoke tests return success without any measured data. Reject them.
+    let estimate = if label == "first" { "reference" } else { "new" };
+    for case in CASES {
+        let measured = pair.join("criterion/lakekeeper_catalog_http")
+            .join(case.name()).join(estimate).join("estimates.json");
+        if !measured.is_file() {
+            return Err(format!("Criterion emitted no estimates at {}; benchmark mode required", measured.display()).into());
+        }
     }
     Ok(())
 }
@@ -457,6 +472,18 @@ mod tests {
         let mut sorted = one;
         sorted.sort_unstable();
         assert_eq!(sorted, vec![0, 1, 2, 3]);
+    }
+    #[test]
+    fn direct_criterion_invocation_requires_measured_mode() {
+        assert_eq!(
+            benchmark_cli_args("first").unwrap(),
+            ["--bench", "--save-baseline", "reference", "--noplot"]
+        );
+        assert_eq!(
+            benchmark_cli_args("second").unwrap(),
+            ["--bench", "--baseline", "reference", "--noplot"]
+        );
+        assert!(benchmark_cli_args("unexpected").is_err());
     }
     #[test]
     fn ratio_inversion_preserves_interval_order() {

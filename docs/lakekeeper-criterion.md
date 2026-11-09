@@ -15,7 +15,7 @@ Both services run the **same application image and binary**, share the same
 isolated PostgreSQL database, OpenFGA instance, pinned Lakekeeper model,
 fixtures and code revision. Before any measurement, the Rust driver compares
 container image IDs and executable SHA-256 hashes. The benchmark client is
-built once and executed directly for every arm; its SHA-256 is recorded. A
+built once and executed directly for every arm; its SHA-256 is recorded. Direct execution passes\nCriterion's `--bench` explicitly; omitting it only performs a smoke test and\ncreates no estimates. The driver fails closed when measured files are absent. A
 read-only SQL witness fingerprints the catalog rows and checks that the
 shared authorization generation is unchanged and `pending=0` **before,
 between and after** each comparison pair, and checks the witness against the
