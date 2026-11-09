@@ -97,7 +97,7 @@ jobs:
           flags=()
           if [[ "$RELEASE_TAG" == *-rc.* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" "dist/delivery-$RELEASE_TAG.tar.gz" dist/manifest.json dist/SHA256SUMS --draft --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file dist/NOTES.md "${flags[@]}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: release-candidate-evidence
