@@ -16,7 +16,8 @@ use support::{BenchResult, Case, Fixture, Mode, TABLE, write_json};
 const CASES: [Case; 2] = [Case::AllowFresh, Case::DenyHot];
 
 fn sha256(path: &Path) -> BenchResult<String> {
-    Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
+    let digest = Sha256::digest(std::fs::read(path)?);
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 fn permutation(length: usize, seed: u64, domain: &str) -> Vec<usize> {
     let mut order: Vec<usize> = (0..length).collect();
