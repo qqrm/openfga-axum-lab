@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# SQLx's lockfile includes optional MySQL/rsa even when no enabled target uses
-# it. Refuse this narrow advisory exception if rsa enters any resolved target.
-if cargo tree --locked --target all --prefix none | grep '^rsa v' >/dev/null; then
-  echo "rsa is now in the resolved dependency graph; remove exception and review" >&2
-  exit 1
-fi
-cargo audit --ignore RUSTSEC-2023-0071
+
+# SQLx's lockfile includes optional MySQL/rsa and SQLite/libsqlite3-sys even
+# though the application enables only PostgreSQL. Cargo-audit scans the entire
+# lockfile; never allow an exception when a supported target actually uses the
+# affected package. Keep the check across all crate features and target triples.
+resolved="$(cargo tree --locked --all-features --target all --prefix none)"
+for crate in rsa libsqlite3-sys; do
+  if grep -q "^${crate} v" <<< "$resolved"; then
+    echo "${crate} entered the resolved dependency graph; upgrade and remove the advisory exception" >&2
+    exit 1
+  fi
+done
+cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
