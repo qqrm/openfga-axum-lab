@@ -136,10 +136,17 @@ fn bench_arm(bin: &Path, pair: &Path, label: &str, mode: Mode, fixture: &Fixture
     // Smoke tests return success without any measured data. Reject them.
     let estimate = if label == "first" { "reference" } else { "new" };
     for case in CASES {
-        let measured = pair.join("criterion/lakekeeper_catalog_http")
-            .join(case.name()).join(estimate).join("estimates.json");
+        let measured = pair
+            .join("criterion/lakekeeper_catalog_http")
+            .join(case.name())
+            .join(estimate)
+            .join("estimates.json");
         if !measured.is_file() {
-            return Err(format!("Criterion emitted no estimates at {}; benchmark mode required", measured.display()).into());
+            return Err(format!(
+                "Criterion emitted no estimates at {}; benchmark mode required",
+                measured.display()
+            )
+            .into());
         }
     }
     Ok(())
