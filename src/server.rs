@@ -24,6 +24,12 @@ pub async fn run() -> RunResult {
         Ok("deny") => false,
         _ => return Err("AUTHZ_MODE must be openfga or deny".into()),
     };
+    // This never disables the durable SQL fence or fresh Check for an allow.
+    let denial_cache_enabled = match std::env::var("AUTHZ_DENIAL_CACHE_ENABLED").as_deref() {
+        Ok("true") | Err(std::env::VarError::NotPresent) => true,
+        Ok("false") => false,
+        _ => return Err("AUTHZ_DENIAL_CACHE_ENABLED must be true or false".into()),
+    };
     let config_path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let model_path = std::env::var("FGA_MODEL").unwrap_or_else(|_| "fga/model.json".into());
     let migration_url = std::env::var("FGA_HTTP_URL").unwrap_or_else(|_| {
@@ -126,6 +132,7 @@ pub async fn run() -> RunResult {
             auth,
             authz_coordinator.clone(),
             metrics.authz_cache.clone(),
+            denial_cache_enabled,
         ));
         let active = authorization_migration::ensure_active(
             &db,
