@@ -63,7 +63,7 @@ fn catalog(c: &mut Criterion) {
                 "window":"Criterion warmup and measurement, not only timed samples",
                 "before":before, "after":after, "delta":delta,
                 "client":"single in-flight reused HTTP/1.1 pool; response body validated each time",
-                "criterion_version":"0.5.x as locked in Cargo.lock",
+                "criterion_version":"0.8.2 as locked in Cargo.lock",
                 "sample_size":40, "warmup_seconds":1, "measurement_seconds":3,
                 "nresamples":10_000,"confidence":0.95,
                 "arguments":std::env::args().skip(1).collect::<Vec<_>>()

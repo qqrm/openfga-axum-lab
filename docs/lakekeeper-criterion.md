@@ -59,7 +59,7 @@ runs before and after measurement and records statuses.
 
 ## Design and statistical interpretation
 
-Criterion 0.5.x (already locked in main; no dependency bump) owns adaptive
+Criterion 0.8.2 (locked in main by PR #30; no dependency bump in this PR) owns adaptive
 iteration counts, 40 samples, one-second warm-up, three-second measurement,
 10,000 bootstrap resamples, a 95% within-pair interval and estimates on the
 mean-per-iteration ratio. It does **not** produce HTTP request p50 from its
