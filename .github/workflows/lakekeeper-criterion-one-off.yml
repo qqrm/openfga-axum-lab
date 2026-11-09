@@ -1,3 +1,4 @@
+# rerun: direct Criterion needs --bench for measured samples
 name: One-off Lakekeeper Criterion A/A A/B
 on:
   push:
