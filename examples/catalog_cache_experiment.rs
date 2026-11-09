@@ -242,13 +242,11 @@ async fn revocation_and_cold_misses(fixtures: &[Fixture; 2], rounds: usize) -> B
         }
         .await;
         // Attempt clean-up only if the revoke was not acknowledged; surface uncertainty.
-        if grant_live {
-            if let Err(cleanup) = on.change_grant(false).await {
-                return Err(format!(
-                    "experimental grant cleanup failed: {cleanup}; investigate the durable fence"
-                )
-                .into());
-            }
+        if grant_live && let Err(cleanup) = on.change_grant(false).await {
+            return Err(format!(
+                "experimental grant cleanup failed: {cleanup}; investigate the durable fence"
+            )
+            .into());
         }
         measurements.push(attempt?);
     }
