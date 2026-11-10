@@ -46,7 +46,10 @@ impl Mode {
             Self::On => "CACHED_URL",
             Self::Off => "UNCACHED_URL",
         };
-        let default = format!("http://127.0.0.1:{}", self.default_port(Self::swapped_ports()?));
+        let default = format!(
+            "http://127.0.0.1:{}",
+            self.default_port(Self::swapped_ports()?)
+        );
         let base = std::env::var(key).unwrap_or(default);
         let parsed = Url::parse(&base)?;
         if parsed.scheme() != "http"

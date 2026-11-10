@@ -190,7 +190,6 @@ fn comparison(pair: &Path, case: Case, first: Mode, second: Mode) -> BenchResult
     }))
 }
 
-
 fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
     assert!(!sorted.is_empty() && (1..=100).contains(&percentile));
     sorted[(sorted.len() * percentile).div_ceil(100) - 1]
@@ -212,7 +211,7 @@ async fn concurrent_profile(
     let started = Instant::now();
     let mut tasks = tokio::task::JoinSet::new();
     for worker in 0..workers {
-        let fixture = fixture.clone(); // Shared reqwest connection pool, separate workers.
+        let fixture = (*fixture).clone(); // Shared reqwest connection pool, separate workers.
         let count = requests / workers + usize::from(worker < requests % workers);
         tasks.spawn(async move {
             let mut latencies = Vec::with_capacity(count);
@@ -290,7 +289,8 @@ async fn capture_concurrency_profiles(
                         return Err("authorization state changed during concurrency profile".into());
                     }
                     let fixture = &fixtures[usize::from(mode == Mode::On)];
-                    let mut sample = concurrent_profile(fixture, mode, case, workers, requests).await?;
+                    let mut sample =
+                        concurrent_profile(fixture, mode, case, workers, requests).await?;
                     sample["block"] = json!(block);
                     report["concurrency_profiles"]
                         .as_array_mut()
