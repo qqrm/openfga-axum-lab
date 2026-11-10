@@ -40,6 +40,8 @@ fi
 postgres_started=false
 fga_pid=
 app_pid=
+# cleanup is registered as an EXIT/INT/TERM handler, not called directly.
+# shellcheck disable=SC2329
 cleanup() {
     status=$?
     trap - EXIT INT TERM
