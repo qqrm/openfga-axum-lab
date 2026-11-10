@@ -1,11 +1,33 @@
 name: Browser preview
+
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/pages.yml
+      - browser-demo/**
+      - scripts/build-browser-demo.sh
+      - scripts/check-browser-demo.mjs
+      - src/domain.rs
+      - fga/model.json
+      - fga/provenance.json
+      - fga/upstream/**
+      - NOTICE
   workflow_dispatch:
+
 permissions:
   contents: read
+
+# Serialize Pages deployments so two nearby merges cannot publish out of order.
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: write
@@ -23,6 +45,16 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: bash scripts/build-browser-demo.sh
       - run: node scripts/check-browser-demo.mjs
+      - name: Verify the static Lakekeeper artifact and record its source
+        run: |
+          test -s browser-output/domain.wasm
+          test -s browser-output/model.json
+          grep -Fq 'Lakekeeper authorization model' browser-output/index.html
+          if grep -Eiq '(Лапки|/pets/fox|shelter|caregiver)' browser-output/index.html browser-output/app.js; then
+            echo 'Obsolete shelter demo content must not be published' >&2
+            exit 1
+          fi
+          printf '{"commit":"%s"}\n' "$GITHUB_SHA" > browser-output/revision.json
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: browser-output
