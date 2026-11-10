@@ -42,7 +42,7 @@ stack on PRs affecting this experiment; its native smoke records the image
 size. **Conversion is manual and opt-in**: run *Browser single-image feasibility*
 on this branch with `convert=true`. The workflow only converts *after* the
 native integration test succeeds. It checks the c2w v0.8.5 release checksums,
-calls `c2w --to-js authz-browser-one:ci browser-output/`, records the output
+wraps the tested native image in `Dockerfile.wasm` to set the required ephemeral-only boot flag, then calls `c2w --to-js authz-browser-one:wasm browser-output/`, records the output
 sizes, and only uploads the generated executable bundle if at most 250 MiB.
 It never publishes a converted executable to Pages automatically.
 
