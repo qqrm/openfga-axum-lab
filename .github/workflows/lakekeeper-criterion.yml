@@ -1,5 +1,8 @@
 name: Manual Lakekeeper A/A A/B and HTTP tails
 on:
+  push:
+    branches: [bench/lakekeeper-validation-20261110]
+    paths: [.github/workflows/lakekeeper-criterion.yml]
   workflow_dispatch:
     inputs:
       crossover:
@@ -21,7 +24,7 @@ jobs:
     timeout-minutes: 90
     env:
       FGA_TRANSPORT: http
-      AUTHZ_BENCH_LOAD_PROFILES: ${{ inputs.tail_profiles }}
+      AUTHZ_BENCH_LOAD_PROFILES: 'true'
       AB_SEED: '2606'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +67,7 @@ jobs:
       - name: Run clean matched studies in crossed order
         shell: bash
         env:
-          CROSSOVER: ${{ inputs.crossover }}
+          CROSSOVER: 'true'
         run: |
           set -euo pipefail
           if [[ "$CROSSOVER" == true ]]; then
