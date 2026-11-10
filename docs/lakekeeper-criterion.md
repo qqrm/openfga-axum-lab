@@ -1,4 +1,4 @@
-# Lakekeeper denial-cache Criterion experiment (proposal; not executed)
+# Lakekeeper denial-cache Criterion experiment (manual)
 
 This is a **new experiment**, grounded in Lakekeeper on `main` at
 `1c1e48a44be0ae81c6833983a6c0182b6c688e96`. The closed, unmerged
@@ -15,7 +15,9 @@ Both services run the **same application image and binary**, share the same
 isolated PostgreSQL database, OpenFGA instance, pinned Lakekeeper model,
 fixtures and code revision. Before any measurement, the Rust driver compares
 container image IDs and executable SHA-256 hashes. The benchmark client is
-built once and executed directly for every arm; its SHA-256 is recorded. Direct execution passes\nCriterion's `--bench` explicitly; omitting it only performs a smoke test and\ncreates no estimates. The driver fails closed when measured files are absent. A
+built once and executed directly for every arm; its SHA-256 is recorded. Direct execution passes
+Criterion's `--bench` explicitly; omitting it only performs a smoke test and
+creates no estimates. The driver fails closed when measured files are absent. A
 read-only SQL witness fingerprints the catalog rows and checks that the
 shared authorization generation is unchanged and `pending=0` **before,
 between and after** each comparison pair, and checks the witness against the
@@ -112,8 +114,9 @@ export AUTHZ_EXPERIMENT_OUT=artifacts/criterion-lakekeeper-$(date +%s)
 AB_SEED=2606 cargo run --locked --release --example catalog_cache_experiment
 ```
 
-The build, real-stack checks, and measurements are **not performed** merely by
-preparing this patch. Capture `experiment.json` and each pair's raw Criterion
+Preparing or merging the patch does **not** execute benchmarks. The first
+successful isolated manual run was [#42613610160](https://github.com/qqrm/openfga-axum-lab/actions/runs/42613610160)
+on 9 November 2026. Capture `experiment.json` and each pair's raw Criterion
 `sample.json`, `estimates.json`, counter deltas and console logs. The Rust
 driver refuses to overwrite an existing output directory. After collecting
 results, ensure that the shared authorization generation has no pending
@@ -128,3 +131,40 @@ docker compose down -v
 The benchmark itself uses a pooled, one-in-flight HTTP/1.1 client (unlike the
 unpooled `tests/performance.rs` diagnostic). Do not compare raw latencies
 between those clients, or between this Lakekeeper scenario and Openlane.
+
+
+## Cross-over and per-request HTTP latency
+
+The manual workflow at `.github/workflows/lakekeeper-criterion.yml` runs two
+isolated Compose stacks with the cache mode reversed across the primary and
+secondary application process. Build one image; use distinct
+`COMPOSE_PROJECT_NAME` and `AUTHZ_EXPERIMENT_OUT` for each assignment.
+
+| Assignment | BENCH_PRIMARY_CACHE_ENABLED | BENCH_SECONDARY_CACHE_ENABLED | AUTHZ_BENCH_SWAP_PORTS |
+|---|---|---|---|
+| Primary on port 3000 | `true` | `false` | `false` |
+| Primary off port 3000 | `false` | `true` | `true` |
+
+The driver refuses to accept wrong mode counters, so an incorrect assignment
+fails rather than generating misleading A/B results. Set
+`AUTHZ_BENCH_LOAD_PROFILES=true` to record complete per-request HTTP latency
+samples at closed-loop concurrency 1 (128 requests), 8 (512 requests) and
+32 (1024 requests). Each configuration is measured in two reversed-order
+blocks. Workers reuse one HTTP/1.1 connection pool and validate every
+response. Results include nearest-rank p50/p95/p99, total throughput,
+cache hit/miss counts, and raw sorted per-request nanoseconds. A single
+warmup request precedes each measured profile. The `valid` flag is only
+true after all correctness gates and unchanged-dataset checks pass.
+
+**Interpretation:** Fixed concurrency is a *closed-loop* workload, not a
+fixed arrival rate or an open-loop load test. These are per-request
+percentiles, not Criterion iteration-batch percentiles. The crossed
+deployments control for mode-to-container assignment on the same host;
+they do not provide independent-host uncertainty estimates.
+
+The 9 November baseline indicated ~74x quicker hot denials. A/A allowed
+reads ranged from roughly 0.89 to 1.18 (second/first), large enough to
+invalidate claims about small allowed-read improvements. Do not claim
+production speedups from a single runner. Report independent runs,
+A/A drift, crossed-mode results, request p95/p99 and cache hit ratios
+before selecting a practical regression threshold.

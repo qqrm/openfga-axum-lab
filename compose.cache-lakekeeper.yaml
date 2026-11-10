@@ -3,7 +3,7 @@
 services:
   app:
     environment:
-      AUTHZ_DENIAL_CACHE_ENABLED: "true"
+      AUTHZ_DENIAL_CACHE_ENABLED: "${BENCH_PRIMARY_CACHE_ENABLED:-true}"
   app-uncached:
     image: openfga-axum-lab:local
     environment:
@@ -13,7 +13,7 @@ services:
       FGA_CONFIG: /data/config.json
       DEMO_SEED: "false"
       DEMO_MIGRATE: "false"
-      AUTHZ_DENIAL_CACHE_ENABLED: "false"
+      AUTHZ_DENIAL_CACHE_ENABLED: "${BENCH_SECONDARY_CACHE_ENABLED:-false}"
     depends_on:
       app:
         condition: service_started
