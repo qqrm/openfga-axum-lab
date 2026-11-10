@@ -28,12 +28,26 @@ impl Mode {
             Self::Off => "off",
         }
     }
+    pub fn swapped_ports() -> BenchResult<bool> {
+        match std::env::var("AUTHZ_BENCH_SWAP_PORTS").as_deref() {
+            Ok("true") => Ok(true),
+            Ok("false") | Err(std::env::VarError::NotPresent) => Ok(false),
+            _ => Err("AUTHZ_BENCH_SWAP_PORTS must be true or false".into()),
+        }
+    }
+    fn default_port(self, swapped: bool) -> u16 {
+        match (self, swapped) {
+            (Self::On, false) | (Self::Off, true) => 3000,
+            (Self::Off, false) | (Self::On, true) => 3001,
+        }
+    }
     pub fn base(self) -> BenchResult<String> {
-        let (key, default) = match self {
-            Self::On => ("CACHED_URL", "http://127.0.0.1:3000"),
-            Self::Off => ("UNCACHED_URL", "http://127.0.0.1:3001"),
+        let key = match self {
+            Self::On => "CACHED_URL",
+            Self::Off => "UNCACHED_URL",
         };
-        let base = std::env::var(key).unwrap_or_else(|_| default.to_string());
+        let default = format!("http://127.0.0.1:{}", self.default_port(Self::swapped_ports()?));
+        let base = std::env::var(key).unwrap_or(default);
         let parsed = Url::parse(&base)?;
         if parsed.scheme() != "http"
             || !matches!(parsed.host_str(), Some("localhost" | "127.0.0.1"))
@@ -134,6 +148,7 @@ impl Snapshot {
     }
 }
 
+#[derive(Clone)]
 pub struct Fixture {
     client: Client,
     base: String,
@@ -325,6 +340,13 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> BenchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn swapped_ports_cross_over_both_modes() {
+        assert_eq!(Mode::On.default_port(false), 3000);
+        assert_eq!(Mode::Off.default_port(false), 3001);
+        assert_eq!(Mode::On.default_port(true), 3001);
+        assert_eq!(Mode::Off.default_port(true), 3000);
+    }
     #[test]
     fn counter_deltas_reject_resets() {
         let before = Snapshot {
