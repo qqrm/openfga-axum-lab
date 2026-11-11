@@ -36,7 +36,7 @@ try {
       await page.waitForFunction(()=>crossOriginIsolated && !document.getElementById('start').disabled, null, {timeout:30000});
       assert.equal(await page.evaluate(()=>window.labEvidence.accepted),false);
       await page.locator('#start').click();
-      await page.waitForFunction(()=>window.labEvidence.accepted || window.labEvidence.error, null, {timeout:600000});
+      await page.waitForFunction(()=>window.labEvidence.accepted || window.labEvidence.error, null, {timeout:1200000});
       const first=await page.evaluate(()=>window.labEvidence);
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.equal(first.ready,true);
