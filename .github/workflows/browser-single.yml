@@ -67,7 +67,7 @@ jobs:
           docker exec -e SMOKE_ALLOW_MUTATIONS=true \
             authz-browser-one /usr/local/bin/lab-tool acceptance
           docker stats --no-stream --format 'Memory: {{.MemUsage}}' authz-browser-one
-      - name: Download verified container2wasm converter (manual only)
+      - name: Download verified container2wasm converter
         if: (github.event_name == 'workflow_dispatch' && inputs.convert == true) || (github.event_name == 'pull_request' && github.head_ref == 'experiment/browser-one-container')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -87,20 +87,15 @@ jobs:
           /tmp/c2w/c2w --to-js authz-browser-one:wasm browser-output/
           du -ah browser-output | sort -h | tail -40 | tee browser-report/sizes.txt
           find browser-output -type f | sort > browser-report/files.txt
-      - name: Limit browser artifact size
+      - name: Record browser artifact size
         id: conversion-size
         if: (github.event_name == 'workflow_dispatch' && inputs.convert == true) || (github.event_name == 'pull_request' && github.head_ref == 'experiment/browser-one-container')
         run: |
           bytes=$(du -sb browser-output | cut -f1)
           printf '%s\n' "$bytes" | tee browser-report/total-bytes.txt
-          if (( bytes <= 250 * 1024 * 1024 )); then
-            echo 'upload=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'upload=false' >> "$GITHUB_OUTPUT"
-            echo 'WASM asset exceeds 250 MiB: publishing metadata only' >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Save small converted browser bundle
-        if: steps.conversion-size.outputs.upload == 'true'
+          printf 'Browser bundle: %s bytes (no size-based upload filter).\n' "$bytes" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save converted browser bundle
+        if: steps.conversion-size.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-one-converted
@@ -108,7 +103,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Save conversion size report
-        if: steps.conversion-size.outcome == 'success'
+        if: always() && steps.conversion-size.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-one-report

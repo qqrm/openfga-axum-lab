@@ -39,12 +39,23 @@ Use `docker logs authz-browser-one` for startup diagnostics and
 
 `.github/workflows/browser-single.yml` builds and runs the actual one-image
 stack on PRs affecting this experiment; its native smoke records the image
-size. **Conversion is manual and opt-in**: run *Browser single-image feasibility*
-on this branch with `convert=true`. The workflow only converts *after* the
-native integration test succeeds. It checks the c2w v0.8.5 release checksums,
-wraps the tested native image in `Dockerfile.wasm` to set the required ephemeral-only boot flag, then calls `c2w --to-js authz-browser-one:wasm browser-output/`, records the output
-sizes, and only uploads the generated executable bundle if at most 250 MiB.
-It never publishes a converted executable to Pages automatically.
+size. Conversion can be requested through *Browser single-image feasibility*
+with `convert=true`; it also runs for PR updates from the dedicated
+`experiment/browser-one-container` branch. The workflow only converts *after*
+the native integration test succeeds. It checks the c2w v0.8.5 release
+checksums, wraps the tested native image in `Dockerfile.wasm` to set the required
+ephemeral-only boot flag, then calls
+`c2w --to-js authz-browser-one:wasm browser-output/`.
+
+The complete generated bundle is uploaded as `browser-one-converted` after
+successful conversion and size reporting, without a size-based upload filter.
+The former 250 MiB cutoff has been removed: the measured 633,649,004-byte
+bundle must not be silently discarded. Size remains diagnostic information,
+not a reason to skip saving the executable files. A missing bundle or upload
+failure fails the job; the size report is still uploaded after an upload failure.
+The executable artifact is retained for one day, and `browser-one-report` for
+seven days. This does not bypass GitHub's own storage limits or quotas, and
+never publishes a converted executable to Pages automatically.
 
 **Not yet established:** whether the emulated Linux kernel supports the
 PostgreSQL shared-memory/process semantics; whether all three daemons can boot
