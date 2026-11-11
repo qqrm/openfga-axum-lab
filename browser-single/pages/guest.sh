@@ -6,6 +6,8 @@ export BROWSER_LAB_EPHEMERAL=yes
 export DEMO_PASSWORD_FILE=/tmp/browser-lab/demo-password
 export SMOKE_BASE_URL=http://127.0.0.1:3000
 export SMOKE_ALLOW_MUTATIONS=true
+# Bound only the setup CLI connection and avoid a timezone-directory search.
+export PGCONNECT_TIMEOUT=10 TZ=UTC
 printf 'LAB|boot\n'
 /usr/local/bin/browser-lab-entrypoint >/tmp/browser-lab-startup.log 2>&1 &
 lab_pid=$!
@@ -23,7 +25,13 @@ while (( SECONDS < deadline )); do
     sleep 2
 done
 if [[ "$ready" != true ]]; then
-    tail -c 12000 /tmp/browser-lab-startup.log
+    tail -c 8000 /tmp/browser-lab-startup.log
+    for diagnostic in /tmp/browser-lab/initdb.log /tmp/browser-lab/postgres.log; do
+        if [[ -f "$diagnostic" ]]; then
+            printf '\nGuest diagnostic: %s\n' "$diagnostic"
+            tail -c 8000 "$diagnostic"
+        fi
+    done
     printf '\nLAB|boot-failed\n'
     exit 1
 fi

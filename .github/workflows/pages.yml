@@ -7,6 +7,7 @@ on:
       - browser-demo/**
       - browser-single/pages/**
       - browser-single/Kernel.Dockerfile
+      - browser-single/prepare-kernel.sh
       - browser-single/repack-runtime.mjs
       - browser-single/prepare-pages.sh
       - browser-single/check-pages.mjs
@@ -22,6 +23,7 @@ on:
       - .github/workflows/pages.yml
       - browser-single/pages/**
       - browser-single/Kernel.Dockerfile
+      - browser-single/prepare-kernel.sh
       - browser-single/repack-runtime.mjs
       - browser-single/prepare-pages.sh
       - browser-single/check-pages.mjs
@@ -57,12 +59,12 @@ jobs:
             echo 'Obsolete shelter content must not be published' >&2
             exit 1
           fi
-          shellcheck browser-single/prepare-pages.sh browser-single/pages/guest.sh
+          shellcheck browser-single/prepare-pages.sh browser-single/prepare-kernel.sh browser-single/pages/guest.sh
           printf '{"commit":"%s"}\n' "$GITHUB_SHA" > browser-output/revision.json
-      - name: Build the original Linux kernel with required PostgreSQL IPC
-        run: >-
-          docker buildx build --file browser-single/Kernel.Dockerfile
-          --output type=local,dest=artifacts/browser-kernel .
+      - name: Prepare the verified Linux kernel with required PostgreSQL IPC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash browser-single/prepare-kernel.sh
       - name: Retain the rebuilt kernel and exact configuration
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
