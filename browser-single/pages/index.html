@@ -12,8 +12,8 @@
 <header><a href="../">Authorization Lab</a><span>EXPERIMENTAL · LOCAL TO THIS TAB</span></header>
 <main>
   <h1>PostgreSQL + OpenFGA + Axum, inside your browser</h1>
-  <p>This runs the real Linux binaries under QEMU/WebAssembly. The authorization model is the pinned Lakekeeper model, not a JavaScript approximation. All accounts and data are synthetic.</p>
-  <aside><strong>Explicit opt-in:</strong> starting downloads about 605 MiB and can use several GiB of RAM. Startup and checks may be slow. Use a desktop browser. Closing or resetting this tab discards its data. Do not enter real credentials or production data.</aside>
+  <p>This runs the real Linux binaries under QEMU/WebAssembly. The authorization model is the pinned Lakekeeper model, not a JavaScript approximation. The Linux kernel is rebuilt with PostgreSQL IPC support; application binaries are unchanged. All accounts and data are synthetic.</p>
+  <aside><strong>Explicit opt-in:</strong> starting downloads about 565 MiB and can use several GiB of RAM. Startup and checks may be slow. Use a desktop browser. Closing or resetting this tab discards its data. Do not enter real credentials or production data.</aside>
   <p id="isolation" role="status">Preparing browser isolation…</p>
   <div class="buttons">
     <button id="start" disabled>Start real browser lab</button>
@@ -32,7 +32,7 @@
     <p>This is a minimal in-browser acceptance console, not the full interactive catalog UI or a production deployment. The complete UI remains available in the private Codespaces/local Docker lab linked from the main page.</p>
   </section>
   <details class="panel"><summary>Guest diagnostics</summary><pre id="log" aria-label="Guest console output"></pre></details>
-  <footer>Runtime source: <code>99f00cc</code> · <a href="runtime-manifest.json">Artifact checksums and provenance</a> · <a href="https://github.com/qqrm/openfga-axum-lab/tree/main/browser-single">Source and limitations</a></footer>
+  <footer>Runtime source: <code>99f00cc</code> · <a href="runtime-manifest.json">Original artifact</a> · <a href="runtime/derived-runtime.json">Kernel rebuild and checksums</a> · <a href="https://github.com/qqrm/openfga-axum-lab/tree/main/browser-single">Source and limitations</a></footer>
 </main>
 </body>
 </html>

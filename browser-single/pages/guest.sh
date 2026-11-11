@@ -23,8 +23,8 @@ while (( SECONDS < deadline )); do
     sleep 2
 done
 if [[ "$ready" != true ]]; then
-    printf 'LAB|boot-failed\n'
     tail -c 12000 /tmp/browser-lab-startup.log
+    printf '\nLAB|boot-failed\n'
     exit 1
 fi
 printf 'LAB|ready\n'
@@ -34,9 +34,8 @@ verify() {
         printf 'LAB|result|'
         cat /tmp/browser-lab-result.json
     else
-        printf 'LAB|verification-failed\n'
         tail -c 4000 /tmp/browser-lab-test-error.log
-        # A failed mutation can change the fixture; do not retry blindly.
+        printf '\nLAB|verification-failed\n'
         exit 1
     fi
 }
