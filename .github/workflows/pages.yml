@@ -1,11 +1,13 @@
 name: Browser preview
-
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/pages.yml
       - browser-demo/**
+      - browser-single/pages/**
+      - browser-single/prepare-pages.sh
+      - browser-single/check-pages.mjs
       - scripts/build-browser-demo.sh
       - scripts/check-browser-demo.mjs
       - src/domain.rs
@@ -13,28 +15,25 @@ on:
       - fga/provenance.json
       - fga/upstream/**
       - NOTICE
+  pull_request:
+    paths:
+      - .github/workflows/pages.yml
+      - browser-single/pages/**
+      - browser-single/prepare-pages.sh
+      - browser-single/check-pages.mjs
   workflow_dispatch:
-
 permissions:
   contents: read
-
-# Serialize Pages deployments so two nearby merges cannot publish out of order.
 concurrency:
-  group: github-pages
+  group: ${{ github.event_name == 'pull_request' && format('pages-check-{0}', github.ref) || 'github-pages' }}
   cancel-in-progress: false
-
 jobs:
-  publish:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,18 +44,51 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: bash scripts/build-browser-demo.sh
       - run: node scripts/check-browser-demo.mjs
-      - name: Verify the static Lakekeeper artifact and record its source
+      - name: Verify the model explorer and guest wrapper
         run: |
           test -s browser-output/domain.wasm
           test -s browser-output/model.json
           grep -Fq 'Lakekeeper authorization model' browser-output/index.html
           if grep -Eiq '(Лапки|/pets/fox|shelter|caregiver)' browser-output/index.html browser-output/app.js; then
-            echo 'Obsolete shelter demo content must not be published' >&2
+            echo 'Obsolete shelter content must not be published' >&2
             exit 1
           fi
+          shellcheck browser-single/prepare-pages.sh browser-single/pages/guest.sh
           printf '{"commit":"%s"}\n' "$GITHUB_SHA" > browser-output/revision.json
+      - name: Restore and verify the pinned browser VM artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash browser-single/prepare-pages.sh
+      - name: Install locked browser-test dependencies
+        working-directory: e2e
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium firefox
+      - name: Require actual browser guest acceptance, not native Docker E2E
+        run: node browser-single/check-pages.mjs
+      - name: Retain browser-VM evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pages-browser-vm-evidence
+          path: artifacts/browser-wasm/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.ref == 'refs/heads/main'
         with:
           path: browser-output
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
