@@ -10,10 +10,12 @@ test -s "$openfga_build/build.json"
 mkdir -p "$output/runtime"
 cp -a browser-single/pages/. "$output/"
 cp browser-single/entrypoint.sh "$output/entrypoint.sh"
-cp "$openfga_build/openfga" "$output/runtime/openfga"
+# Replace the generated executable, which the build deliberately marks read-only.
+cp -f "$openfga_build/openfga" "$output/runtime/openfga"
 mkdir -p "$output/runtime/openfga-build"
 cp "$openfga_build/build.json" "$openfga_build/LICENSE" "$openfga_build/SOURCE.txt" \
     "$openfga_build/startup-dial.patch" "$openfga_build/browser_http_dial.go" \
+    "$openfga_build/browser_http_warmup.go" \
     "$openfga_build/dial-tests.log" "$output/runtime/openfga-build/"
 temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT
@@ -30,7 +32,7 @@ elif ! gh api "repos/qqrm/openfga-axum-lab/actions/artifacts/$artifact/zip" >"$t
         --output "$temporary/runtime.zip"
 fi
 printf '%s  %s\n' "$archive_sha" "$temporary/runtime.zip" | sha256sum --check --status
-unzip -q "$temporary/runtime.zip" -d "$output/runtime"
+unzip -oq "$temporary/runtime.zip" -d "$output/runtime"
 cp "$temporary/runtime.zip" "$output/runtime-source.zip"
 jq -r '.files | to_entries[] | "\(.value.sha256)  \(.key)"' "$manifest" >"$temporary/files.sha256"
 (cd "$output/runtime" && sha256sum --check "$temporary/files.sha256")
@@ -49,9 +51,18 @@ assert.equal(build.source_commit,'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4');
 assert.equal(build.upstream_version,'1.10.3');
 assert.equal(build.startup_dial_timeout_seconds,60);
 assert.equal(build.startup_dial_tests,'passed');
+assert.equal(build.authorization_request_timeout_default_seconds,3);
+assert.equal(build.startup_model_warmup,'in_process_codec_validation_only');
+assert.equal(build.warmup_timeout_seconds,60);
+assert.equal(build.warmup_tests,'passed');
+assert.equal(build.warmup_model_sha256,digest('fga/model.json'));
+assert.equal(build.warmup_model_bytes,readFileSync('fga/model.json').length);
+assert.equal(build.unary_raw_logging,'disabled_browser_only');
 assert.equal(build.patch_sha256,digest('browser-single/openfga/startup-dial.patch'));
 assert.equal(build.helper_sha256,digest('browser-single/openfga/browser_http_dial.go'));
 assert.equal(build.tests_sha256,digest('browser-single/openfga/browser_http_dial_test.go'));
+assert.equal(build.warmup_helper_sha256,digest('browser-single/openfga/browser_http_warmup.go'));
+assert.equal(build.warmup_tests_sha256,digest('browser-single/openfga/browser_http_warmup_test.go'));
 assert.equal(build.binary_sha256,digest('browser-output/wasm/runtime/openfga'));
 const original = JSON.parse(readFileSync('browser-single/pages/runtime-manifest.json','utf8'));
 const files = {};

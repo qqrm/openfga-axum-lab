@@ -69,7 +69,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "[browser-single] initializing isolated PostgreSQL 17"
+# Apply the runtime budget during initialization; initdb still runs real probes.
 initdb -D "$PGDATA" -U "$PGUSER" --auth=trust --encoding=UTF8 --no-instructions \
+    --set=max_connections=60 --set=shared_buffers=16MB \
     >"$runtime_dir/initdb.log" 2>&1 || { cat "$runtime_dir/initdb.log" >&2; exit 1; }
 pg_ctl -D "$PGDATA" -l "$runtime_dir/postgres.log" \
     -o "-c listen_addresses=127.0.0.1 -c unix_socket_directories=$runtime_dir -c shared_buffers=16MB -c max_connections=60" \
@@ -86,9 +88,10 @@ fga_pid=$!
 # Do not spend bootstrap's existing 60-second readiness budget while Go is
 # still initializing. A listening socket only schedules bootstrap: its real
 # /healthz SERVING and pinned-model checks remain the readiness authority.
+# Allow the browser build's bounded 60-second codec warmup before HTTP starts.
 echo "[browser-single] waiting for the OpenFGA HTTP listener"
 http_listening=false
-deadline=$((SECONDS + 120))
+deadline=$((SECONDS + 180))
 while (( SECONDS < deadline )); do
     if ! kill -0 "$fga_pid" 2>/dev/null; then
         echo "[browser-single] OpenFGA exited before its HTTP listener started" >&2

@@ -20,9 +20,13 @@ var browserTransportLogger = log.New(os.Stderr, "[browser-openfga] ", log.LstdFl
 func dialBrowserHTTPGRPC(ctx context.Context, target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, browserHTTPGRPCDialTimeout)
 	defer cancel()
+	started := time.Now()
+	browserTransportLogger.Printf("grpc_dial_start timeout_seconds=%d", int(browserHTTPGRPCDialTimeout/time.Second))
 
 	// nolint:staticcheck // Preserve the upstream blocking connection semantics.
-	return grpc.DialContext(timeoutCtx, target, opts...)
+	conn, err := grpc.DialContext(timeoutCtx, target, opts...)
+	browserTransportLogger.Printf("grpc_dial_end duration_ms=%d failed=%t context_error=%v", time.Since(started).Milliseconds(), err != nil, timeoutCtx.Err())
+	return conn, err
 }
 
 // Observe transport boundaries without reading bodies or wrapping the writer.

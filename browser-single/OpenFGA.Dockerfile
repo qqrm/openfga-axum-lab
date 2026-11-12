@@ -8,6 +8,7 @@ RUN git init -q && git remote add origin https://github.com/openfga/openfga.git 
     && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = 293893b22a53d8a130a5f7c97cab4bc8e91bcaa4
 COPY browser-single/openfga /patch
-RUN bash /patch/build.sh /out
+COPY fga/model.json /test-fixtures/model.json
+RUN bash /patch/build.sh /out /test-fixtures/model.json
 FROM scratch
 COPY --from=build /out/ /

@@ -8,9 +8,10 @@ export SMOKE_BASE_URL=http://127.0.0.1:3000
 export SMOKE_ALLOW_MUTATIONS=true
 # Bound only the setup CLI connection and avoid a timezone-directory search.
 export PGCONNECT_TIMEOUT=10 TZ=UTC
-# Compact browser transport traces identify failed startup requests without
-# enabling full model/Check payload logs from the upstream INFO interceptor.
+# Compact browser transport traces identify failed startup requests.
 export OPENFGA_LOG_LEVEL=warn
+# The browser demo does not use the Prometheus exporter.
+export OPENFGA_METRICS_ENABLED=false
 printf '\nLAB|boot\n'
 deadline=$((SECONDS + 900))
 # The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.
@@ -40,13 +41,53 @@ while (( SECONDS < deadline )); do
     sleep 3
 done
 if [[ "$ready" != true ]]; then
-    tail -c 8000 /tmp/browser-lab-startup.log
-    for diagnostic in /tmp/browser-lab/initdb.log /tmp/browser-lab/postgres.log; do
-        if [[ -f "$diagnostic" ]]; then
-            printf '\nGuest diagnostic: %s\n' "$diagnostic"
-            tail -c 8000 "$diagnostic"
-        fi
-    done
+    # One failure snapshot: 8 seconds plus 1 second to force termination.
+    # Keep the failure marker outside diagnostics, including their timeout.
+    timeout --kill-after=1s 8s /bin/bash <<'DIAGNOSTICS' || true
+for file in /tmp/browser-lab-startup.log \
+            /tmp/browser-lab/initdb.log \
+            /tmp/browser-lab/postgres.log; do
+    if [[ -f "$file" ]]; then
+        printf '\nGuest diagnostic: %s\n' "$file"
+        tail -c 8000 "$file"
+    fi
+done
+
+for file in /proc/meminfo /sys/devices/system/cpu/online /proc/uptime; do
+    printf '\nGuest diagnostic: %s\n' "$file"
+    cat "$file" 2>/dev/null || true
+done
+
+count=0
+for proc in /proc/[0-9]*; do
+    IFS=$'\t' read -r key name 2>/dev/null <"$proc/status" || continue
+    case "$name" in initdb|postgres) ;; *) continue ;; esac
+
+    printf '\nGuest process: %s\n' "${proc##*/}"
+    while IFS=: read -r key value; do
+        case "$key" in
+            Name|State|Pid|PPid|VmRSS|VmSwap|Threads)
+                printf '%s:%s\n' "$key" "$value" ;;
+        esac
+    done 2>/dev/null <"$proc/status"
+
+    printf 'wchan: '
+    cat "$proc/wchan" 2>/dev/null || true
+    printf '\n'
+    if IFS= read -r stat 2>/dev/null <"$proc/stat"; then
+        # Fields 14/15 follow the pid and parenthesized comm: cumulative ticks.
+        read -r -a fields <<<"${stat##*) }"
+        printf 'utime_ticks: %s\nstime_ticks: %s\n' \
+            "${fields[11]:-unavailable}" "${fields[12]:-unavailable}"
+    fi
+
+    count=$((count + 1))
+    if (( count >= 16 )); then
+        printf 'Process snapshot stopped at limit=16\n'
+        break
+    fi
+done
+DIAGNOSTICS
     printf '\nLAB|boot-failed\n'
     exit 1
 fi

@@ -27,17 +27,11 @@ await fs.mkdir('artifacts/browser-wasm', {recursive:true});
 const failures=[];
 try {
   for (const [name, engine] of [['chromium',chromium],['firefox',firefox]]) {
-    if (failures.length) {
-      await fs.writeFile(`artifacts/browser-wasm/${name}.json`,JSON.stringify({
-        engine:name,passed:false,skipped:true,reason:'Earlier browser acceptance failed; stop before spending another VM boot budget'
-      },null,2));
-      console.log(`${name}: skipped because the earlier browser acceptance failed`);
-      continue;
-    }
     let browser;
     let page;
     const errors=[];
-    const evidence={engine:name,passed:false,passes:[]};
+    const evidence={engine:name,passed:false,passes:[],startedAt:new Date().toISOString()};
+    console.log(`${name}: starting real guest acceptance`);
     try {
       browser = await engine.launch({headless:true});
       evidence.browser = await browser.version();
@@ -94,6 +88,7 @@ try {
         evidence.failure = 'Guest or browser failed after the second result';
         failures.push(new Error(`${name}: ${evidence.failure}`));
       }
+      evidence.finishedAt = new Date().toISOString();
       await fs.writeFile(`artifacts/browser-wasm/${name}.json`,JSON.stringify(evidence,null,2));
       await browser?.close();
     }

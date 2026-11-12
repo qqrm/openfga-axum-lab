@@ -94,23 +94,38 @@ launcher checks every payload's size and SHA-256 before starting QEMU;
 `runtime/startup-manifest.json` identifies the source, patch, tests and binary.
 
 The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
-self-dial from three seconds to a bounded 60 seconds. Compact HTTP and gRPC
-transport traces record request boundaries and timing without reading request
-bodies or changing the handler's context, writer, response or error.
-PostgreSQL initialization
-and OpenFGA migration remain sequential. A lightweight, bounded listener wait
-schedules the existing bootstrap, which still requires real `SERVING` health,
-the unchanged model, and successful operations before Axum starts. Application,
-bootstrap and acceptance request deadlines are unchanged. The guest's total
-startup budget includes payload staging, and service phases are streamed to
-the diagnostic console.
+self-dial from three seconds to a bounded 60 seconds. A separate bounded
+startup phase exercises the codecs and validation code for the exact pinned
+model in memory before opening listeners. Its results are discarded: the
+original bootstrap and every subsequent real validation, write and Check
+still run. This is a candidate for reducing initialization and emulated-code
+translation costs, not evidence of successful browser acceptance.
+
+Compact HTTP and gRPC transport traces record request boundaries and timing
+without reading request bodies or changing the handler's context, writer,
+response or error. The browser build omits the upstream unary raw-payload
+logger, which otherwise serializes payloads even when INFO is disabled.
+The unused Prometheus exporter is disabled; authentication, validation,
+authorization and timeout middleware remain in place.
+
+PostgreSQL initialization and OpenFGA migration remain sequential. `initdb`
+uses the same 60 connections and 16 MiB shared buffers as the running server;
+its actual IPC probes and durability settings remain enabled. A bounded
+180-second listener wait includes the additional OpenFGA startup phase and
+schedules the existing bootstrap. Only its real `SERVING` health, unchanged
+model and successful operations permit Axum startup. Application, bootstrap
+and acceptance request deadlines are unchanged. The guest's 900-second
+startup budget includes payload staging. On failure, a bounded diagnostic
+snapshot records logs, memory and PostgreSQL process state without reading
+command lines or environment variables.
 
 The browser checker requires two sequential, indexed executions of the existing
 native `lab-tool acceptance` in each Chromium and Firefox. Both executions must
 return `403 → 204 → 200 → 204 → 403`. Duplicate, malformed or out-of-order serial
 results cannot satisfy the gate. A service exit clears the live accepted state.
-Chromium failure stops further VM work and records Firefox as skipped; skipped
-is never accepted as a passing browser result.
+Both browsers are attempted independently, including Firefox after a Chromium
+failure. Any failed browser keeps the combined gate failed; neither a skipped
+browser nor a single successful execution satisfies it.
 
 Prepare and check locally (Docker, pinned Rust, Node and Playwright required):
 

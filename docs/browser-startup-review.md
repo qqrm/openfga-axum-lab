@@ -1,12 +1,13 @@
 # Browser OpenFGA startup review
 
-Status at patch preparation: **approved fix under validation; browser acceptance
-had not passed**. The Browser preview run for the current PR head is the
-authority for subsequent acceptance results.
-Prepared against PR #36 head `c527f3ca016b317350a29c0dca38c07e7699230b`
-on 12 November 2026. The user approved publishing the changes and additional
-checks after reviewing the patch and its failed Chromium result. The PR has
-not been merged and Pages has not been published.
+Status of this review on 12 November 2026: **approved changes under validation;
+browser acceptance has not passed**. The latest retained test below is commit
+`43c92f8dc3051965c3134a55344f2898aa209838`, run `43306901697`, attempt 2.
+The Browser preview run for the current PR head is the authority for later
+acceptance results. The initial proposal was prepared against PR #36 head
+`c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
+and additional checks. The PR has not been merged and Pages has not been
+published.
 
 ## Diagnosis
 
@@ -34,10 +35,15 @@ and adapted executable to the guest.
 
 ## Proposed change
 
-- Build OpenFGA from the exact upstream commit with Go 1.24.6. Change only
+- Build OpenFGA from the exact upstream commit with Go 1.24.6. Change
   the gateway startup self-dial budget from three to 60 seconds, observing
   parent cancellation. Preserve `grpc.WithBlock()`, TLS options and fatal
   startup failure. Record source, patch, compiler and executable provenance.
+- Before opening listeners, exercise real codecs and validation APIs for the
+  exact pinned model in a bounded startup phase, then discard the results.
+  Do not cache validation decisions, perform backend writes, or skip any
+  subsequent real request. Omit unary raw-payload logging work while retaining
+  compact transport metadata and the existing security middleware.
 - Supply the adapted executable and current entrypoint through the existing
   host mount, with checksums verified before VM initialization. Use the
   converter's `mr` instruction for a read-only bind mount. Its `m`
@@ -53,8 +59,10 @@ and adapted executable to the guest.
 - Keep Pages publication behind a separate manual request, after the actual
   browser gate succeeds.
 
-PostgreSQL, Axum, `lab-tool acceptance` and the pinned Lakekeeper model stay
-unchanged. No response is synthesized. Existing deadlines remain unchanged:
+The PostgreSQL and Axum binaries, `lab-tool acceptance` and the pinned Lakekeeper
+model stay unchanged. `initdb` receives the existing runtime connection/memory
+budget; this does not skip its real IPC probes or change durability. No
+response is synthesized. Existing request deadlines remain unchanged:
 two seconds for Axum's OpenFGA client, five seconds for bootstrap operations
 and the acceptance HTTP client, and the original OpenFGA request deadlines.
 
@@ -78,9 +86,9 @@ The Chromium result establishes HTTP startup with the adapted executable,
 not successful integration or proof that the original three-second limit caused
 the earlier Chromium failure. The bootstrap's outer readiness timeout is mapped
 to `OpenFGA unavailable`; the unwrapped `Elapsed(())` therefore points to a
-later per-operation timeout. The exact operation still needs retained phase
-diagnostics. Do not increase authorization or operation deadlines to conceal
-this remaining limit.
+later per-operation timeout. At that point the exact operation was unknown;
+the retained attempt below identifies it. Do not increase authorization or
+operation deadlines to conceal this remaining limit.
 
 After recovery, a new build repeated all native regression tests successfully
 in 67.234 seconds and produced the identical executable SHA-256
@@ -93,8 +101,57 @@ The first locally tested patched wrapper was silent throughout service startup. 
 so that copy was outside the guest budget. Phase markers and an overall
 startup bound beginning before payload preparation are included in the restored
 proposal to distinguish copying, database initialization, migration, bootstrap
-and Axum startup. That final diagnostic wrapper has passed static checks but
-has not completed another VM run.
+and Axum startup. Subsequent real CI runs used this diagnostic wrapper, as
+recorded below.
+
+## Retained browser evidence on 12 November 2026
+
+- [Run 43297886288](https://github.com/qqrm/openfga-axum-lab/actions/runs/43297886288)
+  started PostgreSQL and OpenFGA in Chromium, then bootstrap returned
+  `Elapsed(())`. No acceptance sequence completed.
+- [Run 43301700456](https://github.com/qqrm/openfga-axum-lab/actions/runs/43301700456)
+  enabled upstream INFO diagnostics. A real CreateStore RPC completed, but
+  the HTTP bootstrap still timed out. Its completion log alone did not show
+  which client operation failed.
+- [Run 43306901697, attempt 1](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/attempts/1)
+  exhausted the 900-second startup budget while `initdb` was selecting
+  `max_connections`, before OpenFGA ran. The cause of this earlier stop is
+  unknown. It is not a failed execution of the new OpenFGA transport observer.
+- [The unchanged attempt 2](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/attempts/2)
+  completed PostgreSQL initialization and localized the model-write timeout.
+  Chromium completed zero acceptance sequences; Firefox was skipped by the
+  then-current checker. Pages was not published.
+
+The last attempt used Chromium 158.0.8127.18, two configured guest CPUs and
+512 MiB. The source runtime ZIP, derived data, kernel and entrypoint are
+identical between the two attempts. Their build/startup manifests also match.
+
+| Actual operation | HTTP duration | Unary RPC duration | Result |
+| --- | ---: | ---: | --- |
+| Health | 1580 ms | 830 ms | `OK`; bootstrap proceeded |
+| CreateStore | 2650 ms | 1650 ms | `OK`; bootstrap sent the model |
+| WriteAuthorizationModel | 5600 ms | 11410 ms | HTTP cancelled before server unary handler began; RPC later returned OpenFGA code 2058 (`cancelled`) |
+
+The 52708-byte model request began at 21:46:24.150 UTC. Its HTTP handler
+returned with a cancelled context at 21:46:29.780; the server unary handler
+started at 21:46:30.450 and returned at 21:46:41.860. The approximately
+6.30-second interval before the unary handler includes HTTP body decoding,
+gRPC codecs/transport and scheduling. The later 11.41-second interval also
+includes the upstream logger's eager payload serialization. Neither interval
+is a profile of a single function. The repeated lines in the failure console
+are a replay of the log tail, not a second bootstrap or acceptance pass.
+
+[Evidence artifact 13986943099](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/artifacts/13986943099)
+retains the console, browser results and build records. Its ZIP SHA-256 is
+`df74002ce935ca43ac4a0f109d33e81b011b270fe9a4bd9a28300f0948f7ae30`.
+
+These observations motivate the startup codec/validation warmup and removal
+of unary raw-payload logging. They do not prove that either change is enough.
+Native profiling of the exact model found repeated parsing and graph-building
+work even after warming; it cannot predict the effect of QEMU's translated-code
+cache. The candidate must still pass the real browser gate with unchanged
+request deadlines. The current checker attempts Firefox even if Chromium
+fails, so both engines can provide independent evidence.
 
 ## Narrow performance candidate
 

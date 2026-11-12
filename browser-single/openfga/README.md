@@ -4,8 +4,9 @@ Upstream is OpenFGA v1.10.3 at
 [`293893b22a53d8a130a5f7c97cab4bc8e91bcaa4`](https://github.com/openfga/openfga/tree/293893b22a53d8a130a5f7c97cab4bc8e91bcaa4).
 Its HTTP gateway starts the gRPC server, then makes a blocking connection to it
 with a hardcoded three-second deadline in `cmd/run/run.go`. Slow Linux/WASM
-emulation can exceed that startup deadline. This failure was observed in the
-local QEMU WASM experiment; its effect on Chromium must be tested separately.
+emulation can exceed that startup deadline. The original failure was observed in
+a local QEMU WASM experiment. Subsequent real Chromium runs of the adapted build
+reached OpenFGA's gRPC and HTTP listeners; full browser acceptance has not passed.
 
 There is no setting for that self-dial timeout in this release.
 `OPENFGA_HTTP_UPSTREAM_TIMEOUT` and `OPENFGA_REQUEST_TIMEOUT` govern requests
@@ -25,15 +26,64 @@ the method, path without query string, content length, elapsed time and context
 error. Unary RPC start/end events contain the method, status code and elapsed
 time. It does not log request/response bodies or headers. These events remain
 available when OpenFGA's normal logger is set to `warn`, without enabling its
-verbose raw payload logs.
+verbose raw payload logs. Self-dial and model warmup also emit start/end phase
+events, duration, failure state and their startup budgets.
 
 The HTTP observer passes the original writer, request, body and context to the
-handler. The unary observer runs before the existing logging middleware and
-passes through the original context, request, response and error. Validation,
-authentication, authorization, timeout and recovery middleware stay in place.
+handler. The unary observer passes through the original context, request,
+response and error. The browser patch removes only registration of
+`logging.NewLoggingInterceptor` for unary RPCs: that interceptor serializes
+complete protobuf payloads even at `warn` or `none`. Its raw unary payload logs
+and internal-error details are consequently unavailable in this build. The
+metadata observer still records completion status; other error logs and the
+streaming logging interceptor remain. Validation, authentication, authorization,
+timeout and recovery middleware stay in place.
 Panics continue to upstream recovery and do not emit a false completion event.
 Diagnostic logging itself adds work; it is not a performance improvement or a
 replacement for successful browser acceptance.
+
+## Startup-only model warmup candidate
+
+[Run 43306901697, attempt 2](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/attempts/2)
+reached healthy OpenFGA and successfully created a store. For the model POST,
+the HTTP observer recorded 52,708 bytes and cancellation after 5,600 ms; the unary
+RPC observer started only after that cancellation and completed 11,410 ms later
+with the cancelled-operation code. The latter interval included unconditional
+upstream payload serialization. These boundaries identify an expensive model
+path; they do not isolate the cost of parsing, transport, validation or logging.
+
+Before constructing a datastore or opening any listener, the HTTP-enabled
+browser build reads `FGA_MODEL`. It accepts only a regular file of **52,709
+bytes**, with SHA-256
+`a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d`.
+A limited reader prevents an oversized input from allocating without a bound.
+The checked input is the unchanged repository `fga/model.json`; the real HTTP
+client's serialized request is a separate representation.
+
+Warmup exercises the pinned grpc-gateway `JSONPb` decoder, protobuf binary
+encoding/decoding, generated request validation, and
+`typesystem.NewAndValidate`. It then encodes local write-model and full read-model
+response fixtures through the protobuf and JSONPb APIs. The fixed ULID is codec
+input only. No request handler, datastore, store/tuple write or Check is called,
+and no response is sent. All messages, the TypeSystem and validation results are
+discarded. Subsequent real requests still parse their own bytes, validate again,
+construct fresh type systems and perform the unchanged database operations.
+
+The intended effect is to initialize shared protobuf metadata and exercise code
+before serving the first model request. Native profiling selected these code
+paths; it does not predict browser/TCG cache behavior or prove a speedup. Removing
+redundant unary payload logging and this warmup remain a browser candidate until
+real acceptance verifies them.
+
+Warmup has its own **60-second startup budget** and inherits parent cancellation.
+A buffered worker result bounds the startup caller's wait even if a synchronous
+codec/validation step does not observe cancellation immediately. Context checks
+between stages prevent further work after cancellation. The worker cannot publish
+readiness; timeout, cancellation, bad identity or API failure returns a startup
+error before any listener opens. The CLI exits on that error. A synchronous step
+may finish later before process exit; Go does not forcibly stop that goroutine.
+The result is never a cached validation or authorization decision. Request and
+authorization deadlines are unchanged.
 
 ## Build and check
 
@@ -64,6 +114,13 @@ Tests invoke the same helper called by the patched server:
   inputs, HTTP status/headers/body, RPC results/errors, cancellation and panics.
 - Diagnostic output contains only boundary metadata, with no request/response
   bodies, query strings, headers or error details.
+- The exact pinned model completes the actual warmup APIs without changing its
+  bytes. Missing, tampered, oversized, truncated and non-regular inputs fail.
+- A deliberately blocked synchronous worker cannot retain the startup caller
+  beyond its budget. Parent cancellation/deadline and completion racing with
+  cancellation fail closed.
+- The patched server entry point rejects an unacceptable model or cancelled
+  parent before datastore or listener initialization.
 
 The tests include a deliberate 60-second wait to verify the production bound.
 They do not substitute for the real PostgreSQL/OpenFGA/Axum browser acceptance.
@@ -71,15 +128,20 @@ Both Chromium and Firefox must still pass the actual sequence twice, in order:
 `403 → 204 → 200 → 204 → 403`.
 
 Output contains `openfga`, `build.json`, `dial-tests.log`, `LICENSE`, `SOURCE.txt`,
-the exact source patch and helper. `build.json` is created only after passing
+the exact source patch and both helpers. `build.json` is created only after passing
 tests and records the source commit, compiler version, canonical UTC commit
-date, patch/helper/test digests, metadata-only diagnostics, dependency checksum
-and executable SHA-256. The build identifies itself as
-`v1.10.3-browser-startup.1`, rather than claiming to be an untouched release.
+date, patch/helper/test digests, metadata-only diagnostics, omitted unary logging,
+the pinned warmup model identity and budget, native warmup proof, dependency
+checksum and executable SHA-256. This proof means the native APIs/tests passed;
+it is not browser acceptance. The build identifies itself as
+`v1.10.3-browser-startup.2`, rather than claiming to be an untouched release.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its
-first argument. It applies the same source, dependency, test and build gates as
-the Docker recipe. Syntax checks and patch applicability alone are insufficient.
-A successful native build verifies startup dial and transport observer tests, while real browser
-acceptance remains a separate required check.
+first argument and, optionally, the fixture path as its second argument. The
+default fixture is this repository's `fga/model.json`, resolved relative to the
+script. Docker copies that existing file separately for tests; no duplicate model
+is committed, embedded in the binary or included in the output. The same source,
+dependency, test and build gates apply to both recipes. Syntax checks and patch
+applicability alone are insufficient. A successful native build verifies the
+startup, warmup and observer tests; real browser acceptance is a separate gate.
