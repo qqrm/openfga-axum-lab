@@ -25,7 +25,8 @@ go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTP
     2>&1 | tee "$output_dir/dial-tests.log"
 git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 
-build_date=$(git show -s --format=%cI HEAD)
+build_epoch=$(git show -s --format=%ct HEAD)
+build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
     -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.1 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
@@ -42,6 +43,7 @@ cat >"$output_dir/build.json" <<EOF
   "upstream_version": "1.10.3",
   "source_commit": "$source_commit",
   "go_version": "$go_version",
+  "build_date": "$build_date",
   "target": "linux/amd64",
   "startup_dial_timeout_seconds": 60,
   "authorization_request_timeout_default_seconds": 3,
