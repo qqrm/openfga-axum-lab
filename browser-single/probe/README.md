@@ -2,7 +2,7 @@
 
 This local probe loads the **existing** `browser-one-converted` artifact in a
 real Chromium browser. It does not build an image, convert an image, call Actions,
-publish a site, or start a native application backend. The Python server serves
+publish a site, or start a native application backend. The Node.js server serves
 static files on loopback. PostgreSQL, OpenFGA and Axum can run only inside the
 supplied QEMU/WASM guest.
 
@@ -30,7 +30,7 @@ Extract the saved ZIP to a local directory, then verify its contents:
 repo=/path/to/openfga-axum-lab
 artifact=/path/to/browser-one-converted
 (cd "$artifact" && sha256sum -c "$repo/browser-single/probe/artifact.SHA256SUMS")
-python3 "$repo/browser-single/probe/serve.py" --artifact "$artifact" --port 8765
+node "$repo/browser-single/probe/serve.mjs" --artifact "$artifact" --port 8765
 ```
 
 Open <http://127.0.0.1:8765/> in Chromium. The server supplies
@@ -38,6 +38,10 @@ Open <http://127.0.0.1:8765/> in Chromium. The server supplies
 `Cross-Origin-Embedder-Policy: require-corp`, enabling the shared WebAssembly
 memory required by this artifact. No CDN is needed. The page shows guest serial
 output separately from browser/QEMU diagnostics and can download a JSON report.
+The server requires Node.js 20 or newer and no additional packages. It streams
+only the probe page, its loader, and the five named artifact files. GET and HEAD
+are supported; directory listings, other files, and symlinks outside the supplied
+artifact directory are rejected.
 
 The default URL preserves the artifact's original QEMU arguments, including its
 128 MiB guest memory and migration snapshot. The Emscripten module separately
@@ -62,7 +66,8 @@ node "$repo/browser-single/probe/run.mjs" \
 readiness and isolation headers, runs Chromium in the same execution environment,
 and stops the owned server on completion. The default port is assigned by the OS.
 This is useful when separate tool commands have isolated network namespaces.
-Use `--python /path/to/python3` or `--port 8765` when needed. To connect to an
+The child server uses the same Node.js executable as the runner. Use `--port 8765`
+when a fixed port is needed. To connect to an
 already running manual server, replace `--artifact` with
 `--url http://127.0.0.1:8765/`.
 
@@ -113,6 +118,18 @@ routing, and the actual deny/grant/allow/revoke/deny scenario. The existing
 `lab-tool acceptance` documents the application scenario; executing it against a
 native backend does not validate this VM. No static Lakekeeper WASM explorer is
 loaded by this probe.
+
+## Server checks
+
+Run the dependency-free HTTP and runner checks with:
+
+```sh
+node --test "$repo/browser-single/probe/serve.test.mjs"
+```
+
+These checks use small synthetic artifact files to verify MIME types, isolation
+headers, GET/HEAD behavior, path confinement, startup errors and runner cleanup.
+They do not boot a VM or replace the browser execution evidence in `FINDINGS.md`.
 
 ## Loader provenance
 

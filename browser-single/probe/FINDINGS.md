@@ -52,6 +52,12 @@ guest timeout. The VM loading path and default arguments were preserved. Final
 JavaScript/Python syntax, patch whitespace and the recorded fatal evidence were
 checked; these small diagnostic changes were not followed by another VM run.
 
+The subsequent CI repair replaces the original static server with a dependency-free
+Node.js server and uses the runner's Node.js executable to launch it. HTTP and
+runner checks cover the replacement with synthetic artifact files. The historical
+captures and artifact hashes above are retained; this maintenance check is not a
+new VM boot or authorization result.
+
 The cold-run serial output contains:
 
 ```text
@@ -141,7 +147,7 @@ that is not the guest's RAM budget or a measurement of physical memory use.
 
 The reproduction archive supplied separately to the repository owner contains
 the complete probe and the evidence paths below. These evidence directories and
-the executable artifact are not included in this seven-file probe change:
+the executable artifact were not included in the original seven-file probe change:
 
 - `evidence/original/`: original serial, event log and structured result.
 - `evidence/cold-512/`: cold-run serial, event log and structured result.

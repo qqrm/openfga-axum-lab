@@ -41,7 +41,7 @@ let hostRuntimeFailure = null;
 let browserVersion = null;
 
 async function startServer() {
-  const serverScript = fileURLToPath(new URL('./serve.py', import.meta.url));
+  const serverScript = fileURLToPath(new URL('./serve.mjs', import.meta.url));
   const serverArgs = [serverScript, '--artifact', path.resolve(artifact), '--port', option('--port', '0')];
   const baseUrl = await new Promise((resolve, reject) => {
     let settled = false;
@@ -53,7 +53,7 @@ async function startServer() {
       clearTimeout(timer);
       if (error) reject(error); else resolve(value);
     }
-    server = spawn(option('--python', process.env.PYTHON || 'python3'), serverArgs, {stdio: ['ignore', 'pipe', 'pipe']});
+    server = spawn(process.execPath, serverArgs, {stdio: ['ignore', 'pipe', 'pipe']});
     server.on('error', e => { record('server.error', e.message); settle(e); });
     server.on('exit', (code, signal) => {
       record('server.exit', {code, signal});

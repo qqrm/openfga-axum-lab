@@ -67,6 +67,8 @@ jobs:
           cargo test --locked --offline --manifest-path browser-demo/Cargo.toml --doc
       - run: bash scripts/build-browser-demo.sh
       - run: node scripts/check-browser-demo.mjs
+      - name: Test browser probe static server
+        run: node --test browser-single/probe/serve.test.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
