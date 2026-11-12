@@ -29,6 +29,13 @@ export FGA_CONFIG="$runtime_dir/config.json" FGA_MODEL=/app/fga/model.json
 export DEMO_PASSWORD_FILE="$runtime_dir/demo-password"
 export DEMO_SEED=true DEMO_MIGRATE=true
 export LISTEN_ADDR=0.0.0.0:3000
+# Pages supplies a reviewed browser-only build through the existing host mount.
+# The native image continues to use the checksummed official release binary.
+openfga_binary=${BROWSER_LAB_OPENFGA_BINARY:-/usr/local/bin/openfga}
+if [[ ! -x "$openfga_binary" ]]; then
+    echo "OpenFGA executable is unavailable: $openfga_binary" >&2
+    exit 66
+fi
 
 mkdir -p "$runtime_dir"
 chmod 0700 "$runtime_dir"
@@ -71,9 +78,31 @@ createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" openfga
 createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" authzlab
 
 echo "[browser-single] migrating and starting real OpenFGA 1.10.3"
-/usr/local/bin/openfga migrate
-/usr/local/bin/openfga run &
+"$openfga_binary" migrate
+"$openfga_binary" run &
 fga_pid=$!
+
+# Do not spend bootstrap's existing 60-second readiness budget while Go is
+# still initializing. A listening socket only schedules bootstrap: its real
+# /healthz SERVING and pinned-model checks remain the readiness authority.
+echo "[browser-single] waiting for the OpenFGA HTTP listener"
+http_listening=false
+deadline=$((SECONDS + 120))
+while (( SECONDS < deadline )); do
+    if ! kill -0 "$fga_pid" 2>/dev/null; then
+        echo "[browser-single] OpenFGA exited before its HTTP listener started" >&2
+        exit 1
+    fi
+    if timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' 2>/dev/null; then
+        http_listening=true
+        break
+    fi
+    sleep 3
+done
+if [[ "$http_listening" != true ]]; then
+    echo "[browser-single] OpenFGA HTTP listener startup timed out" >&2
+    exit 1
+fi
 
 echo "[browser-single] binding the pinned Lakekeeper model and seeding real SQL data"
 /usr/local/bin/lab-tool bootstrap

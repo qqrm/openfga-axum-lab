@@ -1,0 +1,10 @@
+--- a/cmd/run/run.go
++++ b/cmd/run/run.go
+@@ -775,5 +775,2 @@
+-		timeoutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+-		defer cancel()
+-
+-		// nolint:staticcheck // ignoring gRPC deprecations
+-		conn, err := grpc.DialContext(timeoutCtx, config.GRPC.Addr, dialOpts...)
++		// Browser-only startup budget; authorization request deadlines stay unchanged.
++		conn, err := dialBrowserHTTPGRPC(ctx, config.GRPC.Addr, dialOpts...)

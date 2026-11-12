@@ -1,5 +1,7 @@
+import {consumeGuestLine, initialEvidence, requestVerification} from './acceptance-protocol.mjs';
+import {loadStartupPayload} from './startup-payload.mjs';
+
 const element = id => document.getElementById(id);
-const expected = [403, 204, 200, 204, 403];
 let started = false;
 let failed = false;
 let input = [];
@@ -8,7 +10,7 @@ let serialLine = '';
 const decoder = new TextDecoder();
 const readable = new Set();
 const signals = new Set();
-window.labEvidence = {ready: false, accepted: false, checks: 0, source: '99f00cc'};
+window.labEvidence = initialEvidence('99f00cc');
 
 function log(text) {
   transcript = (transcript + text).slice(-120000);
@@ -20,6 +22,8 @@ function phase(title, detail) {
 }
 function fail(error) {
   failed = true;
+  window.labEvidence.ready = false;
+  window.labEvidence.accepted = false;
   window.labEvidence.error = String(error);
   element('verify').disabled = true;
   phase('Experiment stopped', String(error));
@@ -28,30 +32,23 @@ function fail(error) {
 }
 function line(value) {
   if (failed) return;
-  if (value === 'LAB|boot') phase('Linux booted', 'Starting the original PostgreSQL, OpenFGA and Axum binaries.');
-  if (value === 'LAB|ready') {
-    window.labEvidence.ready = true;
-    phase('Real backend ready', 'The guest readiness check passed. Testing authorization next.');
-  }
-  if (value === 'LAB|verification-start') {
-    window.labEvidence.accepted = false;
-    element('verify').disabled = true;
-    phase('Checking real permissions', 'Running the native grant/revoke acceptance program inside this browser.');
-    element('result').textContent = 'Waiting for real HTTP responses…';
-  }
-  if (value.startsWith('LAB|result|')) {
-    try {
-      const result = JSON.parse(value.slice('LAB|result|'.length));
-      if (!window.labEvidence.ready || result.accepted !== true || JSON.stringify(result.statuses) !== JSON.stringify(expected)) throw new Error('Unexpected guest acceptance result');
-      window.labEvidence.accepted = true;
-      window.labEvidence.checks += 1;
-      window.labEvidence.statuses = result.statuses;
+  try {
+    const event = consumeGuestLine(window.labEvidence, value);
+    if (event === 'boot') phase('Linux booted', 'Starting PostgreSQL, OpenFGA and Axum inside the guest.');
+    if (event === 'ready') {
+      phase('Real backend ready', 'The guest readiness check passed. Testing authorization next.');
+    }
+    if (event === 'start') {
+      element('verify').disabled = true;
+      phase('Checking real permissions', 'Running the native grant/revoke acceptance program inside this browser.');
+      element('result').textContent = 'Waiting for real HTTP responses…';
+    }
+    if (event === 'result') {
       element('result').textContent = 'Verified inside this tab: 403 → 204 → 200 → 204 → 403';
       phase('Browser authorization check passed', 'These responses came from the real guest backend. This is not a production readiness claim.');
       element('verify').disabled = false;
-    } catch (error) { fail(error.message); }
-  }
-  if (value === 'LAB|boot-failed' || value === 'LAB|verification-failed') fail(value);
+    }
+  } catch (error) { fail(error.message); }
 }
 let termios = {iflag: 0, oflag: 0, cflag: 0, lflag: 0, cc: Array(32).fill(0)};
 // A raw serial channel for QEMU, not an authorization evaluator or shell emulator.
@@ -94,9 +91,9 @@ async function start() {
   element('start').disabled = true;
   phase('Loading Linux image and emulator', 'Large files are loading locally. No external backend is contacted.');
   try {
-    const guestResponse = await fetch(new URL('guest.sh', import.meta.url));
-    if (!guestResponse.ok) throw new Error(`Cannot load guest startup: ${guestResponse.status}`);
-    const guestScript = await guestResponse.text();
+    const {manifest, payload} = await loadStartupPayload(import.meta.url);
+    window.labEvidence.source = manifest.base_source_commit;
+    window.labEvidence.startupManifest = manifest;
     const module = window.Module = {
       preRun: [], pty,
       locateFile: name => new URL(`runtime/${name}`, import.meta.url).href,
@@ -116,6 +113,16 @@ async function start() {
     // with 512 MiB instead of restoring an incompatible memory snapshot.
     args.splice(snapshot, 2);
     args[args.indexOf('-m') + 1] = '512M';
+    // Candidate for the next real browser run: retain request deadlines while
+    // giving Go two guest CPUs and removing the converter's allocator debugging.
+    const smp = args.indexOf('-smp');
+    const commandLine = args.indexOf('-append');
+    if (smp < 0 || args[smp + 1] !== '1,sockets=1' || commandLine < 0) throw new Error('Unexpected reviewed CPU/kernel arguments');
+    const kernelFlags = args[commandLine + 1].split(/\s+/);
+    if (kernelFlags.filter(flag => flag === 'slub_debug=F').length !== 1) throw new Error('Missing reviewed allocator debug option');
+    args[smp + 1] = '2,sockets=1';
+    args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F').join(' ');
+    window.labEvidence.vm = {cpus:2, memoryMiB:512, slabDebug:false};
     // Keep the explicit virtio NIC, attached only to an isolated guest hub.
     // Removing it makes this QEMU build enumerate default NICs and trap in
     // g_slist_sort_real. A hub has no host socket, proxy or external backend.
@@ -124,8 +131,10 @@ async function start() {
     args[network + 1] = 'hubport,id=vmnic,hubid=0';
     module.preRun.push(mod => {
       mod.FS.mkdir('/browser-host');
-      mod.FS.writeFile('/browser-host/guest.sh', guestScript);
-      mod.FS.writeFile('/pack/info', `t:${Math.round(Date.now() / 1000)}\nm: browser-host\ne: /bin/bash\nc: /browser-host/guest.sh\n`);
+      for (const file of payload) {
+        mod.FS.writeFile(`/browser-host/${file.name}`, file.bytes, {mode:0o555});
+      }
+      mod.FS.writeFile('/pack/info', `t:${Math.round(Date.now() / 1000)}\nmr: browser-host\ne: /bin/bash\nc: /browser-host/guest.sh\n`);
     });
     let callbacks = [];
     pty.onReadable(() => { const pending = callbacks; callbacks = []; for (const callback of pending) callback(); });
@@ -147,6 +156,8 @@ async function start() {
 element('start').addEventListener('click', start);
 element('verify').addEventListener('click', () => {
   if (failed || !window.labEvidence.accepted) return;
+  try { requestVerification(window.labEvidence); }
+  catch (error) { fail(error.message); return; }
   element('verify').disabled = true;
   input.push(...new TextEncoder().encode('verify\n'));
   for (const callback of readable) callback();

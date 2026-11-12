@@ -3,7 +3,8 @@
 This is **one Linux image** containing three **real** processes:
 
 - PostgreSQL 17 (SQL source, sessions, and the OpenFGA datastore in separate databases)
-- OpenFGA 1.10.3 (official release archive checked against a pinned SHA-256)
+- OpenFGA 1.10.3 (checksummed official release in the native image; the browser
+  startup adaptation is documented below)
 - The existing Rust/Axum application and `lab-tool`, built with the HTTP adapter
 
 It does **not** contain Docker, a fake authorization engine, JavaScript
@@ -57,9 +58,10 @@ The executable artifact is retained for one day, and `browser-one-report` for
 seven days. This does not bypass GitHub's own storage limits or quotas, and
 never publishes a converted executable to Pages automatically.
 
-**Not yet established:** whether the emulated Linux kernel supports the
-PostgreSQL shared-memory/process semantics; whether all three daemons can boot
-and complete a Check/Write within browser memory and CPU limits; how to bridge
+The original converter kernel lacked System V IPC. The separately rebuilt,
+checksummed kernel enables `SYSVIPC` and `IPC_NS`; an actual Chromium run reached
+PostgreSQL startup. **Not yet established by that run:** whether all three daemons
+can boot and complete a Check/Write within browser memory and CPU limits; how to bridge
 browser Fetch requests into port 3000 without an external server; and whether
 the result works in Firefox/Chrome. A successful `c2w` conversion alone is
 **not** a successful browser deployment.
@@ -80,3 +82,53 @@ the result works in Firefox/Chrome. A successful `c2w` conversion alone is
   Pages; that demo checks lifecycle rules, not OpenFGA decisions.
 
 Related prior experiment: [docs/browser-feasibility.md](../docs/browser-feasibility.md).
+
+## Pages startup adaptation and acceptance gate
+
+The Pages experiment retains the verified `99f00cc` emulator/rootfs artifact.
+Its filesystem still supplies PostgreSQL, Axum, `lab-tool`, and the pinned
+Lakekeeper model. Changing this directory's Dockerfile alone cannot update that
+artifact. `prepare-pages.sh` supplies the current entrypoint and a separately
+built OpenFGA executable through the converter's read-only host mount. The
+launcher checks every payload's size and SHA-256 before starting QEMU;
+`runtime/startup-manifest.json` identifies the source, patch, tests and binary.
+
+The [OpenFGA adaptation](openfga/README.md) changes only HTTP gateway startup
+self-dial from three seconds to a bounded 60 seconds. PostgreSQL initialization
+and OpenFGA migration remain sequential. A lightweight, bounded listener wait
+schedules the existing bootstrap, which still requires real `SERVING` health,
+the unchanged model, and successful operations before Axum starts. Application,
+bootstrap and acceptance request deadlines are unchanged. The guest's total
+startup budget includes payload staging, and service phases are streamed to
+the diagnostic console.
+
+The browser checker requires two sequential, indexed executions of the existing
+native `lab-tool acceptance` in each Chromium and Firefox. Both executions must
+return `403 → 204 → 200 → 204 → 403`. Duplicate, malformed or out-of-order serial
+results cannot satisfy the gate. A service exit clears the live accepted state.
+Chromium failure stops further VM work and records Firefox as skipped; skipped
+is never accepted as a passing browser result.
+
+Prepare and check locally (Docker, pinned Rust, Node and Playwright required):
+
+```sh
+bash scripts/build-browser-demo.sh
+docker buildx build -f browser-single/OpenFGA.Dockerfile \
+  --output type=local,dest=artifacts/browser-openfga .
+bash browser-single/prepare-kernel.sh
+# Optional: set BROWSER_RUNTIME_ARCHIVE to a retained original ZIP.
+# Its pinned checksum is still mandatory.
+bash browser-single/prepare-pages.sh
+npm --prefix e2e ci --ignore-scripts
+(cd e2e && npx --no-install playwright install chromium firefox)
+node browser-single/check-pages.mjs
+```
+
+`.github/workflows/pages.yml` (Browser preview) is the browser acceptance gate;
+Browser lab verification exercises a native Dev Container instead. Browser
+evidence and the adapted binary/build record are retained even on failure.
+Pages deployment requires a separate manual run on `main` with `publish=true`,
+and still depends on successful browser acceptance. Ordinary pushes, PR
+validation and the default manual run do not publish Pages.
+
+See [the review and observed limitations](../docs/browser-startup-review.md).
