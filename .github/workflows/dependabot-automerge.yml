@@ -4,7 +4,15 @@ name: Dependabot Automerge
 # The native gates and --match-head-commit bind the write to the checked commit.
 on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
-    workflows: [CI, Workflow Security, "Secret scan", "Delivery verification", CodeQL]
+    workflows:
+      - CI
+      - Workflow Security
+      - Secret scan
+      - Delivery verification
+      - CodeQL
+      - Browser lab verification
+      - Browser single-image feasibility
+      - Browser preview
     types: [completed]
 
 # Metadata only: never check out PR code or consume its artifacts here.
