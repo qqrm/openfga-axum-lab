@@ -37,7 +37,10 @@ cp "$temporary/runtime.zip" "$output/runtime-source.zip"
 jq -r '.files | to_entries[] | "\(.value.sha256)  \(.key)"' "$manifest" >"$temporary/files.sha256"
 (cd "$output/runtime" && sha256sum --check "$temporary/files.sha256")
 node browser-single/repack-runtime.mjs "$output/runtime" artifacts/browser-kernel
+node browser-single/prepare-emulator.mjs "$output/runtime" artifacts/browser-emulator
 node --check "$output/launcher.js"
+node --check "$output/runtime-errors.mjs"
+node --check "$output/runtime/out.js"
 node --check "$output/isolation-sw.js"
 bash -n "$output/guest.sh"
 bash -n "$output/entrypoint.sh"
@@ -54,6 +57,7 @@ assert.equal(build.startup_dial_tests,'passed');
 assert.equal(build.authorization_request_timeout_default_seconds,3);
 assert.equal(build.startup_model_warmup,'in_process_codec_validation_only');
 assert.equal(build.warmup_timeout_seconds,60);
+assert.equal(build.warmup_cycles,4);
 assert.equal(build.warmup_tests,'passed');
 assert.equal(build.warmup_model_sha256,digest('fga/model.json'));
 assert.equal(build.warmup_model_bytes,readFileSync('fga/model.json').length);
@@ -70,7 +74,8 @@ for (const name of ['guest.sh','entrypoint.sh','runtime/openfga']) {
   const bytes = readFileSync(`browser-output/wasm/${name}`);
   files[name] = {bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
-const startup = {base_source_commit:original.source_commit,openfga_build:build,files};
+const emulator = JSON.parse(readFileSync('browser-output/wasm/runtime/emulator-build/build.json','utf8'));
+const startup = {base_source_commit:original.source_commit,openfga_build:build,emulator_build:emulator,files};
 const startupPath = 'browser-output/wasm/runtime/startup-manifest.json';
 writeFileSync(startupPath,JSON.stringify(startup,null,2)+'\n');
 const derivedPath = 'browser-output/wasm/runtime/derived-runtime.json';

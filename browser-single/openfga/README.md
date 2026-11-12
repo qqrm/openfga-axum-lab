@@ -60,7 +60,7 @@ A limited reader prevents an oversized input from allocating without a bound.
 The checked input is the unchanged repository `fga/model.json`; the real HTTP
 client's serialized request is a separate representation.
 
-Warmup exercises the pinned grpc-gateway `JSONPb` decoder, protobuf binary
+Each of four fresh warmup cycles exercises the pinned grpc-gateway `JSONPb` decoder, protobuf binary
 encoding/decoding, generated request validation, and
 `typesystem.NewAndValidate`. It then encodes local write-model and full read-model
 response fixtures through the protobuf and JSONPb APIs. The fixed ULID is codec
@@ -75,7 +75,12 @@ paths; it does not predict browser/TCG cache behavior or prove a speedup. Removi
 redundant unary payload logging and this warmup remain a browser candidate until
 real acceptance verifies them.
 
-Warmup has its own **60-second startup budget** and inherits parent cancellation.
+Reading/verifying the file and all four cycles share **one 60-second startup
+budget**, inheriting parent cancellation. This is not a new budget per cycle.
+Compact per-cycle records separate JSON decoding, protobuf roundtrip, generated
+validation, TypeSystem validation and response codecs, including an interrupted
+stage. Four cycles are a bounded experiment: neither their completion nor
+native timings prove that real browser requests will meet their deadlines.
 A buffered worker result bounds the startup caller's wait even if a synchronous
 codec/validation step does not observe cancellation immediately. Context checks
 between stages prevent further work after cancellation. The worker cannot publish
@@ -134,7 +139,7 @@ date, patch/helper/test digests, metadata-only diagnostics, omitted unary loggin
 the pinned warmup model identity and budget, native warmup proof, dependency
 checksum and executable SHA-256. This proof means the native APIs/tests passed;
 it is not browser acceptance. The build identifies itself as
-`v1.10.3-browser-startup.2`, rather than claiming to be an untouched release.
+`v1.10.3-browser-startup.3`, rather than claiming to be an untouched release.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

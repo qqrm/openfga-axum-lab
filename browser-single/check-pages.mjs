@@ -37,17 +37,29 @@ try {
       evidence.browser = await browser.version();
       const context = await browser.newContext();
       page = await context.newPage();
-      page.on('pageerror', error=>errors.push(String(error)));
-      page.on('crash', ()=>errors.push('Browser page crashed'));
-      await page.goto(url);
-      await page.waitForFunction(()=>crossOriginIsolated && !document.getElementById('start').disabled, null, {timeout:30000});
+      let rejectPageFailure;
+      const pageFailure = new Promise((_, reject) => { rejectPageFailure = reject; });
+      // An error can arrive between waits. Record it without an unhandled
+      // rejection, then let the same failure terminate each subsequent wait.
+      pageFailure.catch(()=>{});
+      const recordPageFailure = error => {
+        errors.push(String(error));
+        rejectPageFailure(error instanceof Error ? error : new Error(String(error)));
+      };
+      page.on('pageerror', recordPageFailure);
+      page.on('crash', ()=>recordPageFailure('Browser page crashed'));
+      const wait = operation => Promise.race([pageFailure,operation]);
+      await wait(page.goto(url));
+      await wait(page.waitForFunction(()=>crossOriginIsolated && !document.getElementById('start').disabled, null, {timeout:30000}));
       assert.equal(await page.evaluate(()=>window.labEvidence.accepted),false);
       assert.equal(await page.evaluate(()=>window.labEvidence.checks),0);
-      await page.locator('#start').click();
-      await page.waitForFunction(()=>window.labEvidence.accepted || window.labEvidence.error, null, {timeout:1200000});
+      await wait(page.locator('#start').click());
+      await wait(page.waitForFunction(()=>window.labEvidence.accepted || window.labEvidence.error, null, {timeout:1200000}));
       const first=await page.evaluate(()=>window.labEvidence);
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.ok(first.startupManifest,'Missing verified startup provenance');
+      assert.equal(first.startupManifest.openfga_build.warmup_cycles,4);
+      assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,4096);
       assert.equal(first.ready,true);
       assert.equal(first.accepted,true);
       assert.deepEqual(first.statuses,expectedStatuses);
@@ -57,8 +69,8 @@ try {
       assert.equal(first.passes[0].accepted,true);
       assert.deepEqual(first.passes[0].statuses,expectedStatuses);
       evidence.passes = first.passes;
-      await page.locator('#verify').click();
-      await page.waitForFunction(()=>window.labEvidence.checks===2 || window.labEvidence.error, null, {timeout:180000});
+      await wait(page.locator('#verify').click());
+      await wait(page.waitForFunction(()=>window.labEvidence.checks===2 || window.labEvidence.error, null, {timeout:180000}));
       const second=await page.evaluate(()=>window.labEvidence);
       assert.equal(second.error,undefined,JSON.stringify(second));
       assert.equal(second.checks,2);

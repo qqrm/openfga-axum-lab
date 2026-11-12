@@ -14,6 +14,14 @@ export OPENFGA_LOG_LEVEL=warn
 export OPENFGA_METRICS_ENABLED=false
 printf '\nLAB|boot\n'
 deadline=$((SECONDS + 900))
+# Do not confuse QEMU's requested topology with CPUs Linux actually discovered.
+online_cpus=
+if ! read -r online_cpus </sys/devices/system/cpu/online || [[ "$online_cpus" != '0-1' ]]; then
+    printf '[browser-guest] expected online CPUs 0-1, got: %s\n' "$online_cpus"
+    printf 'LAB|boot-failed\n'
+    exit 1
+fi
+printf '[browser-guest] confirmed online CPUs: %s\n' "$online_cpus"
 # The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.
 # Copy the verified browser-only OpenFGA build out of the read-only host mount.
 export BROWSER_LAB_OPENFGA_BINARY=/tmp/browser-lab-runtime/openfga

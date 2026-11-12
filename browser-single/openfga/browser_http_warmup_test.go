@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,14 +28,54 @@ func browserHTTPModelFixture(t *testing.T) (string, []byte) {
 	return path, data
 }
 
+func captureBrowserHTTPWarmupLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var output bytes.Buffer
+	previous := browserTransportLogger.Writer()
+	browserTransportLogger.SetOutput(&output)
+	t.Cleanup(func() { browserTransportLogger.SetOutput(previous) })
+	return &output
+}
+
 func TestBrowserHTTPWarmupExactModel(t *testing.T) {
 	path, original := browserHTTPModelFixture(t)
+	output := captureBrowserHTTPWarmupLog(t)
 	if err := warmBrowserHTTPModel(context.Background(), path); err != nil {
 		t.Fatal(err)
+	}
+	if got := strings.Count(output.String(), "warmup_cycle "); got != 4 {
+		t.Fatalf("expected four completed real codec/validation cycles, got %d: %s", got, output.String())
+	}
+	for cycle := 1; cycle <= 4; cycle++ {
+		want := fmt.Sprintf("warmup_cycle cycle=%d completed=true current_stage=complete failed=false", cycle)
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("cycle did not complete all real stages: %s", output.String())
+		}
+	}
+	for _, field := range []string{"json_decode_ms=", "protobuf_ms=", "generated_validation_ms=", "typesystem_ms=", "response_codec_ms="} {
+		if strings.Count(output.String(), field) != 4 {
+			t.Fatalf("missing per-cycle %s timing: %s", field, output.String())
+		}
 	}
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(original, after) {
 		t.Fatalf("warmup changed the pinned file: %v", err)
+	}
+}
+
+func TestBrowserHTTPWarmupStopsAtFailedCycle(t *testing.T) {
+	output := captureBrowserHTTPWarmupLog(t)
+	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
+	// Exercise the real decoder's failure path directly. Production reaches
+	// these codecs only after the pinned size/hash check has passed.
+	err := warmBrowserHTTPModelCycles(context.Background(), []byte("{"), progress)
+	if err == nil || !strings.Contains(err.Error(), "warmup gateway model decode") {
+		t.Fatalf("invalid codec input accepted or wrong failure: %v", err)
+	}
+	logBrowserHTTPWarmupCycles(progress)
+	if strings.Count(output.String(), "warmup_cycle ") != 1 ||
+		!strings.Contains(output.String(), "cycle=1 completed=false current_stage=json_decode failed=true") {
+		t.Fatalf("failed cycle was hidden or later cycles ran: %s", output.String())
 	}
 }
 
@@ -77,6 +118,8 @@ func TestBrowserHTTPWarmupBoundedWorker(t *testing.T) {
 	release := make(chan struct{})
 	entered := make(chan struct{})
 	finished := make(chan struct{})
+	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
+	output := captureBrowserHTTPWarmupLog(t)
 	defer func() {
 		close(release)
 		select {
@@ -84,12 +127,19 @@ func TestBrowserHTTPWarmupBoundedWorker(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Error("test worker did not finish after release")
 		}
+		if strings.Count(output.String(), "warmup_cycle ") != 1 {
+			t.Errorf("late worker completion duplicated the partial diagnostic: %s", output.String())
+		}
 	}()
 	started := time.Now()
 	err := runBrowserHTTPWarmup(context.Background(), 20*time.Millisecond, func(context.Context) error {
 		defer close(finished)
+		current := browserHTTPWarmupProgress{cycle: 1, stage: browserWarmupTypeSystem, stageStarted: time.Now()}
+		progress <- current
 		close(entered)
 		<-release
+		current.completed = true
+		progress <- current
 		return nil
 	})
 	if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > time.Second {
@@ -104,6 +154,11 @@ func TestBrowserHTTPWarmupBoundedWorker(t *testing.T) {
 	case <-finished:
 		t.Fatal("test did not leave synchronous work running beyond the deadline")
 	default:
+	}
+	logBrowserHTTPWarmupCycles(progress)
+	if strings.Count(output.String(), "warmup_cycle ") != 1 ||
+		!strings.Contains(output.String(), "cycle=1 completed=false current_stage=typesystem failed=true") {
+		t.Fatalf("timeout hid or completed the unfinished stage: %s", output.String())
 	}
 }
 

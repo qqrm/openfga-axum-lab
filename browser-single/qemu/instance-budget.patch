@@ -1,0 +1,6 @@
+diff --git a/tcg/wasm32.c b/tcg/wasm32.c
+--- a/tcg/wasm32.c
++++ b/tcg/wasm32.c
+@@ -107 +107 @@
+-#define MAX_INSTANCE_ALIVE 15000
++#define MAX_INSTANCE_ALIVE 4096

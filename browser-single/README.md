@@ -85,7 +85,7 @@ Related prior experiment: [docs/browser-feasibility.md](../docs/browser-feasibil
 
 ## Pages startup adaptation and acceptance gate
 
-The Pages experiment retains the verified `99f00cc` emulator/rootfs artifact.
+The Pages experiment retains the verified `99f00cc` source artifact.
 Its filesystem still supplies PostgreSQL, Axum, `lab-tool`, and the pinned
 Lakekeeper model. Changing this directory's Dockerfile alone cannot update that
 artifact. `prepare-pages.sh` supplies the current entrypoint and a separately
@@ -93,10 +93,23 @@ built OpenFGA executable through the converter's read-only host mount. The
 launcher checks every payload's size and SHA-256 before starting QEMU;
 `runtime/startup-manifest.json` identifies the source, patch, tests and binary.
 
+The [QEMU adaptation](qemu/README.md) rebuilds only the emulator JS/WASM pair
+with an earlier compiled-module eviction budget. The original data, loader,
+arguments and reviewed SYSVIPC kernel are checked before and after that overlay.
+The derived manifest records this separate emulator build; it does not rewrite
+the identity of the original source ZIP. This memory-budget candidate still
+requires real browser acceptance.
+
+The launcher requests two sockets with one CPU each. With this kernel's ACPI
+disabled, SeaBIOS's legacy MP table otherwise exposes only one CPU from a
+two-CPU single socket. The guest verifies `online=0-1` before starting services;
+requested QEMU arguments alone do not prove that Linux discovered both CPUs.
+
 The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
 self-dial from three seconds to a bounded 60 seconds. A separate bounded
 startup phase exercises the codecs and validation code for the exact pinned
-model in memory before opening listeners. Its results are discarded: the
+model in four fresh cycles under one total 60-second budget, before opening
+listeners. Its results are discarded: the
 original bootstrap and every subsequent real validation, write and Check
 still run. This is a candidate for reducing initialization and emulated-code
 translation costs, not evidence of successful browser acceptance.
@@ -123,6 +136,8 @@ The browser checker requires two sequential, indexed executions of the existing
 native `lab-tool acceptance` in each Chromium and Firefox. Both executions must
 return `403 → 204 → 200 → 204 → 403`. Duplicate, malformed or out-of-order serial
 results cannot satisfy the gate. A service exit clears the live accepted state.
+Uncaught browser/worker errors and unhandled rejections also clear readiness and
+acceptance. The checker stops waiting when a page error or crash is observed.
 Both browsers are attempted independently, including Firefox after a Chromium
 failure. Any failed browser keeps the combined gate failed; neither a skipped
 browser nor a single successful execution satisfies it.
@@ -133,6 +148,7 @@ Prepare and check locally (Docker, pinned Rust, Node and Playwright required):
 bash scripts/build-browser-demo.sh
 docker buildx build -f browser-single/OpenFGA.Dockerfile \
   --output type=local,dest=artifacts/browser-openfga .
+bash browser-single/qemu/build.sh
 bash browser-single/prepare-kernel.sh
 # Optional: set BROWSER_RUNTIME_ARCHIVE to a retained original ZIP.
 # Its pinned checksum is still mandatory.
@@ -144,7 +160,7 @@ node browser-single/check-pages.mjs
 
 `.github/workflows/pages.yml` (Browser preview) is the browser acceptance gate;
 Browser lab verification exercises a native Dev Container instead. Browser
-evidence and the adapted binary/build record are retained even on failure.
+evidence and both adapted binary/build records are retained even on failure.
 Pages deployment requires a separate manual run on `main` with `publish=true`,
 and still depends on successful browser acceptance. Ordinary pushes, PR
 validation and the default manual run do not publish Pages.

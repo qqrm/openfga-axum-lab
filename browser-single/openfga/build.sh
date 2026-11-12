@@ -36,7 +36,7 @@ git diff --exit-code -- go.mod go.sum pkg/server/config/config.go \
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.2 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.3 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -60,6 +60,7 @@ cat >"$output_dir/build.json" <<EOF
   "warmup_model_sha256": "$model_sha256",
   "warmup_model_bytes": 52709,
   "warmup_timeout_seconds": 60,
+  "warmup_cycles": 4,
   "authorization_request_timeout_default_seconds": 3,
   "patch_sha256": "$(sha256_of "$patch_dir/startup-dial.patch")",
   "helper_sha256": "$(sha256_of "$patch_dir/browser_http_dial.go")",
@@ -79,18 +80,20 @@ cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.2 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.3 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
 Unary raw request/response logging and that interceptor's internal-error details
 are omitted; metadata status logs and streaming logging remain. Other upstream
 error logs, validation, authentication, timeout and recovery middleware remain.
-Before datastore construction/listeners, a separate 60-second startup phase
-reads FGA_MODEL and verifies its exact 52709 bytes and SHA-256 $model_sha256.
-It exercises the real JSONPb/protobuf codecs, generated request validation and
-TypeSystem.NewAndValidate without any datastore, RPC or Check operation. Local
-model/response fixtures and validation results are discarded; real operations
+Before datastore construction/listeners, one separate 60-second startup phase
+reads FGA_MODEL once and verifies its exact 52709 bytes and SHA-256 $model_sha256.
+Within that same budget, four cycles exercise the real JSONPb/protobuf codecs,
+generated request validation and TypeSystem.NewAndValidate without any datastore,
+RPC or Check operation. Each cycle creates fresh messages and a fresh TypeSystem;
+all fixtures and validation results are discarded. One diagnostic line per
+started cycle records stage timings and completion/failure. Real operations
 repeat the unchanged validation and datastore work. Failure prevents readiness.
 The startup caller is bounded and observes parent cancellation; a synchronous
 worker may finish later, but cannot publish readiness and the CLI exits on error.

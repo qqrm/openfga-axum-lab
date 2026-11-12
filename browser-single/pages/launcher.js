@@ -1,5 +1,6 @@
 import {consumeGuestLine, initialEvidence, requestVerification} from './acceptance-protocol.mjs';
 import {loadStartupPayload} from './startup-payload.mjs';
+import {observeRuntimeErrors} from './runtime-errors.mjs';
 
 const element = id => document.getElementById(id);
 let started = false;
@@ -21,6 +22,7 @@ function phase(title, detail) {
   element('detail').textContent = detail;
 }
 function fail(error) {
+  if (failed) return;
   failed = true;
   window.labEvidence.ready = false;
   window.labEvidence.accepted = false;
@@ -30,6 +32,7 @@ function fail(error) {
   element('result').textContent = 'No successful result is claimed for this run. Reset the tab before retrying.';
   log(`\nERROR: ${error}\n`);
 }
+observeRuntimeErrors(window, fail);
 function line(value) {
   if (failed) return;
   try {
@@ -113,16 +116,17 @@ async function start() {
     // with 512 MiB instead of restoring an incompatible memory snapshot.
     args.splice(snapshot, 2);
     args[args.indexOf('-m') + 1] = '512M';
-    // Candidate for the next real browser run: retain request deadlines while
-    // giving Go two guest CPUs and removing the converter's allocator debugging.
+    // ACPI is disabled in this kernel. SeaBIOS's legacy MP table lists only
+    // the first CPU per socket, so each requested CPU needs its own socket.
+    // guest.sh independently requires both CPUs online before starting services.
     const smp = args.indexOf('-smp');
     const commandLine = args.indexOf('-append');
     if (smp < 0 || args[smp + 1] !== '1,sockets=1' || commandLine < 0) throw new Error('Unexpected reviewed CPU/kernel arguments');
     const kernelFlags = args[commandLine + 1].split(/\s+/);
     if (kernelFlags.filter(flag => flag === 'slub_debug=F').length !== 1) throw new Error('Missing reviewed allocator debug option');
-    args[smp + 1] = '2,sockets=1';
+    args[smp + 1] = '2,sockets=2,cores=1,threads=1';
     args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F').join(' ');
-    window.labEvidence.vm = {cpus:2, memoryMiB:512, slabDebug:false};
+    window.labEvidence.vm = {cpus:2, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false};
     // Keep the explicit virtio NIC, attached only to an isolated guest hub.
     // Removing it makes this QEMU build enumerate default NICs and trap in
     // g_slist_sort_real. A hub has no host socket, proxy or external backend.

@@ -19,27 +19,93 @@ import (
 
 const (
 	browserHTTPWarmupTimeout = 60 * time.Second
+	browserHTTPWarmupCycles  = 4
 	browserHTTPModelBytes    = 52709
 	browserHTTPModelSHA256   = "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"
 	// Only codec input: this ID is never written to a store or returned by an RPC.
 	browserHTTPWarmupID = "01J00000000000000000000000"
 )
 
+const (
+	browserWarmupJSONDecode = iota
+	browserWarmupProtobuf
+	browserWarmupGeneratedValidation
+	browserWarmupTypeSystem
+	browserWarmupResponseCodec
+	browserWarmupStageCount
+)
+
+type browserHTTPWarmupProgress struct {
+	cycle        int
+	stage        int
+	stageStarted time.Time
+	durations    [browserWarmupStageCount]time.Duration
+	completed    bool
+	failed       bool
+}
+
 // Run before datastore construction or any listener. All decoded messages and
-// the TypeSystem are local and discarded. Real requests still decode, validate,
-// build a fresh TypeSystem and execute the unchanged datastore operations.
+// TypeSystems are fresh per cycle, local and discarded. Real requests still
+// decode, validate and execute the unchanged datastore operations.
 func warmBrowserHTTPModel(ctx context.Context, path string) error {
 	started := time.Now()
-	browserTransportLogger.Printf("warmup_start model_sha256=%s model_bytes=%d timeout_seconds=%d", browserHTTPModelSHA256, browserHTTPModelBytes, int(browserHTTPWarmupTimeout/time.Second))
+	// Five stage starts and one completion per cycle fit even after the caller
+	// times out. The worker sends value snapshots and never logs after timeout.
+	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
+	browserTransportLogger.Printf("warmup_start model_sha256=%s model_bytes=%d cycles=%d timeout_seconds=%d", browserHTTPModelSHA256, browserHTTPModelBytes, browserHTTPWarmupCycles, int(browserHTTPWarmupTimeout/time.Second))
 	err := runBrowserHTTPWarmup(ctx, browserHTTPWarmupTimeout, func(ctx context.Context) error {
+		// Reading, identity verification and all four cycles share this context.
 		data, err := readBrowserHTTPModel(path)
 		if err != nil {
 			return err
 		}
-		return warmBrowserHTTPModelCodecs(ctx, data)
+		return warmBrowserHTTPModelCycles(ctx, data, progress)
 	})
+	logBrowserHTTPWarmupCycles(progress)
 	browserTransportLogger.Printf("warmup_end duration_ms=%d failed=%t", time.Since(started).Milliseconds(), err != nil)
 	return err
+}
+
+func warmBrowserHTTPModelCycles(ctx context.Context, data []byte, progress chan<- browserHTTPWarmupProgress) error {
+	for cycle := 1; cycle <= browserHTTPWarmupCycles; cycle++ {
+		if err := warmBrowserHTTPModelCodecs(ctx, data, cycle, progress); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// Log one latest snapshot per started cycle. On timeout this includes the
+// partial duration of synchronous work still running; it is not a completion.
+func logBrowserHTTPWarmupCycles(progress <-chan browserHTTPWarmupProgress) {
+	var latest [browserHTTPWarmupCycles]browserHTTPWarmupProgress
+drain:
+	for {
+		select {
+		case update := <-progress:
+			latest[update.cycle-1] = update
+		default:
+			break drain
+		}
+	}
+	stages := [...]string{"json_decode", "protobuf", "generated_validation", "typesystem", "response_codec"}
+	for _, cycle := range latest {
+		if cycle.cycle == 0 {
+			continue
+		}
+		stage := stages[cycle.stage]
+		if cycle.completed {
+			stage = "complete"
+		} else if !cycle.failed {
+			cycle.durations[cycle.stage] = time.Since(cycle.stageStarted)
+			cycle.failed = true
+		}
+		browserTransportLogger.Printf("warmup_cycle cycle=%d completed=%t current_stage=%s failed=%t json_decode_ms=%d protobuf_ms=%d generated_validation_ms=%d typesystem_ms=%d response_codec_ms=%d",
+			cycle.cycle, cycle.completed, stage, cycle.failed,
+			cycle.durations[browserWarmupJSONDecode].Milliseconds(), cycle.durations[browserWarmupProtobuf].Milliseconds(),
+			cycle.durations[browserWarmupGeneratedValidation].Milliseconds(), cycle.durations[browserWarmupTypeSystem].Milliseconds(),
+			cycle.durations[browserWarmupResponseCodec].Milliseconds())
+	}
 }
 
 // Synchronous codec/validation calls cannot themselves be interrupted. Bound
@@ -92,10 +158,25 @@ func readBrowserHTTPModel(path string) ([]byte, error) {
 	return data, nil
 }
 
-func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte) error {
+func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, progress chan<- browserHTTPWarmupProgress) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	current := browserHTTPWarmupProgress{cycle: cycle}
+	startStage := func(stage int) {
+		now := time.Now()
+		if !current.stageStarted.IsZero() {
+			current.durations[current.stage] = now.Sub(current.stageStarted)
+		}
+		current.stage, current.stageStarted = stage, now
+		progress <- current
+	}
+	startStage(browserWarmupJSONDecode)
+	defer func() {
+		current.durations[current.stage] = time.Since(current.stageStarted)
+		current.completed, current.failed = err == nil, err != nil
+		progress <- current
+	}()
 	// These are grpc-gateway's pinned default JSONPb options. Use the full model,
 	// so nested messages/maps/oneofs take the same codec paths as the real POST.
 	codec := &runtime.JSONPb{
@@ -109,6 +190,7 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	startStage(browserWarmupProtobuf)
 	request.StoreId = browserHTTPWarmupID
 	wire, err := proto.Marshal(request)
 	if err != nil {
@@ -121,12 +203,14 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	startStage(browserWarmupGeneratedValidation)
 	if err := decoded.Validate(); err != nil {
 		return fmt.Errorf("warmup generated request validation: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	startStage(browserWarmupTypeSystem)
 	model := &openfgav1.AuthorizationModel{
 		Id:              browserHTTPWarmupID,
 		SchemaVersion:   decoded.GetSchemaVersion(),
@@ -136,6 +220,10 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte) error {
 	if _, err := typesystem.NewAndValidate(ctx, model); err != nil {
 		return fmt.Errorf("warmup type-system validation: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	startStage(browserWarmupResponseCodec)
 	// Serialization fixtures only: no service handler, datastore or Check call.
 	// Encoding the full read response also touches the model's JSON encoders.
 	for _, response := range []proto.Message{

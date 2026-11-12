@@ -1,0 +1,81 @@
+# Appended to the checksum-verified container2wasm Dockerfile by build.sh.
+# 4096 is a heuristic instance budget, pending real browser acceptance.
+FROM qemu-emscripten-dev AS browser-qemu-build
+ARG EMSDK_VERSION_QEMU
+ARG EMULATOR_BUILD_JOBS=2
+COPY build.sh Dockerfile.appendix instance-budget.patch upstream.Dockerfile /browser-qemu-input/
+RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
+    && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
+    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
+    && test "$(git -C /qemu hash-object tcg/wasm32.h)" = 82ac7e37677a57b27c95e9efe4741a4cec39cf46 \
+    && git -C /qemu diff --quiet --exit-code HEAD -- \
+    && git -C /qemu apply --unidiff-zero --check --whitespace=error-all /browser-qemu-input/instance-budget.patch \
+    && git -C /qemu apply --unidiff-zero --whitespace=error-all /browser-qemu-input/instance-budget.patch \
+    && git -C /qemu diff --check HEAD -- \
+    && test "$(git -C /qemu diff --name-only HEAD --)" = tcg/wasm32.c \
+    && test "$(git -C /qemu diff --numstat HEAD --)" = "$(printf '1\t1\ttcg/wasm32.c')" \
+    && grep -qx '#define MAX_INSTANCE_ALIVE 4096' /qemu/tcg/wasm32.c \
+    && mkdir /emulator-out \
+    && emcc --version > /emulator-out/emscripten-version.txt
+
+# Same configure/compiler/linker flags as pinned converter lines 866-870.
+RUN EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -Wno-error=unused-but-set-variable -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=$((3000*1024*1024)) -sWASM_BIGINT -sMALLOC=emmalloc -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js $XTERM_PTY_CFLAGS " ; \
+    emconfigure ../configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
+    --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
+    --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS" && \
+    emmake make -j "$EMULATOR_BUILD_JOBS" qemu-system-x86_64
+RUN cp /qemu/build/qemu-system-x86_64 /emulator-out/out.js \
+    && cp /qemu/build/qemu-system-x86_64.wasm /emulator-out/ \
+    && cp /qemu/COPYING /qemu/COPYING.LIB /qemu/LICENSE /emulator-out/ \
+    && cp /qemu/build/config-host.mak /emulator-out/config-host.mak \
+    && cp /browser-qemu-input/* /emulator-out/ \
+    && git -C /qemu submodule status --recursive > /emulator-out/submodules.txt
+RUN python3 - <<'PY'
+import hashlib
+import json
+import re
+from pathlib import Path
+
+out = Path("/emulator-out")
+def digest(name):
+    return hashlib.sha256((out / name).read_bytes()).hexdigest()
+
+assert re.search(r"\b4\.0\.10\b", (out / "emscripten-version.txt").read_text())
+assert digest("upstream.Dockerfile") == "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508"
+files = {}
+for name in ["out.js", "qemu-system-x86_64.wasm"]:
+    size = (out / name).stat().st_size
+    assert size
+    files[name] = {"bytes": size, "sha256": digest(name)}
+metadata = {
+    "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
+    "converter_dockerfile_sha256": digest("upstream.Dockerfile"),
+    "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
+    "emscripten_version": "4.0.10",
+    "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
+    "max_instance_alive_before": 15000,
+    "max_instance_alive_after": 4096,
+    "instantiate_num": 1500,
+    "change_kind": "heuristic_compiled_instance_budget_candidate",
+    "patch_sha256": digest("instance-budget.patch"),
+    "builder_sha256": digest("build.sh"),
+    "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
+    "files": files,
+    "browser_acceptance": "not_run",
+}
+(out / "build.json").write_text(json.dumps(metadata, indent=2) + "\n")
+(out / "SOURCE.txt").write_text(
+    "QEMU-WASM source: https://github.com/ktock/qemu-wasm/tree/"
+    "8604ed49a3cde392890b014a8d5a959c8a2fe72a\n"
+    "Build dependencies and flags: included upstream.Dockerfile, container2wasm "
+    "087c313479d51cdf255e4f28ded6ae7d8141297b.\n"
+    "The included one-line patch lowers MAX_INSTANCE_ALIVE from 15000 to 4096. "
+    "INSTANTIATE_NUM remains 1500. This is an unproven browser memory-budget "
+    "candidate; browser acceptance is required separately.\n"
+    "Rebuild with browser-single/qemu/build.sh in qqrm/openfga-axum-lab.\n"
+    "See COPYING, COPYING.LIB, LICENSE and upstream dependency sources/licenses.\n"
+)
+PY
+
+FROM scratch AS browser-qemu-runtime
+COPY --from=browser-qemu-build /emulator-out/ /
