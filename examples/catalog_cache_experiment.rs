@@ -190,6 +190,123 @@ fn comparison(pair: &Path, case: Case, first: Mode, second: Mode) -> BenchResult
     }))
 }
 
+fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
+    assert!(!sorted.is_empty() && (1..=100).contains(&percentile));
+    sorted[(sorted.len() * percentile).div_ceil(100) - 1]
+}
+
+async fn concurrent_profile(
+    fixture: &Fixture,
+    mode: Mode,
+    case: Case,
+    workers: usize,
+    requests: usize,
+) -> BenchResult<Value> {
+    if workers == 0 || requests < workers {
+        return Err("invalid fixed-concurrency workload".into());
+    }
+    // Ensure the hot path is primed outside the timed request window.
+    fixture.read(case).await?;
+    let before = fixture.snapshot().await?;
+    let started = Instant::now();
+    let mut tasks = tokio::task::JoinSet::new();
+    for worker in 0..workers {
+        let fixture = (*fixture).clone(); // Shared reqwest connection pool, separate workers.
+        let count = requests / workers + usize::from(worker < requests % workers);
+        tasks.spawn(async move {
+            let mut latencies = Vec::with_capacity(count);
+            for _ in 0..count {
+                let started = Instant::now();
+                fixture.read(case).await?;
+                latencies.push(started.elapsed().as_nanos() as u64);
+            }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(latencies)
+        });
+    }
+    let mut samples = Vec::with_capacity(requests);
+    while let Some(result) = tasks.join_next().await {
+        samples.extend(result??);
+    }
+    let wall_seconds = started.elapsed().as_secs_f64();
+    if samples.len() != requests || wall_seconds <= 0.0 {
+        return Err("incorrect request profile sample count".into());
+    }
+    let after = fixture.snapshot().await?;
+    let delta = after.subtract(&before)?;
+    if delta.validate(mode, case)? != requests as u64 {
+        return Err("HTTP decisions differ from per-request timing samples".into());
+    }
+    samples.sort_unstable();
+    let mean_ns = samples.iter().map(|&n| n as f64).sum::<f64>() / requests as f64;
+    Ok(json!({
+        "mode":mode.name(), "case":case.name(),
+        "concurrency":workers, "requests":requests,
+        "load_type":"closed-loop; fixed completed requests, not fixed arrival rate",
+        "client":"one shared pooled HTTP/1.1 reqwest Client; response status and body validated",
+        "timing":"each complete HTTP request including JSON decoding and response validation",
+        "warmup":"one validated request excluded from timed samples and counter deltas",
+        "elapsed_seconds":wall_seconds, "throughput_rps":requests as f64 / wall_seconds,
+        "latency_ns":{
+            "mean":mean_ns,
+            "p50":nearest_rank(&samples,50),
+            "p95":nearest_rank(&samples,95),
+            "p99":nearest_rank(&samples,99),
+            "min":samples[0], "max":samples[requests - 1]
+        },
+        "cache_hits":delta.event("hit_deny"),
+        "cache_misses":delta.event("miss"),
+        "uncached_checks":delta.event("uncached"),
+        "hit_ratio":delta.event("hit_deny") as f64 / requests as f64,
+        "counters":delta,
+        "raw_samples_ns_sorted":samples
+    }))
+}
+
+async fn capture_concurrency_profiles(
+    fixtures: &[Fixture; 2],
+    output: &Path,
+    study_dataset: &Value,
+    report: &mut Value,
+) -> BenchResult {
+    report["concurrency_profiles"] = json!([]);
+    // The second block reverses both the mode and case execution order.
+    // These are closed-loop client-concurrency profiles, not Criterion CIs.
+    for (workers, requests) in [(1, 128), (8, 512), (32, 1024)] {
+        for block in 0..2 {
+            let modes = if block == 0 {
+                [Mode::Off, Mode::On]
+            } else {
+                [Mode::On, Mode::Off]
+            };
+            let cases = if block == 0 {
+                [Case::AllowFresh, Case::DenyHot]
+            } else {
+                [Case::DenyHot, Case::AllowFresh]
+            };
+            for case in cases {
+                for mode in modes {
+                    if dataset_fingerprint()? != *study_dataset {
+                        return Err("authorization state changed during concurrency profile".into());
+                    }
+                    let fixture = &fixtures[usize::from(mode == Mode::On)];
+                    let mut sample =
+                        concurrent_profile(fixture, mode, case, workers, requests).await?;
+                    sample["block"] = json!(block);
+                    report["concurrency_profiles"]
+                        .as_array_mut()
+                        .ok_or("concurrency profile array missing")?
+                        .push(sample);
+                    write_json(&output.join("experiment.json"), report)?;
+                }
+            }
+        }
+    }
+    if dataset_fingerprint()? != *study_dataset {
+        return Err("authorization state changed after concurrency profiles".into());
+    }
+    Ok(())
+}
+
 async fn check_fresh_allows(fixtures: &[Fixture; 2]) -> BenchResult<Value> {
     let mut results = Vec::new();
     for (mode, fixture) in [Mode::Off, Mode::On].into_iter().zip(fixtures) {
@@ -398,6 +515,9 @@ async fn run(output: &Path, bin: &Path, seed: u64, report: &mut Value) -> BenchR
             write_json(&output.join("experiment.json"), report)?;
         }
     }
+    if std::env::var("AUTHZ_BENCH_LOAD_PROFILES").as_deref() == Ok("true") {
+        capture_concurrency_profiles(&fixtures, output, &study_dataset, report).await?;
+    }
     report["revocations_and_cold_misses_after"] = revocation_and_cold_misses(&fixtures, 8).await?;
     report["backend_outage_after"] = fail_closed(&fixtures).await?;
     report["fresh_allows_after"] = check_fresh_allows(&fixtures).await?;
@@ -423,6 +543,12 @@ async fn main() -> BenchResult {
             .map_err(|_| "set AUTHZ_BENCH_BINARY to the precompiled catalog_cache_ab executable")?,
     );
     let bin = bin.canonicalize()?;
+    let load_profiles = match std::env::var("AUTHZ_BENCH_LOAD_PROFILES").as_deref() {
+        Ok("true") => true,
+        Ok("false") | Err(std::env::VarError::NotPresent) => false,
+        _ => return Err("AUTHZ_BENCH_LOAD_PROFILES must be true or false".into()),
+    };
+    let swap_ports = Mode::swapped_ports()?;
     let seed: u64 = std::env::var("AB_SEED")
         .unwrap_or_else(|_| "2606".into())
         .parse()?;
@@ -436,6 +562,8 @@ async fn main() -> BenchResult {
     let mut report = json!({
         "valid":false,"model":"Lakekeeper primary; Openlane excluded",
         "commit":String::from_utf8(sha.stdout)?.trim(),"seed":seed,
+        "swap_ports":swap_ports,
+        "load_profiles_enabled":load_profiles,
         "bench_sha256":sha256(&bin)?,"server_binary":binary_evidence,
         "cargo_lock_sha256":sha256(Path::new("Cargo.lock"))?,
         "fga_model_sha256":sha256(Path::new("fga/model.json"))?,
@@ -451,7 +579,9 @@ async fn main() -> BenchResult {
             "Warmup and measurement both contribute to cache counter deltas",
             "Within-pair Criterion CIs are not between-host confidence intervals",
             "One hot key; fixed client concurrency 1; generator and services may share host",
-            "No automated performance verdict; predeclare practical effect threshold before production claim"
+            "No automated performance verdict; predeclare practical effect threshold before production claim",
+            "Closed-loop load profiles report per-request p50/p95/p99, never Criterion batch percentiles",
+            "Fixed port-to-mode assignment remains a confound within a run; compare swapped deployments to cross it over"
         ]
     });
     write_json(&root.join("experiment.json"), &report)?;
@@ -471,6 +601,14 @@ async fn main() -> BenchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn nearest_rank_latency_percentiles() {
+        let sorted = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+        assert_eq!(nearest_rank(&sorted, 50), 50);
+        assert_eq!(nearest_rank(&sorted, 95), 100);
+        assert_eq!(nearest_rank(&sorted, 99), 100);
+        assert_eq!(nearest_rank(&[42], 99), 42);
+    }
     #[test]
     fn deterministic_balanced_order() {
         let one = permutation(4, 2606, "AB");
