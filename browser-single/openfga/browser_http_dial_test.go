@@ -1,16 +1,25 @@
 package run
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 
 	serverconfig "github.com/openfga/openfga/pkg/server/config"
 )
@@ -136,5 +145,128 @@ func TestBrowserHTTPDialAuthorizationDefaultsUnchanged(t *testing.T) {
 		cfg.ListObjectsDeadline != 3*time.Second || cfg.ListUsersDeadline != 3*time.Second ||
 		serverconfig.DefaultContextTimeout(cfg) != 6*time.Second {
 		t.Fatal("browser startup adaptation changed authorization request deadlines")
+	}
+}
+
+func TestBrowserHTTPTracePreservesHandler(t *testing.T) {
+	for _, code := range []int{http.StatusCreated, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			var logs bytes.Buffer
+			output := log.New(&logs, "", 0)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			request := httptest.NewRequest(http.MethodPost, "/stores?private-query", strings.NewReader("private-request"))
+			request = request.WithContext(ctx)
+			request.Header.Set("Authorization", "private-header")
+			body := request.Body
+			writer := httptest.NewRecorder()
+			calls := 0
+			handler := http.HandlerFunc(func(actualWriter http.ResponseWriter, actualRequest *http.Request) {
+				calls++
+				if actualWriter != writer || actualRequest != request || actualRequest.Body != body || actualRequest.Context() != ctx {
+					t.Fatal("observer replaced the writer, request, body or context")
+				}
+				data, err := io.ReadAll(actualRequest.Body)
+				if err != nil || string(data) != "private-request" {
+					t.Fatalf("observer consumed or changed the body: %q, %v", data, err)
+				}
+				actualWriter.Header().Set("X-Original-Handler", "unchanged")
+				actualWriter.WriteHeader(code)
+				_, _ = actualWriter.Write([]byte("private-response"))
+				if code == http.StatusServiceUnavailable {
+					cancel()
+				}
+			})
+			browserHTTPObserver(handler, output).ServeHTTP(writer, request)
+			if calls != 1 || writer.Code != code || writer.Body.String() != "private-response" || writer.Header().Get("X-Original-Handler") != "unchanged" {
+				t.Fatal("observer changed the handler call or HTTP result")
+			}
+			text := logs.String()
+			for _, expected := range []string{"http_start method=\"POST\" path=\"/stores\" content_length=15", "http_end method=\"POST\" path=\"/stores\" content_length=15 duration_ms="} {
+				if !strings.Contains(text, expected) {
+					t.Fatalf("missing HTTP boundary metadata %q in %s", expected, text)
+				}
+			}
+			contextError := "context_error=<nil>"
+			if code == http.StatusServiceUnavailable {
+				contextError = "context_error=context canceled"
+			}
+			if !strings.Contains(text, contextError) || strings.Count(text, "\n") != 2 || strings.Contains(text, "private-") {
+				t.Fatalf("HTTP diagnostics lost context, duplicated events or disclosed payload: %s", text)
+			}
+		})
+	}
+}
+
+func TestBrowserHTTPTracePreservesRPC(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		code codes.Code
+		err  error
+	}{
+		{"OK", codes.OK, nil},
+		{"PermissionDenied", codes.PermissionDenied, status.Error(codes.PermissionDenied, "private-error")},
+		{"StatusDeadline", codes.DeadlineExceeded, status.Error(codes.DeadlineExceeded, "private-error")},
+		{"ContextCanceled", codes.Canceled, context.Canceled},
+		{"ContextDeadline", codes.DeadlineExceeded, context.DeadlineExceeded},
+		{"WrappedCanceled", codes.Canceled, fmt.Errorf("private-error: %w", context.Canceled)},
+		{"WrappedDeadline", codes.DeadlineExceeded, fmt.Errorf("private-error: %w", context.DeadlineExceeded)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			output := log.New(&logs, "", 0)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			request := &healthpb.HealthCheckRequest{Service: "private-request"}
+			response := &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}
+			expectedError := test.err
+			info := &grpc.UnaryServerInfo{FullMethod: "/openfga.v1.OpenFGAService/CreateStore"}
+			calls := 0
+			handler := func(actualContext context.Context, actualRequest interface{}) (interface{}, error) {
+				calls++
+				if actualContext != ctx || actualRequest != request {
+					t.Fatal("observer replaced the RPC context or request")
+				}
+				return response, expectedError
+			}
+			actualResponse, actualError := browserUnaryObserver(output)(ctx, request, info, handler)
+			if calls != 1 || actualResponse != response || actualError != expectedError {
+				t.Fatal("observer changed the handler call, response or error")
+			}
+			text := logs.String()
+			if !strings.Contains(text, "rpc_start method=\""+info.FullMethod+"\"") ||
+				!strings.Contains(text, "rpc_end method=\""+info.FullMethod+"\" status=\""+test.code.String()+"\" duration_ms=") ||
+				strings.Count(text, "\n") != 2 || strings.Contains(text, "private-") {
+				t.Fatalf("RPC diagnostics changed status or disclosed payload: %s", text)
+			}
+		})
+	}
+}
+
+func TestBrowserHTTPTracePreservesPanics(t *testing.T) {
+	for _, transport := range []string{"http", "rpc"} {
+		t.Run(transport, func(t *testing.T) {
+			var logs bytes.Buffer
+			output := log.New(&logs, "", 0)
+			original := errors.New("private-panic")
+			defer func() {
+				if recover() != original {
+					t.Error("observer intercepted or changed the panic")
+				}
+				if strings.Count(logs.String(), "\n") != 1 || !strings.Contains(logs.String(), transport+"_start") || strings.Contains(logs.String(), "private-") {
+					t.Errorf("panic produced misleading completion or disclosed payload: %s", logs.String())
+				}
+			}()
+			if transport == "http" {
+				browserHTTPObserver(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+					panic(original)
+				}), output).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+			} else {
+				_, _ = browserUnaryObserver(output)(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}, func(context.Context, interface{}) (interface{}, error) {
+					panic(original)
+				})
+			}
+			t.Fatal("handler panic was swallowed")
+		})
 	}
 }

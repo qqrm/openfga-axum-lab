@@ -93,8 +93,11 @@ built OpenFGA executable through the converter's read-only host mount. The
 launcher checks every payload's size and SHA-256 before starting QEMU;
 `runtime/startup-manifest.json` identifies the source, patch, tests and binary.
 
-The [OpenFGA adaptation](openfga/README.md) changes only HTTP gateway startup
-self-dial from three seconds to a bounded 60 seconds. PostgreSQL initialization
+The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
+self-dial from three seconds to a bounded 60 seconds. Compact HTTP and gRPC
+transport traces record request boundaries and timing without reading request
+bodies or changing the handler's context, writer, response or error.
+PostgreSQL initialization
 and OpenFGA migration remain sequential. A lightweight, bounded listener wait
 schedules the existing bootstrap, which still requires real `SERVING` health,
 the unchanged model, and successful operations before Axum starts. Application,

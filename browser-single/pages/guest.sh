@@ -8,8 +8,9 @@ export SMOKE_BASE_URL=http://127.0.0.1:3000
 export SMOKE_ALLOW_MUTATIONS=true
 # Bound only the setup CLI connection and avoid a timezone-directory search.
 export PGCONNECT_TIMEOUT=10 TZ=UTC
-# Preserve RPC method/status/timing when diagnosing a real bootstrap failure.
-export OPENFGA_LOG_LEVEL=info
+# Compact browser transport traces identify failed startup requests without
+# enabling full model/Check payload logs from the upstream INFO interceptor.
+export OPENFGA_LOG_LEVEL=warn
 printf '\nLAB|boot\n'
 deadline=$((SECONDS + 900))
 # The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.

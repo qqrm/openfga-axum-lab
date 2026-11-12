@@ -21,7 +21,7 @@ test -z "$(gofmt -l cmd/run/browser_http_dial.go cmd/run/browser_http_dial_test.
 go mod download
 go mod verify
 mkdir -p "$output_dir"
-go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTPDial' \
+go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTP' \
     2>&1 | tee "$output_dir/dial-tests.log"
 git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 
@@ -46,13 +46,15 @@ cat >"$output_dir/build.json" <<EOF
   "build_date": "$build_date",
   "target": "linux/amd64",
   "startup_dial_timeout_seconds": 60,
+  "transport_diagnostics": "http_and_unary_rpc_metadata_only",
   "authorization_request_timeout_default_seconds": 3,
   "patch_sha256": "$(sha256_of "$patch_dir/startup-dial.patch")",
   "helper_sha256": "$(sha256_of "$patch_dir/browser_http_dial.go")",
   "tests_sha256": "$(sha256_of "$patch_dir/browser_http_dial_test.go")",
   "go_sum_sha256": "$(sha256_of go.sum)",
   "binary_sha256": "$(sha256_of "$output_dir/openfga")",
-  "startup_dial_tests": "passed"
+  "startup_dial_tests": "passed",
+  "transport_diagnostics_tests": "passed"
 }
 EOF
 cp LICENSE "$output_dir/LICENSE"
@@ -60,8 +62,10 @@ cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" "$output_di
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.1 changes only the HTTP gateway startup
-gRPC self-dial budget from 3 to 60 seconds and observes parent cancellation.
+Browser build v1.10.3-browser-startup.1 extends the HTTP gateway startup gRPC
+self-dial budget from 3 to 60 seconds and observes parent cancellation.
+It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
+query strings or headers, preserving handler inputs, outputs and errors.
 The blocking connection, TLS, request timeouts and authorization engine remain.
 Rebuild with browser-single/OpenFGA.Dockerfile in qqrm/openfga-axum-lab.
 The exact patch and injected helper are included; digests are in build.json.
