@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Real container2wasm boot probe</title>
+<style>
+body{font:15px system-ui,sans-serif;max-width:1100px;margin:24px auto;padding:0 18px;background:#111827;color:#e5e7eb}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#030712;padding:16px;max-height:60vh;overflow:auto;font:12px ui-monospace,monospace}
+input{width:70%;padding:8px}button{padding:8px;margin:6px}a{color:#93c5fd}
+</style>
+<h1>Real container2wasm boot probe</h1>
+<p>This page runs the supplied QEMU/WASM artifact. The local server serves files only; no native PostgreSQL, OpenFGA or Axum backend is started.</p>
+<p id="status">Loading artifact…</p>
+<pre id="serial" aria-label="Guest serial console"></pre>
+<form id="command"><input id="input" aria-label="Guest serial input" autocomplete="off" placeholder="Serial input, if a guest shell is available"><button>Send</button></form>
+<button id="download">Download probe result</button>
+<details><summary>Host diagnostics</summary><pre id="diagnostics"></pre></details>
+<script>
+  globalThis.Module = {locateFile: path => new URL('/artifact/' + path, location).href};
+</script>
+<script src="/artifact/load.js"></script>
+<script src="/artifact/arg-module.js"></script>
+<script type="module" src="/probe.js"></script>
+</html>
