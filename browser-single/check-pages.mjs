@@ -5,6 +5,7 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {expectedStatuses} from './pages/acceptance-protocol.mjs';
+import {validateBootstrapBuild} from './pages/startup-payload.mjs';
 import {createGuestLogCollector, drainGuestLogWithin} from './pages/log-stream.mjs';
 const require = createRequire(new URL('../e2e/package.json', import.meta.url));
 const {chromium, firefox} = require('@playwright/test');
@@ -74,6 +75,10 @@ try {
       const first=await page.evaluate(()=>window.labEvidence);
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.ok(first.startupManifest,'Missing verified startup provenance');
+      validateBootstrapBuild(first.startupManifest.bootstrap_build,first.startupManifest.files?.['runtime/bootstrap']);
+      assert.equal(first.startupManifest.bootstrap_build.timeout_scope,'bootstrap_model_post_and_get');
+      assert.equal(first.startupManifest.bootstrap_build.default_model_timeout_seconds,5);
+      assert.equal(first.startupManifest.bootstrap_build.browser_model_timeout_seconds,30);
       assert.equal(first.vm?.kernelLogLevel,7);
       assert.ok(Number.isSafeInteger(first.vm?.reportedLogicalCPUs) && first.vm.reportedLogicalCPUs >= 2);
       assert.equal(first.startupManifest.openfga_build.warmup_cycles,1);

@@ -5,13 +5,20 @@ cd "$(dirname "$0")/.."
 manifest=browser-single/pages/runtime-manifest.json
 output=browser-output/wasm
 openfga_build=artifacts/browser-openfga
+bootstrap_build=artifacts/browser-bootstrap
 test -s "$openfga_build/openfga"
 test -s "$openfga_build/build.json"
+test -s "$bootstrap_build/bootstrap"
+test -s "$bootstrap_build/build.json"
+test -s "$bootstrap_build/native-tests.log"
 mkdir -p "$output/runtime"
 cp -a browser-single/pages/. "$output/"
 cp browser-single/entrypoint.sh "$output/entrypoint.sh"
 # Replace the generated executable, which the build deliberately marks read-only.
 cp -f "$openfga_build/openfga" "$output/runtime/openfga"
+cp -f "$bootstrap_build/bootstrap" "$output/runtime/bootstrap"
+mkdir -p "$output/runtime/bootstrap-build"
+cp "$bootstrap_build/build.json" "$bootstrap_build/native-tests.log" "$output/runtime/bootstrap-build/"
 mkdir -p "$output/runtime/openfga-build"
 cp "$openfga_build/build.json" "$openfga_build/LICENSE" "$openfga_build/SOURCE.txt" \
     "$openfga_build/startup-dial.patch" "$openfga_build/browser_http_dial.go" \
@@ -46,6 +53,7 @@ node --check "$output/launcher.js"
 node --check "$output/runtime-errors.mjs"
 node --check "$output/log-stream.mjs"
 node --check "$output/qemu-budget.mjs"
+node --check "$output/startup-payload.mjs"
 node --check "$output/runtime/out.js"
 node --check "$output/isolation-sw.js"
 bash -n "$output/guest.sh"
@@ -54,6 +62,7 @@ node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
+import {validateBootstrapBuild} from './browser-single/pages/startup-payload.mjs';
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const build = JSON.parse(readFileSync('artifacts/browser-openfga/build.json','utf8'));
 assert.equal(build.source_commit,'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4');
@@ -89,18 +98,25 @@ assert.equal(build.write_typesystem_tests_sha256,digest('browser-single/openfga/
 assert.equal(build.binary_sha256,digest('browser-output/wasm/runtime/openfga'));
 const original = JSON.parse(readFileSync('browser-single/pages/runtime-manifest.json','utf8'));
 const files = {};
-for (const name of ['guest.sh','entrypoint.sh','runtime/openfga']) {
+for (const name of ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap']) {
   const bytes = readFileSync(`browser-output/wasm/${name}`);
   files[name] = {bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
+const bootstrap = JSON.parse(readFileSync('browser-output/wasm/runtime/bootstrap-build/build.json','utf8'));
+validateBootstrapBuild(bootstrap,files['runtime/bootstrap']);
+assert.equal(bootstrap.dockerfile_sha256,digest('browser-single/Dockerfile'));
+assert.equal(bootstrap.cargo_lock_sha256,digest('Cargo.lock'));
+assert.equal(bootstrap.bootstrap_source_sha256,digest('tools/bootstrap.rs'));
+assert.equal(bootstrap.bootstrap_tests_sha256,digest('tools/bootstrap_tests.rs'));
+assert.equal(bootstrap.native_test_log_sha256,digest('browser-output/wasm/runtime/bootstrap-build/native-tests.log'));
 const emulator = JSON.parse(readFileSync('browser-output/wasm/runtime/emulator-build/build.json','utf8'));
-const startup = {base_source_commit:original.source_commit,openfga_build:build,emulator_build:emulator,files};
+const startup = {base_source_commit:original.source_commit,openfga_build:build,bootstrap_build:bootstrap,emulator_build:emulator,files};
 const startupPath = 'browser-output/wasm/runtime/startup-manifest.json';
 writeFileSync(startupPath,JSON.stringify(startup,null,2)+'\n');
 const derivedPath = 'browser-output/wasm/runtime/derived-runtime.json';
 const derived = JSON.parse(readFileSync(derivedPath,'utf8'));
 derived.startup_overlay = {manifest:'startup-manifest.json',sha256:digest(startupPath)};
-derived.changes.push('Verified host-mount startup overlay: entrypoint and OpenFGA self-dial adaptation');
+derived.changes.push('Verified host-mount startup overlay: entrypoint, OpenFGA adaptation and initial-bootstrap-only CLI');
 writeFileSync(derivedPath,JSON.stringify(derived,null,2)+'\n');
 const path='browser-output/index.html';
 const html=readFileSync(path,'utf8');

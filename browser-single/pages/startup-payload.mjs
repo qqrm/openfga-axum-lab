@@ -1,4 +1,28 @@
-const startupFiles = ['guest.sh', 'entrypoint.sh', 'runtime/openfga'];
+const startupFiles = ['guest.sh', 'entrypoint.sh', 'runtime/openfga', 'runtime/bootstrap'];
+const bootstrapSourceCommit = '53ff85cfdd3d84c26ae432189790e1e0f72d61db';
+const sha256Pattern = /^[0-9a-f]{64}$/;
+
+// One reviewed native CLI supplies only initial model provisioning. The
+// archived rootfs CLI remains the probe and acceptance authority.
+export function validateBootstrapBuild(build, entry) {
+  if (!build || typeof build !== 'object' || Array.isArray(build) ||
+      build.schema_version !== 1 || build.source_commit !== bootstrapSourceCommit ||
+      build.target !== 'linux/amd64' || !/^sha256:[0-9a-f]{64}$/.test(build.image_id ?? '') ||
+      build.timeout_scope !== 'bootstrap_model_post_and_get' ||
+      build.default_model_timeout_seconds !== 5 || build.min_model_timeout_seconds !== 5 ||
+      build.max_model_timeout_seconds !== 30 || build.browser_model_timeout_seconds !== 30 ||
+      build.native_tests !== 'passed' ||
+      !sha256Pattern.test(build.dockerfile_sha256 ?? '') ||
+      !sha256Pattern.test(build.cargo_lock_sha256 ?? '') ||
+      !sha256Pattern.test(build.bootstrap_source_sha256 ?? '') ||
+      !sha256Pattern.test(build.bootstrap_tests_sha256 ?? '') ||
+      !sha256Pattern.test(build.native_test_log_sha256 ?? '') ||
+      !Number.isSafeInteger(build.binary_bytes) || build.binary_bytes <= 0 ||
+      !sha256Pattern.test(build.binary_sha256 ?? '') ||
+      build.binary_bytes !== entry?.bytes || build.binary_sha256 !== entry?.sha256) {
+    throw new Error('Unexpected bootstrap build provenance');
+  }
+}
 
 export async function loadStartupPayload(base, fetcher = fetch) {
   const response = await fetcher(new URL('runtime/startup-manifest.json', base));
@@ -12,10 +36,11 @@ export async function loadStartupPayload(base, fetcher = fetch) {
   }
   for (const file of startupFiles) {
     const entry = manifest.files[file];
-    if (!Number.isSafeInteger(entry?.bytes) || entry.bytes <= 0 || !/^[0-9a-f]{64}$/.test(entry.sha256 ?? '')) {
+    if (!Number.isSafeInteger(entry?.bytes) || entry.bytes <= 0 || !sha256Pattern.test(entry.sha256 ?? '')) {
       throw new Error(`Invalid startup checksum: ${file}`);
     }
   }
+  validateBootstrapBuild(manifest.bootstrap_build, manifest.files['runtime/bootstrap']);
   const payload = await Promise.all(startupFiles.map(async file => {
     const response = await fetcher(new URL(file, base));
     if (!response.ok) throw new Error(`Cannot load ${file}: ${response.status}`);
