@@ -1,20 +1,20 @@
-name: Read completed deny/noirq browser evidence 43458558432
+name: Read completed Chromium default-ACPI deny-probe evidence 43464079526
 on:
   push:
-    branches: [diag/read-deny-noirq-43458558432]
-    paths: [.github/workflows/read-deny-noirq-evidence.yml]
+    branches: [diag/read-deny-default-acpi-chromium-43464079526]
+    paths: [.github/workflows/read-deny-default-acpi-chromium-evidence.yml]
 permissions:
   actions: read
 concurrency:
-  group: read-deny-noirq-43458558432
+  group: read-deny-default-acpi-chromium-43464079526
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-deny-noirq-43458558432'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-deny-default-acpi-chromium-43464079526'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
-      - name: Read only the two fixed completed browser job artifacts
+      - name: Read only the fixed completed Chromium job artifact
         shell: bash
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
@@ -24,57 +24,32 @@ jobs:
           from urllib.parse import urlsplit
           
           REPO = "qqrm/openfga-axum-lab"
-          RUN = 43458558432
-          HEAD = "bacae1042386782bb693798ec4d6c15d77c707e2"
+          RUN = 43464079526
+          HEAD = "f5b2d353cbe5c39365bc0678524db30dcaaacf1a"
           PREFIX = "source-candidate/artifacts/browser-wasm/"
           SPECS = [
               {
-                  "engine": "firefox",
-                  "job": 131999071574,
-                  "artifact": 14057020652,
-                  "artifact_name": "browser-deny-noirq-firefox",
-                  "zip_bytes": 3692031,
-                  "zip_sha256": "a1149c5fd7370406db9235cc5c3193e79f7c3d6467043cfb5947db5d0a4d5206",
-                  "members": {
-                      "console": [
-                          "firefox-console.txt",
-                          352698,
-                          "78bc794b926358f925a39cd57f6ca921236741235dfe5e830b3360491b4ad62c"
-                      ],
-                      "stream": [
-                          "firefox-stream.jsonl",
-                          798307,
-                          "94573da4cdb01519b7197319de6b83b9d33a6a4b2c309fa738278ccd6b2b957f"
-                      ],
-                      "result": [
-                          "firefox.json",
-                          19500,
-                          "f28c29f832e411503fb7436d9a3c23e98e38759901639111fdbba88bbd090462"
-                      ]
-                  }
-              },
-              {
                   "engine": "chromium",
-                  "job": 131999072163,
-                  "artifact": 14055584003,
-                  "artifact_name": "browser-deny-noirq-chromium",
-                  "zip_bytes": 3628583,
-                  "zip_sha256": "6a7a24d96634dbc1bd4b2865e82ee51e48e14a7edc2846ccb4c06916c61cd428",
+                  "job": 132018400428,
+                  "artifact": 14058896022,
+                  "artifact_name": "browser-deny-default-acpi-chromium",
+                  "zip_bytes": 3877414,
+                  "zip_sha256": "40ac3237482f911928f16befd770a4e259e7fd2043bb2d0e94c29ef481120fc9",
                   "members": {
                       "console": [
                           "chromium-console.txt",
-                          43903,
-                          "0edd317c416c46e6b5b84341fbaf45aa2d146ed4eb7ab95ff53d81f4ca1d036d"
+                          116249,
+                          "e4eb761c6c3e9ae4d54f0753004857cefa44b7c01f79fe4cde92e5f125b7b2ab"
                       ],
                       "stream": [
                           "chromium-stream.jsonl",
-                          587949,
-                          "c1cc0126ac87cde037453df2ca95f321c1607419f8c5dc49b4d7b9b0e35bc917"
+                          3020512,
+                          "2614fa3015e2c7a51269c422ff3dfaf32669fff3551cf50b14bee3f1c5834049"
                       ],
                       "result": [
                           "chromium.json",
-                          10515,
-                          "1ad7a742fd094f8172893c9d0d7cf311e324ad6844dcaf34c79d522d7bcbe3ab"
+                          19512,
+                          "9107c97af7153cd9d16a3523a3321b8b43946e38b9efe46302e15de1631a58b2"
                       ]
                   }
               }
@@ -111,7 +86,7 @@ jobs:
                   "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "retained-firefox-deny-noirq-reader"})
+                  "User-Agent": "retained-chromium-default-acpi-reader"})
           
           def api(suffix):
               try:
@@ -135,7 +110,7 @@ jobs:
               require(len(matches) == 1, "Pinned browser job is absent or ambiguous")
               job = matches[0]
               require(job["run_id"] == RUN and job["head_sha"] == HEAD and job["run_attempt"] == 1
-                      and job["name"] == ("Bootstrap deny/noirq browser gate (" + ENGINE + ")")
+                      and job["name"] == ("Bootstrap deny/default-ACPI browser gate (" + ENGINE + ")")
                       and job["status"] == "completed" and job["conclusion"] == "failure",
                       "Pinned browser job is not the completed failed attempt")
               steps = {step["number"]: step for step in job["steps"]}
@@ -186,7 +161,8 @@ jobs:
                           mode = info.external_attr >> 16
                           require(not info.is_dir() and not stat.S_ISLNK(mode)
                                   and stat.S_IFMT(mode) in (0, stat.S_IFREG)
-                                  and not (info.flag_bits & 1) and info.file_size == size and size <= 2 * M,
+                                  and not (info.flag_bits & 1) and info.file_size == size
+                                  and size <= (8 * M if key == "stream" else 2 * M),
                                   "Pinned regular member shape differs: " + name)
                           with package.open(info) as source:
                               raw = source.read(size + 1)
@@ -292,9 +268,10 @@ jobs:
           try:
               run = api("/actions/runs/" + str(RUN))
               require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
-                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-deny-noirq-543a"
-                      and run["status"] == "completed" and run["conclusion"] == "failure",
-                      "Expected the exact completed failed source run")
+                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-deny-default-acpi-e381"
+                      and ((run["status"] == "in_progress" and run["conclusion"] is None)
+                           or (run["status"] == "completed" and run["conclusion"] == "failure")),
+                      "Expected the exact source run with the completed failed Chromium job")
               jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
               results = [inspect_engine(spec, run, jobs) for spec in SPECS]
               emit("finished", {"data_integrity_valid": True, "acceptance_verified": False,
