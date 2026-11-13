@@ -102,3 +102,9 @@ index 781f99d0889d068eb5e73187e130e75fa33b9eb3..47d420050fd53c8e9fffbdf547ce361b
 @@ -1118 +1118 @@ func hasEntrypoints(
 -func NewAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
 +func newAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
+diff --git a/pkg/typesystem/resolver.go b/pkg/typesystem/resolver.go
+--- a/pkg/typesystem/resolver.go
++++ b/pkg/typesystem/resolver.go
+@@ -99 +99 @@ func MemoizedTypesystemResolverFunc(datastore storage.AuthorizationModelReadBackend) (TypesystemResolverFunc, func(), error) {
+-		typesys, err := NewAndValidate(ctx, model)
++		typesys, err := newAndValidateResolvedModel(ctx, storeID, modelID, model)

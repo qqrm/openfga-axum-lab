@@ -6,21 +6,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/oklog/ulid/v2"
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
-// browserModelCodec retains only the result of decoding the exact pinned JSON.
-// Each hit copies into an independent request. It never supplies a store ID,
-// model ID, validation flag, datastore result, or authorization decision.
+// browserModelCodec retains private copies of the pinned request decode and one
+// successfully encoded, genuine model-read response. A hit never replaces an
+// RPC, datastore read, validation, or authorization decision.
 type browserModelCodec struct {
 	*runtime.JSONPb
-	raw       []byte
-	prototype *openfgav1.WriteAuthorizationModelRequest
+	raw          []byte
+	prototype    *openfgav1.WriteAuthorizationModelRequest
+	readEncoding atomic.Pointer[browserModelEncoding]
+}
+
+// One retained response bounds memory independently of the number of models.
+// An oversized response keeps ordinary JSONPb behavior without being retained.
+const browserModelEncodingMaxBytes = 1 << 20
+
+type browserModelEncoding struct {
+	response *openfgav1.ReadAuthorizationModelResponse
+	data     []byte
 }
 
 // Preparation does not install the codec. The startup caller may attach it to
@@ -103,4 +115,75 @@ func (d *browserModelDecoder) Decode(v interface{}) (err error) {
 	err = d.UnmarshalOptions.Unmarshal(raw, request)
 	completed = true
 	return err
+}
+
+// Marshal is the unary gateway's response path. The generated handler must
+// finish the real RPC successfully before calling it. NewEncoder deliberately
+// remains JSONPb's original implementation, so startup fixtures cannot seed this
+// entry. All IDs and unknown fields participate in an entire-response hit.
+func (c *browserModelCodec) Marshal(v interface{}) (out []byte, err error) {
+	response, ok := v.(*openfgav1.ReadAuthorizationModelResponse)
+	if !ok || response == nil {
+		return c.JSONPb.Marshal(v)
+	}
+	started := time.Now()
+	cacheHit, cacheStored, completed := false, false, false
+	defer func() {
+		if completed {
+			browserTransportLogger.Printf("model_encode cache_hit=%t cache_stored=%t bytes=%d duration_ms=%d failed=%t",
+				cacheHit, cacheStored, len(out), time.Since(started).Milliseconds(), err != nil)
+		}
+	}()
+
+	options := c.MarshalOptions
+	// MarshalOptions is exported by JSONPb. A per-instance entry alone does not
+	// protect callers that select different output options after its creation.
+	supported := !options.Multiline && options.Indent == "" && !options.AllowPartial &&
+		!options.UseProtoNames && !options.UseEnumNumbers && options.EmitUnpopulated &&
+		!options.EmitDefaultValues && options.Resolver == nil
+	retained := c.readEncoding.Load()
+	if supported && retained != nil && proto.Equal(retained.response, response) {
+		out = bytes.Clone(retained.data)
+		cacheHit, completed = true, true
+		return out, nil
+	}
+	eligible := supported && retained == nil && c.matchesReadModel(response)
+	out, err = c.JSONPb.Marshal(v)
+	if err == nil && eligible && len(out) <= browserModelEncodingMaxBytes {
+		// Neither returned bytes nor the real RPC's message can mutate this key.
+		prepared := &browserModelEncoding{
+			response: proto.Clone(response).(*openfgav1.ReadAuthorizationModelResponse),
+			data:     bytes.Clone(out),
+		}
+		cacheStored = c.readEncoding.CompareAndSwap(nil, prepared)
+	}
+	completed = true
+	return out, err
+}
+
+func (c *browserModelCodec) matchesReadModel(response *openfgav1.ReadAuthorizationModelResponse) bool {
+	model := response.GetAuthorizationModel()
+	if c.prototype == nil || model == nil || model.GetId() == "" ||
+		model.GetId() == browserHTTPWarmupID || len(model.GetConditions()) != 0 ||
+		len(response.ProtoReflect().GetUnknown()) != 0 {
+		return false
+	}
+	if _, err := ulid.ParseStrict(model.GetId()); err != nil {
+		return false
+	}
+	// Compare all policy fields without copying MessageState, changing the
+	// incoming ID, or aliasing the later retained key. Descriptor tests guard
+	// this complete view against a future generated-message schema change.
+	want := &openfgav1.AuthorizationModel{
+		SchemaVersion:   c.prototype.GetSchemaVersion(),
+		TypeDefinitions: c.prototype.GetTypeDefinitions(),
+		Conditions:      c.prototype.GetConditions(),
+	}
+	body := &openfgav1.AuthorizationModel{
+		SchemaVersion:   model.GetSchemaVersion(),
+		TypeDefinitions: model.GetTypeDefinitions(),
+		Conditions:      model.GetConditions(),
+	}
+	body.ProtoReflect().SetUnknown(model.ProtoReflect().GetUnknown())
+	return proto.Equal(want, body)
 }

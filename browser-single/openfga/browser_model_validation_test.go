@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/openfga/openfga/pkg/storage"
+	"github.com/openfga/openfga/pkg/storage/memory"
 )
 
 func browserValidationFixture(t *testing.T) *openfgav1.AuthorizationModel {
@@ -126,6 +130,7 @@ func TestBrowserModelKeyMismatches(t *testing.T) {
 	original := browserValidationFixture(t)
 	prepared := prepareBrowserValidation(t, original)
 	installBrowserValidation(t, prepared)
+	initial := prepared.resolverTypesystem.Load()
 	for _, test := range []struct {
 		name   string
 		change func(*openfgav1.AuthorizationModel)
@@ -161,6 +166,20 @@ func TestBrowserModelKeyMismatches(t *testing.T) {
 			errOnly := ValidateBrowserAuthorizationModel(context.Background(), model)
 			if fmt.Sprint(got) != fmt.Sprint(want) || fmt.Sprint(errOnly) != fmt.Sprint(want) {
 				t.Fatalf("fallback differs: raw=%v wrapper=%v error-only=%v", want, got, errOnly)
+			}
+			datastore, _, resolve := browserMemoryResolver(t)
+			storeID := "01J00000000000000000000100"
+			persistBrowserResolverModel(t, datastore, storeID, model)
+			resolved, resolverErr := resolve(context.Background(), storeID, model.GetId())
+			if want == nil {
+				if resolverErr != nil || resolved == nil || resolved == initial {
+					t.Fatalf("valid mismatching body did not use the ordinary resolver: %v", resolverErr)
+				}
+			} else if fmt.Sprint(resolverErr) != fmt.Sprintf("%v: %v", ErrInvalidModel, want) {
+				t.Fatalf("invalid persisted model changed its error: %v", resolverErr)
+			}
+			if prepared.resolverTypesystem.Load() != initial {
+				t.Fatal("mismatching persisted model consumed the startup object")
 			}
 		})
 	}
@@ -367,7 +386,9 @@ func TestBrowserModelOwnsOnlyPrivateValidationBody(t *testing.T) {
 func TestBrowserModelGraphBehaviorMatchesRawValidator(t *testing.T) {
 	isolateBrowserValidation(t)
 	model := browserValidationFixture(t)
-	installBrowserValidation(t, prepareBrowserValidation(t, model))
+	prepared := prepareBrowserValidation(t, model)
+	installBrowserValidation(t, prepared)
+	model.Id = "01J00000000000000000000200"
 	want, err := newAndValidate(context.Background(), proto.Clone(model).(*openfgav1.AuthorizationModel))
 	if err != nil {
 		t.Fatal(err)
@@ -376,8 +397,23 @@ func TestBrowserModelGraphBehaviorMatchesRawValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetSchemaVersion() != want.GetSchemaVersion() || len(got.GetAllRelations()) != len(want.GetAllRelations()) {
-		t.Fatal("schema metadata changed")
+	assertBrowserGraphEquivalent(t, model, want, got)
+	datastore, _, resolve := browserMemoryResolver(t)
+	storeID := "01J00000000000000000000100"
+	persistBrowserResolverModel(t, datastore, storeID, model)
+	initial := prepared.resolverTypesystem.Load()
+	transferred, err := resolve(context.Background(), storeID, model.GetId())
+	if err != nil || transferred != initial || transferred == nil {
+		t.Fatalf("the persisted model did not receive the startup TypeSystem: %v", err)
+	}
+	assertBrowserGraphEquivalent(t, model, want, transferred)
+}
+
+func assertBrowserGraphEquivalent(t *testing.T, model *openfgav1.AuthorizationModel, want, got *TypeSystem) {
+	t.Helper()
+	if got.GetSchemaVersion() != want.GetSchemaVersion() || len(got.GetAllRelations()) != len(want.GetAllRelations()) ||
+		got.GetAuthorizationModelID() != want.GetAuthorizationModelID() {
+		t.Fatal("schema metadata or actual model identity changed")
 	}
 	// Compare graph behavior rather than private graph identities: upstream
 	// creates random ULIDs for operator nodes on every construction.
@@ -447,5 +483,269 @@ func TestBrowserModelConcurrentRequests(t *testing.T) {
 	}
 	if browserModelValidation.Load() != prepared || !prepared.matches(model) {
 		t.Fatal("concurrent calls changed the validation entry")
+	}
+}
+
+type browserModelReadCounter struct {
+	storage.AuthorizationModelReadBackend
+	reads  atomic.Int32
+	latest atomic.Int32
+}
+
+func (r *browserModelReadCounter) ReadAuthorizationModel(ctx context.Context, storeID, modelID string) (*openfgav1.AuthorizationModel, error) {
+	r.reads.Add(1)
+	return r.AuthorizationModelReadBackend.ReadAuthorizationModel(ctx, storeID, modelID)
+}
+
+func (r *browserModelReadCounter) FindLatestAuthorizationModel(ctx context.Context, storeID string) (*openfgav1.AuthorizationModel, error) {
+	r.latest.Add(1)
+	return r.AuthorizationModelReadBackend.FindLatestAuthorizationModel(ctx, storeID)
+}
+
+func browserMemoryResolver(t *testing.T) (storage.OpenFGADatastore, *browserModelReadCounter, TypesystemResolverFunc) {
+	t.Helper()
+	datastore := memory.New()
+	t.Cleanup(datastore.Close)
+	reader := &browserModelReadCounter{AuthorizationModelReadBackend: datastore}
+	resolve, stop, err := MemoizedTypesystemResolverFunc(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	return datastore, reader, resolve
+}
+
+func persistBrowserResolverModel(t *testing.T, datastore storage.OpenFGADatastore, storeID string, model *openfgav1.AuthorizationModel) {
+	t.Helper()
+	if _, err := datastore.CreateStore(context.Background(), &openfgav1.Store{Id: storeID, Name: "browser-transfer"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.WriteAuthorizationModel(context.Background(), storeID, model); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBrowserModelResolverRequiresPersistedModel(t *testing.T) {
+	isolateBrowserValidation(t)
+	model := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, model)
+	installBrowserValidation(t, prepared)
+	initial := prepared.resolverTypesystem.Load()
+	if initial == nil {
+		t.Fatal("successful preparation discarded the validated TypeSystem")
+	}
+	model.Id = "01J00000000000000000000200"
+	if err := ValidateBrowserAuthorizationModel(context.Background(), model); err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := NewAndValidate(context.Background(), model)
+	if err != nil || ordinary == initial || prepared.resolverTypesystem.Load() != initial {
+		t.Fatalf("a non-resolver caller consumed the startup object: %v", err)
+	}
+	datastore, reader, resolve := browserMemoryResolver(t)
+	storeID := "01J00000000000000000000100"
+	if got, err := resolve(context.Background(), storeID, model.GetId()); got != nil || !errors.Is(err, ErrModelNotFound) {
+		t.Fatalf("an unpersisted model was resolved: %v", err)
+	}
+	if reader.reads.Load() != 1 || prepared.resolverTypesystem.Load() != initial {
+		t.Fatal("missing-model lookup was bypassed or consumed the startup object")
+	}
+	persistBrowserResolverModel(t, datastore, storeID, model)
+	if got, err := resolve(context.Background(), "01J00000000000000000000101", model.GetId()); got != nil || !errors.Is(err, ErrModelNotFound) {
+		t.Fatalf("a model from another store was resolved: %v", err)
+	}
+	if prepared.resolverTypesystem.Load() != initial {
+		t.Fatal("a wrong-store request consumed the startup object")
+	}
+	got, err := resolve(context.Background(), storeID, model.GetId())
+	if err != nil || got != initial || got.GetAuthorizationModelID() != model.GetId() {
+		t.Fatalf("persisted model transfer failed: %v", err)
+	}
+	if reader.reads.Load() != 3 || prepared.resolverTypesystem.Load() != nil {
+		t.Fatal("transfer bypassed its actual read or retained a second owner")
+	}
+	again, err := resolve(context.Background(), storeID, model.GetId())
+	if err != nil || again != got || reader.reads.Load() != 3 {
+		t.Fatalf("the existing store/model cache changed: %v", err)
+	}
+}
+
+func TestBrowserModelResolverLatestKeepsActualIdentity(t *testing.T) {
+	isolateBrowserValidation(t)
+	model := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, model)
+	installBrowserValidation(t, prepared)
+	initial := prepared.resolverTypesystem.Load()
+	model.Id = "01J00000000000000000000200"
+	datastore, reader, resolve := browserMemoryResolver(t)
+	storeID := "01J00000000000000000000100"
+	persistBrowserResolverModel(t, datastore, storeID, model)
+	got, err := resolve(context.Background(), storeID, "")
+	if err != nil || got != initial || got.GetAuthorizationModelID() != model.GetId() {
+		t.Fatalf("latest-model transfer lost its actual identity: %v", err)
+	}
+	if reader.latest.Load() != 1 || reader.reads.Load() != 0 {
+		t.Fatal("the real latest-model lookup changed")
+	}
+}
+
+func TestBrowserModelResolverPreconditionsDoNotClaim(t *testing.T) {
+	isolateBrowserValidation(t)
+	model := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, model)
+	installBrowserValidation(t, prepared)
+	initial := prepared.resolverTypesystem.Load()
+	for _, input := range []struct {
+		storeID string
+		modelID string
+		model   *openfgav1.AuthorizationModel
+	}{
+		{"", model.GetId(), model},
+		{"store", "", model},
+		{"store", "01J00000000000000000000200", model},
+		{"store", model.GetId(), nil},
+	} {
+		_, want := NewAndValidate(context.Background(), input.model)
+		got, err := newAndValidateResolvedModel(context.Background(), input.storeID, input.modelID, input.model)
+		if fmt.Sprint(err) != fmt.Sprint(want) || got == initial {
+			t.Fatalf("invalid transfer precondition changed the ordinary path: %v", err)
+		}
+		if prepared.resolverTypesystem.Load() != initial {
+			t.Fatal("invalid transfer precondition consumed the startup object")
+		}
+	}
+}
+
+func TestBrowserModelResolverCancellation(t *testing.T) {
+	for _, afterClaim := range []bool{false, true} {
+		t.Run(fmt.Sprintf("after_claim_%t", afterClaim), func(t *testing.T) {
+			isolateBrowserValidation(t)
+			model := browserValidationFixture(t)
+			prepared := prepareBrowserValidation(t, model)
+			installBrowserValidation(t, prepared)
+			initial := prepared.resolverTypesystem.Load()
+			model.Id = "01J00000000000000000000200"
+			datastore, reader, resolve := browserMemoryResolver(t)
+			storeID := "01J00000000000000000000100"
+			persistBrowserResolverModel(t, datastore, storeID, model)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			canceled := &browserCancelOnCheck{Context: ctx, cancel: cancel, when: func() bool {
+				if afterClaim {
+					return prepared.resolverTypesystem.Load() == nil
+				}
+				return reader.reads.Load() > 0
+			}}
+			got, err := resolve(canceled, storeID, model.GetId())
+			if got != nil || fmt.Sprint(err) != fmt.Sprintf("%v: %v", ErrInvalidModel, context.Canceled) {
+				t.Fatalf("canceled resolver returned a TypeSystem or changed its error: %v", err)
+			}
+			if afterClaim && prepared.resolverTypesystem.Load() != nil {
+				t.Fatal("canceled claim was returned to the slot")
+			}
+			if !afterClaim && prepared.resolverTypesystem.Load() != initial {
+				t.Fatal("pre-claim cancellation consumed the slot")
+			}
+			fresh, err := resolve(context.Background(), storeID, model.GetId())
+			if err != nil || fresh == nil || (afterClaim && fresh == initial) || (!afterClaim && fresh != initial) {
+				t.Fatalf("cancellation published or recycled an invalid resolver result: %v", err)
+			}
+		})
+	}
+}
+
+func TestBrowserModelResolverTransferKeyIsolation(t *testing.T) {
+	isolateBrowserValidation(t)
+	input := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, input)
+	initial := prepared.resolverTypesystem.Load()
+	input.SchemaVersion = "mutated_after_prepare"
+	installBrowserValidation(t, prepared)
+	model := browserValidationFixture(t)
+	model.Id = "01J00000000000000000000200"
+	before := proto.Clone(model)
+	datastore, _, resolve := browserMemoryResolver(t)
+	storeID := "01J00000000000000000000100"
+	persistBrowserResolverModel(t, datastore, storeID, model)
+	got, err := resolve(context.Background(), storeID, model.GetId())
+	if err != nil || got != initial || got.GetSchemaVersion() != model.GetSchemaVersion() {
+		t.Fatalf("startup input mutation leaked into the transferred object: %v", err)
+	}
+	td, relation := firstBrowserRelation(t, model)
+	owned, ok := got.GetTypeDefinition(td.GetType())
+	if !ok {
+		t.Fatal("transferred type definition is missing")
+	}
+	owned.Relations[relation] = ComputedUserset("mutated_after_transfer")
+	got.computedRelations.Store("transfer-key-isolation", "mutated")
+	if !prepared.matches(model) || !proto.Equal(model, before) {
+		t.Fatal("a transferred getter mutated the immutable comparison key or datastore model")
+	}
+	if err := ValidateBrowserAuthorizationModel(context.Background(), model); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := NewAndValidate(context.Background(), proto.Clone(model).(*openfgav1.AuthorizationModel))
+	if err != nil || fresh == got {
+		t.Fatalf("ordinary construction reused mutable transferred state: %v", err)
+	}
+	if _, ok := fresh.computedRelations.Load("transfer-key-isolation"); ok {
+		t.Fatal("the transferred computed-relations map was shared")
+	}
+	freshType, ok := fresh.GetTypeDefinition(td.GetType())
+	if !ok || !proto.Equal(freshType.GetRelations()[relation], td.GetRelations()[relation]) {
+		t.Fatal("the transferred schema was shared with a fresh TypeSystem")
+	}
+}
+
+func TestBrowserModelResolverConcurrentStoresClaimOnce(t *testing.T) {
+	isolateBrowserValidation(t)
+	prepared := prepareBrowserValidation(t, browserValidationFixture(t))
+	installBrowserValidation(t, prepared)
+	initial := prepared.resolverTypesystem.Load()
+	datastore, reader, resolve := browserMemoryResolver(t)
+	stores := []string{"01J00000000000000000000100", "01J00000000000000000000101"}
+	models := []string{"01J00000000000000000000200", "01J00000000000000000000201"}
+	for index, storeID := range stores {
+		model := browserValidationFixture(t)
+		model.Id = models[index]
+		persistBrowserResolverModel(t, datastore, storeID, model)
+	}
+	type outcome struct {
+		index   int
+		typesys *TypeSystem
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan outcome, len(stores))
+	var done sync.WaitGroup
+	for index, storeID := range stores {
+		done.Add(1)
+		go func(index int, storeID string) {
+			defer done.Done()
+			<-start
+			typesys, err := resolve(context.Background(), storeID, models[index])
+			results <- outcome{index: index, typesys: typesys, err: err}
+		}(index, storeID)
+	}
+	close(start)
+	done.Wait()
+	close(results)
+	claimed := 0
+	var instances []*TypeSystem
+	for result := range results {
+		if result.err != nil || result.typesys == nil || result.typesys.GetAuthorizationModelID() != models[result.index] {
+			t.Fatalf("concurrent model binding changed: %v", result.err)
+		}
+		if result.typesys == initial {
+			claimed++
+		}
+		instances = append(instances, result.typesys)
+	}
+	if claimed != 1 || instances[0] == instances[1] || reader.reads.Load() != 2 {
+		t.Fatal("concurrent stores did not retain two real reads and exactly one transferred owner")
+	}
+	installBrowserValidation(t, prepareBrowserValidation(t, browserValidationFixture(t)))
+	if prepared.resolverTypesystem.Load() != nil || browserModelValidation.Load() != prepared {
+		t.Fatal("same-body reinstallation replenished or replaced the consumed slot")
 	}
 }

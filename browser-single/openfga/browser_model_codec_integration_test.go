@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -440,5 +441,168 @@ func TestBrowserHTTPModelCodecRetainedRustWire(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+type browserModelEncodingLog struct{ hits atomic.Int64 }
+
+func (w *browserModelEncodingLog) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("model_encode cache_hit=true")) {
+		w.hits.Add(1)
+	}
+	return len(p), nil
+}
+
+// This checks the generated HTTP/gRPC path with the real OpenFGA service and
+// memory datastore. It is separate from PostgreSQL/native/browser acceptance.
+func TestBrowserHTTPModelCodecGatewayReadEncodingAndFailures(t *testing.T) {
+	path, fixture := browserHTTPModelFixture(t)
+	for _, candidate := range []bool{false, true} {
+		name := "default_JSONPb"
+		if candidate {
+			name = "one_real_read_encoding"
+		}
+		t.Run(name, func(t *testing.T) {
+			codec, err := warmBrowserHTTPModelCodec(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if codec.readEncoding.Load() != nil {
+				t.Fatal("warmup supplied a fixture response to the runtime cache")
+			}
+			var marshaler runtime.Marshaler = browserCodecDefaultJSON()
+			if candidate {
+				marshaler = codec
+			}
+			output := &browserModelEncodingLog{}
+			previous := browserTransportLogger.Writer()
+			browserTransportLogger.SetOutput(output)
+			t.Cleanup(func() { browserTransportLogger.SetOutput(previous) })
+			var readCalls atomic.Int64
+			var cancelNext atomic.Bool
+			entered := make(chan struct{}, 1)
+			finished := make(chan error, 1)
+			observe := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, next grpc.UnaryHandler) (interface{}, error) {
+				if !strings.HasSuffix(info.FullMethod, "/ReadAuthorizationModel") {
+					return next(ctx, req)
+				}
+				readCalls.Add(1)
+				if !cancelNext.Load() {
+					return next(ctx, req)
+				}
+				entered <- struct{}{}
+				<-ctx.Done()
+				// Execute the actual handler even after cancellation; the HTTP
+				// client must receive its canceled context, never a cached 200.
+				response, err := next(ctx, req)
+				finished <- ctx.Err()
+				return response, err
+			}
+			g := newBrowserCodecGateway(t, marshaler, true, observe, nil)
+			store, other := g.createStore(t), g.createStore(t)
+			code, written := g.request(t, http.MethodPost, "/stores/"+store+"/authorization-models", fixture, browserCodecTestToken)
+			var created openfgav1.WriteAuthorizationModelResponse
+			if code != http.StatusCreated || protojson.Unmarshal(written, &created) != nil || created.GetAuthorizationModelId() == "" {
+				t.Fatalf("real model write failed: HTTP %d %s", code, written)
+			}
+			modelID := created.GetAuthorizationModelId()
+			modelPath := "/stores/" + store + "/authorization-models/" + modelID
+			for number := int64(1); number <= 2; number++ {
+				code, body := g.request(t, http.MethodGet, modelPath, nil, browserCodecTestToken)
+				var read openfgav1.ReadAuthorizationModelResponse
+				if code != http.StatusOK || protojson.Unmarshal(body, &read) != nil {
+					t.Fatalf("real model GET failed: HTTP %d %s", code, body)
+				}
+				stored, err := g.datastore.ReadAuthorizationModel(context.Background(), store, modelID)
+				if err != nil || !proto.Equal(stored, read.GetAuthorizationModel()) || readCalls.Load() != number {
+					t.Fatalf("GET did not use the actual RPC/store: count=%d err=%v", readCalls.Load(), err)
+				}
+			}
+			retained := codec.readEncoding.Load()
+			if candidate && (retained == nil || retained.response.GetAuthorizationModel().GetId() != modelID ||
+				output.hits.Load() != 1) {
+				t.Fatal("second genuine RPC response did not reuse its exact real encoding")
+			}
+			for _, tc := range []struct {
+				name, path, token string
+				status            int
+				reachesHandler    bool
+			}{
+				{"no_auth", modelPath, "", http.StatusUnauthorized, false},
+				{"wrong_auth", modelPath, "wrong-key", http.StatusUnauthorized, false},
+				{"wrong_store", "/stores/" + other + "/authorization-models/" + modelID, browserCodecTestToken, http.StatusBadRequest, true},
+				{"missing_model", "/stores/" + store + "/authorization-models/01J00000000000000000000009", browserCodecTestToken, http.StatusBadRequest, true},
+				{"invalid_model_id", "/stores/" + store + "/authorization-models/invalid", browserCodecTestToken, http.StatusBadRequest, false},
+				{"invalid_store_id", "/stores/invalid/authorization-models/" + modelID, browserCodecTestToken, http.StatusBadRequest, false},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					before := readCalls.Load()
+					code, body := g.request(t, http.MethodGet, tc.path, nil, tc.token)
+					if code != tc.status {
+						t.Fatalf("primed cache changed failure: HTTP %d %s; want %d", code, body, tc.status)
+					}
+					wantCalls := before
+					if tc.reachesHandler {
+						wantCalls++
+						var decoded map[string]interface{}
+						if json.Unmarshal(body, &decoded) != nil || decoded["code"] != "authorization_model_not_found" {
+							t.Fatal("missing real datastore model did not preserve its original error")
+						}
+					}
+					if readCalls.Load() != wantCalls || codec.readEncoding.Load() != retained {
+						t.Fatal("failure bypassed its original boundary or replaced the encoding")
+					}
+				})
+			}
+			cancelNext.Store(true)
+			before := readCalls.Load()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, g.url+modelPath, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+browserCodecTestToken)
+			clientResult := make(chan error, 1)
+			go func() {
+				response, err := g.client.Do(request)
+				if response != nil {
+					_ = response.Body.Close()
+				}
+				clientResult <- err
+			}()
+			select {
+			case <-entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("model GET never reached the real RPC")
+			}
+			cancel()
+			select {
+			case err := <-clientResult:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("primed encoding lost HTTP cancellation: %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("model GET cancellation was not bounded")
+			}
+			select {
+			case err := <-finished:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("real RPC lost the canceled context: %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("actual read handler did not finish after cancellation")
+			}
+			cancelNext.Store(false)
+			if readCalls.Load() != before+1 || codec.readEncoding.Load() != retained {
+				t.Fatal("canceled GET skipped the RPC or changed the encoding")
+			}
+			code, body := g.request(t, http.MethodGet, modelPath, nil, browserCodecTestToken)
+			if code != http.StatusOK || readCalls.Load() != before+2 {
+				t.Fatalf("subsequent genuine GET failed: HTTP %d %s", code, body)
+			}
+			g.assertModelCount(t, store, 1)
+			g.assertModelCount(t, other, 0)
+		})
 	}
 }

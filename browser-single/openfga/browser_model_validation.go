@@ -3,6 +3,7 @@ package typesystem
 import (
 	"context"
 	"errors"
+	"log"
 	"sync/atomic"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
@@ -10,12 +11,14 @@ import (
 )
 
 // BrowserModelValidation records one successful validation of an immutable,
-// conditionless model body. Its private copy is never returned to a caller or
-// used as the backing model of a TypeSystem. It contains no authorization result,
-// tuple, datastore binding, graph, or TypeSystem.
+// conditionless model body. Its comparison copy is independent of every
+// TypeSystem. One fully validated, privately owned TypeSystem can be transferred
+// once after the resolver reads the matching persisted model. This retains no
+// tuple, authorization result, request context or preassigned datastore binding.
 type BrowserModelValidation struct {
-	body      *openfgav1.AuthorizationModel
-	validated bool
+	body               *openfgav1.AuthorizationModel
+	validated          bool
+	resolverTypesystem atomic.Pointer[TypeSystem]
 }
 
 var browserModelValidation atomic.Pointer[BrowserModelValidation]
@@ -35,17 +38,23 @@ func PrepareBrowserModelValidation(ctx context.Context, model *openfgav1.Authori
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	_, err := newAndValidate(ctx, body)
+	typesys, err := newAndValidate(ctx, body)
 	if contextError := ctx.Err(); contextError != nil {
 		return nil, contextError
 	}
 	if err != nil {
 		return nil, err
 	}
-	// The original validator does not depend on this generated identity. All
-	// schema fields and unknown protobuf fields remain part of the cache key.
-	body.Id = ""
-	return &BrowserModelValidation{body: body, validated: true}, nil
+	// New retains protobuf-backed schema pointers. Keep the immutable comparison
+	// key separate so a TypeSystem getter cannot mutate the key after transfer.
+	key := proto.Clone(body).(*openfgav1.AuthorizationModel)
+	key.Id = ""
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	prepared := &BrowserModelValidation{body: key, validated: true}
+	prepared.resolverTypesystem.Store(typesys)
+	return prepared, nil
 }
 
 // InstallBrowserModelValidation publishes only a fully prepared result. The
@@ -97,6 +106,37 @@ func (prepared *BrowserModelValidation) matches(model *openfgav1.AuthorizationMo
 	}
 	body.ProtoReflect().SetUnknown(model.ProtoReflect().GetUnknown())
 	return proto.Equal(prepared.body, body)
+}
+
+// newAndValidateResolvedModel is called only by MemoizedTypesystemResolverFunc,
+// after its existing datastore lookup and cache miss. It transfers one complete
+// TypeSystem, never a struct copy or graphs shared by different model bindings.
+func newAndValidateResolvedModel(ctx context.Context, storeID, modelID string, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	prepared := browserModelValidation.Load()
+	if storeID == "" || modelID == "" || model == nil || model.GetId() != modelID || !prepared.matches(model) {
+		return NewAndValidate(ctx, model)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	typesys := prepared.resolverTypesystem.Swap(nil)
+	if typesys == nil {
+		return NewAndValidate(ctx, model)
+	}
+	// Cancellation after the claim discards the object. Never return it to the
+	// slot, where another store/model request could claim the same mutable state.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	typesys.modelID = modelID
+	log.Print("[browser-openfga] model_resolver_transfer claimed=true")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return typesys, nil
 }
 
 // NewAndValidate keeps the original path for every uncached model. On an exact

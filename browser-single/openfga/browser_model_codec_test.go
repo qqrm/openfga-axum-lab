@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -346,4 +347,287 @@ func BenchmarkBrowserHTTPModelCodec(b *testing.B) {
 			_ = proto.Clone(codec.prototype)
 		}
 	})
+}
+
+func browserModelCodecReadFixture(codec *browserModelCodec, id string) *openfgav1.ReadAuthorizationModelResponse {
+	request := proto.Clone(codec.prototype).(*openfgav1.WriteAuthorizationModelRequest)
+	return &openfgav1.ReadAuthorizationModelResponse{AuthorizationModel: &openfgav1.AuthorizationModel{
+		Id:              id,
+		SchemaVersion:   request.GetSchemaVersion(),
+		TypeDefinitions: request.GetTypeDefinitions(),
+		Conditions:      request.GetConditions(),
+	}}
+}
+
+func assertBrowserModelEncodingParity(t *testing.T, codec *browserModelCodec, value interface{}) []byte {
+	t.Helper()
+	want, wantErr := codec.JSONPb.Marshal(value)
+	got, gotErr := codec.Marshal(value)
+	if fmt.Sprintf("%T:%v", gotErr, gotErr) != fmt.Sprintf("%T:%v", wantErr, wantErr) {
+		t.Fatalf("encoding error parity: got %T:%v; want %T:%v", gotErr, gotErr, wantErr, wantErr)
+	}
+	if gotErr != nil {
+		return got
+	}
+	// protojson does not promise stable insignificant whitespace across builds.
+	var gotJSON, wantJSON interface{}
+	if err := json.Unmarshal(got, &gotJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(want, &wantJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotJSON, wantJSON) {
+		t.Fatal("candidate changed the actual response JSON")
+	}
+	return got
+}
+
+func TestBrowserHTTPModelCodecReadEncodingCopies(t *testing.T) {
+	_, codec := browserModelCodecFixture(t)
+	output := captureBrowserHTTPWarmupLog(t)
+	response := browserModelCodecReadFixture(codec, "01J00000000000000000000001")
+	original := proto.Clone(response).(*openfgav1.ReadAuthorizationModelResponse)
+	first := assertBrowserModelEncodingParity(t, codec, response)
+	retained := codec.readEncoding.Load()
+	if retained == nil || !proto.Equal(retained.response, original) ||
+		len(retained.data) > browserModelEncodingMaxBytes ||
+		!strings.Contains(output.String(), "cache_stored=true") {
+		t.Fatal("successful eligible response did not create the bounded private entry")
+	}
+	response.AuthorizationModel.Id = "01J00000000000000000000002"
+	response.AuthorizationModel.TypeDefinitions[0].Metadata.Module = "changed"
+	response.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
+	for i := range first {
+		first[i] = 'x'
+	}
+	output.Reset()
+	second := assertBrowserModelEncodingParity(t, codec, original)
+	if !strings.Contains(output.String(), "model_encode cache_hit=true") {
+		t.Fatal("identical complete response did not reuse its encoding")
+	}
+	for i := range second {
+		second[i] = 'y'
+	}
+	_ = assertBrowserModelEncodingParity(t, codec, original)
+	if codec.readEncoding.Load() != retained || !proto.Equal(retained.response, original) ||
+		!json.Valid(retained.data) || strings.Contains(output.String(), original.GetAuthorizationModel().GetId()) ||
+		strings.Contains(output.String(), "schema_version") {
+		t.Fatal("caller mutated the private key/bytes, or diagnostics leaked response content")
+	}
+}
+
+func TestBrowserHTTPModelCodecReadEncodingFallbacks(t *testing.T) {
+	_, codec := browserModelCodecFixture(t)
+	output := captureBrowserHTTPWarmupLog(t)
+	original := browserModelCodecReadFixture(codec, "01J00000000000000000000001")
+	_ = assertBrowserModelEncodingParity(t, codec, original)
+	retained := codec.readEncoding.Load()
+	cases := []struct {
+		name   string
+		change func(*openfgav1.ReadAuthorizationModelResponse)
+	}{
+		{"other_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "01J00000000000000000000002" }},
+		{"empty_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "" }},
+		{"invalid_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "invalid" }},
+		{"warmup_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = browserHTTPWarmupID }},
+		{"schema", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.SchemaVersion = "invalid" }},
+		{"metadata", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].Metadata.Module = "changed" }},
+		{"conditions", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.Conditions = map[string]*openfgav1.Condition{"extra": {Name: "extra", Expression: "true"}}
+		}},
+		{"response_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
+		{"model_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
+		{"nested_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
+		{"missing_model", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel = nil }},
+		{"invalid_utf8", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].Type = string([]byte{0xff}) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := proto.Clone(original).(*openfgav1.ReadAuthorizationModelResponse)
+			tc.change(response)
+			output.Reset()
+			_ = assertBrowserModelEncodingParity(t, codec, response)
+			if strings.Contains(output.String(), "cache_hit=true") || codec.readEncoding.Load() != retained {
+				t.Fatal("mismatch reused or replaced the first response")
+			}
+			if tc.name != "other_id" {
+				_, fresh := browserModelCodecFixture(t)
+				_ = assertBrowserModelEncodingParity(t, fresh, response)
+				if fresh.readEncoding.Load() != nil {
+					t.Fatal("unsupported response was admitted into an empty entry")
+				}
+			}
+		})
+	}
+	for _, response := range []interface{}{
+		nil, (*openfgav1.ReadAuthorizationModelResponse)(nil),
+		&openfgav1.WriteAuthorizationModelResponse{AuthorizationModelId: "01J00000000000000000000001"},
+		map[string]string{"kind": "unrelated"},
+	} {
+		_ = assertBrowserModelEncodingParity(t, codec, response)
+	}
+	if codec.readEncoding.Load() != retained {
+		t.Fatal("another output type replaced the retained response")
+	}
+}
+
+func TestBrowserHTTPModelCodecReadEncodingOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*protojson.MarshalOptions)
+	}{
+		{"multiline", func(o *protojson.MarshalOptions) { o.Multiline = true }},
+		{"indent", func(o *protojson.MarshalOptions) { o.Indent = "  " }},
+		{"allow_partial", func(o *protojson.MarshalOptions) { o.AllowPartial = true }},
+		{"proto_names", func(o *protojson.MarshalOptions) { o.UseProtoNames = true }},
+		{"enum_numbers", func(o *protojson.MarshalOptions) { o.UseEnumNumbers = true }},
+		{"omit_unpopulated", func(o *protojson.MarshalOptions) { o.EmitUnpopulated = false }},
+		{"emit_defaults", func(o *protojson.MarshalOptions) { o.EmitDefaultValues = true }},
+		{"resolver", func(o *protojson.MarshalOptions) { o.Resolver = protoregistry.GlobalTypes }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, codec := browserModelCodecFixture(t)
+			output := captureBrowserHTTPWarmupLog(t)
+			response := browserModelCodecReadFixture(codec, "01J00000000000000000000001")
+			_ = assertBrowserModelEncodingParity(t, codec, response)
+			retained := codec.readEncoding.Load()
+			tc.change(&codec.MarshalOptions)
+			output.Reset()
+			_ = assertBrowserModelEncodingParity(t, codec, response)
+			if strings.Contains(output.String(), "cache_hit=true") || codec.readEncoding.Load() != retained {
+				t.Fatal("changed marshal options reused or replaced the old encoding")
+			}
+			_, fresh := browserModelCodecFixture(t)
+			fresh.MarshalOptions = codec.MarshalOptions
+			_ = assertBrowserModelEncodingParity(t, fresh, response)
+			if fresh.readEncoding.Load() != nil {
+				t.Fatal("non-default options published a retained encoding")
+			}
+			codec.MarshalOptions = protojson.MarshalOptions{EmitUnpopulated: true}
+			output.Reset()
+			_ = assertBrowserModelEncodingParity(t, codec, response)
+			if !strings.Contains(output.String(), "cache_hit=true") {
+				t.Fatal("unchanged default encoding was lost after an ordinary fallback")
+			}
+		})
+	}
+}
+
+func TestBrowserHTTPModelCodecReadEncodingAdmissionAndSchema(t *testing.T) {
+	path, _ := browserHTTPModelFixture(t)
+	codec, err := warmBrowserHTTPModelCodec(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if codec.readEncoding.Load() != nil {
+		t.Fatal("startup NewEncoder fixture seeded a real response entry")
+	}
+	response := browserModelCodecReadFixture(codec, "01J00000000000000000000001")
+	if err := codec.NewEncoder(io.Discard).Encode(response); err != nil || codec.readEncoding.Load() != nil {
+		t.Fatal("ordinary NewEncoder changed its behavior or seeded the unary cache")
+	}
+	for _, tc := range []struct {
+		message proto.Message
+		names   []string
+	}{
+		{&openfgav1.AuthorizationModel{}, []string{"id", "type_definitions", "schema_version", "conditions"}},
+		{&openfgav1.ReadAuthorizationModelResponse{}, []string{"authorization_model"}},
+		{&openfgav1.WriteAuthorizationModelRequest{}, []string{"store_id", "type_definitions", "schema_version", "conditions"}},
+	} {
+		fields := tc.message.ProtoReflect().Descriptor().Fields()
+		if fields.Len() != len(tc.names) {
+			t.Fatal("generated model schema changed; review the complete policy comparison")
+		}
+		want := make(map[string]bool, len(tc.names))
+		for _, name := range tc.names {
+			want[name] = true
+		}
+		for i := 0; i < fields.Len(); i++ {
+			if !want[string(fields.Get(i).Name())] {
+				t.Fatal("generated field is absent from the policy comparison")
+			}
+		}
+	}
+	options := reflect.TypeOf(protojson.MarshalOptions{})
+	expectedOptions := map[string]bool{
+		"Multiline": true, "Indent": true, "AllowPartial": true,
+		"UseProtoNames": true, "UseEnumNumbers": true, "EmitUnpopulated": true,
+		"EmitDefaultValues": true, "Resolver": true,
+	}
+	covered := 0
+	for i := 0; i < options.NumField(); i++ {
+		field := options.Field(i)
+		if !field.IsExported() || field.Name == "NoUnkeyedLiterals" {
+			continue
+		}
+		if !expectedOptions[field.Name] {
+			t.Fatalf("new MarshalOptions field %s needs an explicit cache guard", field.Name)
+		}
+		covered++
+	}
+	if covered != len(expectedOptions) {
+		t.Fatal("MarshalOptions shape changed; review the exact output-options guard")
+	}
+	// This deliberately enlarged private test fixture exercises only retention's
+	// hard bound. It is not a gateway-accepted model or a changed production pin.
+	codec.prototype.TypeDefinitions[0].Metadata.Module = strings.Repeat("x", browserModelEncodingMaxBytes+1)
+	large := browserModelCodecReadFixture(codec, "01J00000000000000000000001")
+	out := assertBrowserModelEncodingParity(t, codec, large)
+	if len(out) <= browserModelEncodingMaxBytes || codec.readEncoding.Load() != nil {
+		t.Fatal("oversized serialized response was retained or not tested")
+	}
+}
+
+func TestBrowserHTTPModelCodecReadEncodingConcurrentCopies(t *testing.T) {
+	_, codec := browserModelCodecFixture(t)
+	previous := browserTransportLogger.Writer()
+	browserTransportLogger.SetOutput(io.Discard)
+	t.Cleanup(func() { browserTransportLogger.SetOutput(previous) })
+	start := make(chan struct{})
+	failures := make(chan error, 16)
+	var group sync.WaitGroup
+	for worker := 0; worker < 16; worker++ {
+		group.Add(1)
+		go func(worker int) {
+			defer group.Done()
+			<-start
+			id := fmt.Sprintf("01J0000000000000000000000%d", 1+worker%2)
+			for attempt := 0; attempt < 4; attempt++ {
+				response := browserModelCodecReadFixture(codec, id)
+				out, err := codec.Marshal(response)
+				got := &openfgav1.ReadAuthorizationModelResponse{}
+				if err != nil || protojson.Unmarshal(out, got) != nil || !proto.Equal(got, response) {
+					failures <- fmt.Errorf("worker %d response parity: %v", worker, err)
+					return
+				}
+				for i := range out {
+					out[i] = 'x'
+				}
+				response.AuthorizationModel.TypeDefinitions[0].Metadata.Module = fmt.Sprint(worker, attempt)
+			}
+		}(worker)
+	}
+	close(start)
+	group.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+	retained := codec.readEncoding.Load()
+	if retained == nil || len(retained.data) > browserModelEncodingMaxBytes {
+		t.Fatal("concurrent eligible calls did not leave one bounded entry")
+	}
+	id := retained.response.GetAuthorizationModel().GetId()
+	if id != "01J00000000000000000000001" && id != "01J00000000000000000000002" {
+		t.Fatal("entry lost the real winning response ID")
+	}
+	original := browserModelCodecReadFixture(codec, id)
+	if !proto.Equal(retained.response, original) || !json.Valid(retained.data) {
+		t.Fatal("concurrent callers changed the retained key or bytes")
+	}
+	_ = assertBrowserModelEncodingParity(t, codec, browserModelCodecReadFixture(codec, "01J00000000000000000000003"))
+	if codec.readEncoding.Load() != retained {
+		t.Fatal("a later valid model replaced the first retained response")
+	}
 }
