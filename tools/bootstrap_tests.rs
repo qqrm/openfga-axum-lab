@@ -511,8 +511,19 @@ fn model_request_timeout_is_opt_in_and_bounded() -> ToolResult {
         );
     }
     for value in [
-        "", "0", "4", "31", "60", "-1", "+30", " 30", "30 ", "3.0", "NaN",
-        "18446744073709551616", "３０",
+        "",
+        "0",
+        "4",
+        "31",
+        "60",
+        "-1",
+        "+30",
+        " 30",
+        "30 ",
+        "3.0",
+        "NaN",
+        "18446744073709551616",
+        "３０",
     ] {
         assert!(model_request_timeout(Some(OsStr::new(value))).is_err());
     }
@@ -597,7 +608,11 @@ async fn model_request_deadline_never_retries_or_publishes_uncertain_binding() -
             "an uncertain model write must never be retried"
         );
         assert!(requests.iter().all(|(_, path, _)| !path.ends_with("/read")));
-        assert_eq!(requests.len(), if operation == "create_model" { 3 } else { 5 });
+        let expected_requests = match operation {
+            "create_model" => 3,
+            _ => 5,
+        };
+        assert_eq!(requests.len(), expected_requests);
     }
     Ok(())
 }
@@ -664,7 +679,10 @@ async fn model_request_deadline_includes_unfinished_response_body() -> ToolResul
         let _ = wait.await;
         Ok::<_, std::io::Error>(())
     });
-    let client = Client::builder().no_proxy().timeout(REQUEST_TIMEOUT).build()?;
+    let client = Client::builder()
+        .no_proxy()
+        .timeout(REQUEST_TIMEOUT)
+        .build()?;
     let result = timeout(
         Duration::from_secs(2),
         send_json_with_timeout::<ModelResponse>(
