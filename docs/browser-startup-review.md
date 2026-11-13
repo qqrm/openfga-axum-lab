@@ -1,6 +1,46 @@
 # Browser OpenFGA startup review
 
-## Latest VirtIO RNG browser result — 2026-11-13
+## Latest structural-path browser result — 2026-11-13
+
+[Run 43483871350](https://github.com/qqrm/openfga-axum-lab/actions/runs/43483871350),
+workflow `5083ad7458337baf3107bfd5537b934b91183a18`, runtime
+`b04bad4ac109a5fdab185a9025b1ae3982953629`, attempt 1, completed FAILURE.
+
+| Engine | Established result |
+| --- | --- |
+| Chromium 158.0.8127.18 | All eight preparation steps passed. Linux and PostgreSQL started. OpenFGA's single 60-second startup warmup failed before HTTP listener, self-dial or authorization Check. Zero acceptance passes; ready=false, checks=0, pageErrors=[]; complete capture. |
+| Firefox | Job 132087064759 failed step 6 with `Current job start metadata identity mismatch` before artifact reads, browser installation or VM startup. No browser result or artifact exists. The old compound predicate did not log the differing field, so the cause is unestablished. |
+
+Chromium job 132087065246 ran the checker from 18:35:11.865 to 18:44:43.297 UTC.
+The actual OpenFGA markers report one cycle, `completed=false`,
+`current_stage=typesystem`, JSON decode 2738 ms, protobuf 2042 ms, generated
+validation 555 ms, unfinished TypeSystem 54245 ms, and response codec 0 ms.
+The enclosing warmup ended after 60108 ms with failure. The repeated markers
+in the diagnostic tail are replay, not retries. TypeSystem time includes
+original validation and structural preparation; no completed-pair counter exists.
+
+The retained artifact is `14067097286`, `browser-openfga9-paths-chromium`,
+3684393 bytes, SHA256
+`c90c5a36f7e6e8b1ab03bdd1b12db489d18d3ba6090d0235490634c65ea5323b`.
+The complete capture reports 29803 chunks, 347 batches and 60944 console bytes,
+SHA256 `b82edd6376065d99a50709e9e2f949a736fb4ca604751d0de1c7a804dfde9172`.
+This summary uses the completed job's full 22 selected service observations and
+structured result; it does not claim independent reconstruction of this console.
+
+The next preparation candidate replaces repeated calls to the same graph BFS
+with at most two existing Gonum breadth-first walks and membership checks.
+The pinned language graph exposes its existing directed graph; its original
+`PathExists` calls Gonum's `topo.PathExistsIn`, which starts a new BFS for each
+query. All original warmup, self-dial, listener and authorization budgets stay
+unchanged. No performance improvement or successful .10 browser result is
+claimed before fresh native parity/race proof and genuine acceptance.
+
+The separate [Actions metadata repair](https://github.com/qqrm/openfga-axum-lab/commit/05d5abc1458e677c7ec634e02e2e3a27c30d5f0b)
+uses an exact run attempt, bounded observations and the actual API job start
+time. It remains inactive. The discarded 180/300-second budget fixture is also
+inactive and is not part of this runtime. PR merge and Pages remain held.
+
+## Previous VirtIO RNG browser result — 2026-11-13
 
 [Run 43476279151](https://github.com/qqrm/openfga-axum-lab/actions/runs/43476279151),
 workflow `0b7431bf861d2b96ef305620f10fc619832ab961`, runtime

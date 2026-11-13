@@ -13,20 +13,26 @@ model remains the default. It does not modify the normal Compose/Pages deploymen
 
 ## Current browser result
 
-[Run 43476279151](https://github.com/qqrm/openfga-axum-lab/actions/runs/43476279151)
-completed with **zero of two acceptance passes in both engines**. The new
-VirtIO RNG configuration passed all source, kernel and runtime preparation
-checks. Firefox's complete console records CRNG readiness before the guest
-startup script; initdb and PostgreSQL subsequently complete. Its first real
-bootstrap deny Check still exceeds OpenFGA's unchanged three-second deadline.
-Chromium reaches the original application's migration, where a real Check
-also exceeds that deadline.
+The latest [structural-path browser gate 43483871350](https://github.com/qqrm/openfga-axum-lab/actions/runs/43483871350)
+failed in Chromium before OpenFGA opened its HTTP listener. Linux and PostgreSQL
+started, but the single startup warmup exhausted its existing 60-second budget.
+The unfinished TypeSystem stage includes original validation and structural-path
+preparation; the log does not report how many of the 316 pairs completed.
+Chromium recorded zero acceptance passes. Firefox stopped at Actions metadata
+preflight before browser installation or VM startup, so it has no .9 VM result.
+
+The preceding [two-engine RNG gate 43476279151](https://github.com/qqrm/openfga-axum-lab/actions/runs/43476279151)
+completed with zero acceptance passes in each engine. Its complete captures
+confirmed PostgreSQL startup; real OpenFGA Checks then exceeded their unchanged
+three-second request deadline.
 
 [Fresh native verification of the structural-path candidate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
-completed successfully, including the real native backend proof and two original
-acceptance sequences. That candidate preserves real tuple reads and authorization
-decisions; browser performance and acceptance remain unverified. The exact
-sources, hashes, evidence and limitations are in
+passed Go/race tests and the real native backend proof with two original
+acceptance sequences. Native success does not establish browser acceptance.
+The next adaptation will remove repeated structural graph traversals while
+preserving the model, real tuple reads, all existing deadlines and fail-closed
+behavior. It still requires fresh native and real browser verification.
+Sources, hashes and limitations are in
 [the startup review](../docs/browser-startup-review.md). Pages remains gated on
 two original acceptance sequences in each real browser.
 

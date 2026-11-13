@@ -77,9 +77,15 @@ The tested OpenFGA is 63074488 bytes, SHA256
 `7841a91b524fc1be097f2f816a8ed39f502e1372bbf96300dc9008b3336f98c3`.
 The bootstrap is byte-identical to the previous tested binary.
 Native warmup took 57 ms, with 49 ms in TypeSystem validation and path
-preparation. These timings do not establish WASM performance. Browser acceptance
-for .9 is still pending; the last completed .8/RNG run failed real Check
-deadlines in both engines. See the [current browser review](../../docs/browser-startup-review.md).
+preparation. These timings did not predict WASM performance:
+[the .9 browser gate 43483871350](https://github.com/qqrm/openfga-axum-lab/actions/runs/43483871350)
+failed Chromium's startup warmup after 60108 ms, before HTTP listener or self-dial.
+The unfinished TypeSystem stage consumed 54245 ms; its record combines original
+validation and structural preparation and does not count completed pairs.
+Firefox failed Actions metadata preflight before VM startup. There are no .9
+browser acceptance passes. The next candidate reduces repeated graph traversal
+without changing startup or authorization deadlines; it is not yet verified.
+See the [current browser review](../../docs/browser-startup-review.md).
 
 ## Bounded startup and exact-schema validation cache
 
