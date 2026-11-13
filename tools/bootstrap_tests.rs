@@ -317,7 +317,9 @@ async fn creation_requires_exact_201_and_never_publishes_uncertain_binding() -> 
             stub.enqueue(operation, Reply::json(StatusCode::from_u16(status)?, body))
                 .await;
             assert!(
-                provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await.is_err(),
+                provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+                    .await
+                    .is_err(),
                 "{operation} accepted HTTP {status}"
             );
             assert!(
@@ -375,7 +377,11 @@ async fn persisted_target_failures_preserve_config_and_never_recreate() -> ToolR
         write_config(&path, &config())?;
         let original = fs::read(&path)?;
         stub.enqueue(operation, response).await;
-        assert!(provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await.is_err());
+        assert!(
+            provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+                .await
+                .is_err()
+        );
         assert_eq!(fs::read(&path)?, original);
         assert!(
             stub.state
@@ -412,7 +418,11 @@ async fn new_target_must_match_model_and_be_confirmed_empty_before_publish() -> 
             StatusCode::OK
         };
         stub.enqueue(operation, Reply::json(status, body)).await;
-        assert!(provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await.is_err());
+        assert!(
+            provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+                .await
+                .is_err()
+        );
         assert!(!path.exists());
     }
     Ok(())
@@ -425,7 +435,11 @@ async fn unexpected_model_file_is_rejected_before_any_request() -> ToolResult {
     let model = model_path(directory.path());
     fs::write(&model, b"{}")?;
     let path = directory.path().join("config.json");
-    assert!(provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await.is_err());
+    assert!(
+        provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+            .await
+            .is_err()
+    );
     assert!(stub.state.requests.lock().await.is_empty());
     assert!(!path.exists());
     Ok(())
@@ -545,7 +559,10 @@ async fn model_request_override_replaces_only_the_request_client_timeout() -> To
         .timeout(Duration::from_millis(100))
         .build()?;
     let actual: ModelResponse = send_json_with_timeout(
-        client.get(format!("{}/stores/{STORE}/authorization-models/{MODEL}", stub.url)),
+        client.get(format!(
+            "{}/stores/{STORE}/authorization-models/{MODEL}",
+            stub.url
+        )),
         StatusCode::OK,
         Duration::from_secs(2),
     )
@@ -634,7 +651,11 @@ async fn existing_binding_model_deadline_preserves_configuration_without_reset()
     assert_eq!(fs::read(&path)?, before);
     let requests = stub.state.requests.lock().await;
     assert_eq!(requests.len(), 3);
-    assert!(requests.iter().all(|(method, _, _)| method.as_str() == "GET"));
+    assert!(
+        requests
+            .iter()
+            .all(|(method, _, _)| method.as_str() == "GET")
+    );
     Ok(())
 }
 
