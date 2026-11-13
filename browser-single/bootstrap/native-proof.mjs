@@ -10,12 +10,14 @@ import {setTimeout as sleep} from 'node:timers/promises';
 const ROOT = 'artifacts/native-bootstrap';
 const STACK = 'native-bootstrap-stack';
 const PROXY = 'native-bootstrap-proxy';
-const SOURCE = '53ff85cfdd3d84c26ae432189790e1e0f72d61db';
-const PACKAGING = 'd7f7ead003c774e30584798adfde38afb854528d';
+const SOURCE = '64d6fb4614b6674284a32cee2f4f84179dfb2a2f';
+const PACKAGING = '325b650f4c9e5a7611d3773dc599e06e7ef133fc';
 const MODEL_SHA = 'a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d';
 const ULID = '[0-9A-HJKMNP-TV-Z]{26}';
 const MODEL_GET = new RegExp('^/stores/' + ULID + '/authorization-models/' + ULID + '$');
 const MAX_BODY = 1024 * 1024;
+const CHECK_TUPLE = {user: 'user:browser-bootstrap-probe', relation: 'ownership',
+  object: 'lakekeeper_table:browser-bootstrap-probe'};
 const OWNER_LABEL = 'io.authzlab.native-bootstrap-run';
 
 function requireCondition(ok, message) {
@@ -41,6 +43,7 @@ function operation(method, requestPath) {
   if (method === 'GET' && MODEL_GET.test(requestPath)) return 'model_get';
   if (method === 'GET' && new RegExp('^/stores/' + ULID + '$').test(requestPath)) return 'get_store';
   if (method === 'POST' && new RegExp('^/stores/' + ULID + '/read$').test(requestPath)) return 'read';
+  if (method === 'POST' && new RegExp('^/stores/' + ULID + '/check$').test(requestPath)) return 'check';
   throw new Error('Unexpected bootstrap proxy operation');
 }
 
@@ -129,7 +132,7 @@ function serveProxy() {
       const control = JSON.parse(readFileSync('/native-proof/control.json', 'utf8'));
       const phase = control.phase;
       const op = operation(request.method, request.url);
-      const delay = ['model_post', 'model_get'].includes(op) ? (control[op] ?? 0) : 0;
+      const delay = ['model_post', 'model_get', 'check'].includes(op) ? (control[op] ?? 0) : 0;
       requireCondition(delay === 0 || delay === 6, 'Unexpected diagnostic delay');
       const body = await requestBody(request);
       const requestId = ++nextId;
@@ -144,6 +147,16 @@ function serveProxy() {
         requireCondition(Array.isArray(tuples), 'Invalid real tuple response');
         detail.tuple_count = tuples.length;
         detail.continuation_token = Object.hasOwn(decoded, 'continuation_token') ? decoded.continuation_token : '';
+      }
+      if (op === 'check' && upstream.status === 200) {
+        const decoded = JSON.parse(upstream.body.toString('utf8'));
+        const input = JSON.parse(body.toString('utf8'));
+        detail.allowed = decoded.allowed;
+        detail.request_store_id = request.url.split('/')[2];
+        detail.request_model_id = input.authorization_model_id;
+        detail.consistency = input.consistency;
+        detail.tuple_key = input.tuple_key;
+        detail.request_keys = Object.keys(input).sort();
       }
       const bodySha = digest(upstream.body);
       emit('upstream', {phase, operation: op, request_id: requestId, status: upstream.status,
@@ -204,8 +217,10 @@ function exists(filename) {
   return docker(['exec', STACK, 'test', '-f', filename], {check: false}).returncode === 0;
 }
 
-function phase(name, postDelay = 0, getDelay = 0) {
-  writeFileSync(path.join(ROOT, 'control.tmp'), JSON.stringify({phase: name, model_post: postDelay, model_get: getDelay}));
+function phase(name, postDelay = 0, getDelay = 0, checkDelay = 0) {
+  writeFileSync(path.join(ROOT, 'control.tmp'), JSON.stringify({
+    phase: name, model_post: postDelay, model_get: getDelay, check: checkDelay
+  }));
   renameSync(path.join(ROOT, 'control.tmp'), path.join(ROOT, 'control.json'));
 }
 
@@ -224,6 +239,8 @@ function verifyPhase(name, expected, delayed) {
   const started = events.filter(entry => entry.event === 'start');
   requireCondition(JSON.stringify(counts(started.map(entry => entry.operation))) === JSON.stringify(counts(expected)),
     'Unexpected request count or retry in ' + name);
+  requireCondition(JSON.stringify(started.map(entry => entry.operation)) === JSON.stringify(expected),
+    'Unexpected bootstrap operation order in ' + name);
   const upstream = events.filter(entry => entry.event === 'upstream');
   requireCondition(upstream.length === started.length, 'A request did not complete against real OpenFGA');
   for (const entry of upstream) {
@@ -235,6 +252,33 @@ function verifyPhase(name, expected, delayed) {
     requireCondition(finished.length === 1 && finished[0].delay_elapsed_ms >= 5900,
       'The genuine response was not delayed more than five seconds');
   }
+}
+
+function verifyEmptyStoreCheck(name, config) {
+  const entries = phaseEvents(name, 'upstream');
+  const checks = entries.filter(entry => entry.operation === 'check');
+  const reads = entries.filter(entry => entry.operation === 'read');
+  requireCondition(checks.length === 1 && checks[0].status === 200 && checks[0].allowed === false,
+    'Exactly one real successful deny Check is required in ' + name);
+  const check = checks[0];
+  requireCondition(JSON.stringify(check.request_keys) === JSON.stringify([
+    'authorization_model_id', 'consistency', 'tuple_key'
+  ]) && check.consistency === 'HIGHER_CONSISTENCY',
+  'The Check must use only the actual model and higher consistency');
+  requireCondition(check.tuple_key && Object.keys(check.tuple_key).length === 3 &&
+    Object.entries(CHECK_TUPLE).every(([key, value]) => check.tuple_key[key] === value),
+  'The real ownership probe tuple differs');
+  requireCondition(['request_store_id', 'request_model_id'].every(key =>
+    new RegExp('^' + ULID + '$').test(check[key])), 'Invalid real Check binding');
+  requireCondition(reads.length === 1 && reads[0].tuple_count === 0 &&
+    reads[0].continuation_token === '', 'The Check must follow a confirmed empty tuple store');
+  if (config) {
+    requireCondition(check.request_store_id === config.store_id &&
+      check.request_model_id === config.model_id, 'The actual Check and published binding differ');
+  }
+  return {request_count: 1, status: check.status, allowed: check.allowed,
+    store_id: check.request_store_id, authorization_model_id: check.request_model_id,
+    consistency: check.consistency, tuple_key: check.tuple_key, tuple_count_before: reads[0].tuple_count};
 }
 
 function cleanupOwned(owned, runId) {
@@ -274,7 +318,7 @@ async function main() {
     'test "$#" -eq 1 && test "$1" = bootstrap',
     'touch /tmp/native-bootstrap-ready',
     "timeout 300s bash -c 'until test -f /tmp/native-start-bootstrap; do sleep 0.2; done'",
-    'FGA_URL=http://127.0.0.1:18080 BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS=30 /usr/local/bin/lab-tool bootstrap',
+    'FGA_URL=http://127.0.0.1:18080 BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS=30 BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes /usr/local/bin/lab-tool bootstrap',
     'touch /tmp/native-bootstrap-done',
     "timeout 300s bash -c 'until test -f /tmp/native-start-app; do sleep 0.2; done'", ''
   ].join('\n'));
@@ -315,7 +359,7 @@ async function main() {
       const config = '/tmp/' + name + '.json';
       const start = performance.now();
       const result = docker(['exec', STACK, 'env', '-u', 'BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS',
-        'FGA_URL=http://127.0.0.1:18080', 'FGA_CONFIG=' + config, '/usr/local/bin/lab-tool', 'bootstrap'],
+        '-u', 'BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK', 'FGA_URL=http://127.0.0.1:18080', 'FGA_CONFIG=' + config, '/usr/local/bin/lab-tool', 'bootstrap'],
       {timeout: 15, check: false});
       const elapsed = (performance.now() - start) / 1000;
       const configPublished = exists(config);
@@ -340,22 +384,58 @@ async function main() {
       defaults.push(record);
       emit('default_fail_closed', record);
     }
+    // The model override must not enlarge the ordinary Check request budget.
+    // Hold an already completed real 200/false response for six seconds.
+    phase('check-deadline', 0, 0, 6);
+    const checkConfig = '/tmp/check-deadline.json';
+    const checkStart = performance.now();
+    const checkResult = docker(['exec', STACK, 'env',
+      'BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS=30', 'BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes',
+      'FGA_URL=http://127.0.0.1:18080', 'FGA_CONFIG=' + checkConfig,
+      '/usr/local/bin/lab-tool', 'bootstrap'], {timeout: 15, check: false});
+    const checkElapsed = (performance.now() - checkStart) / 1000;
+    const checkFailure = {phase: 'check-deadline', exit: checkResult.returncode,
+      elapsed_ms: Math.round(checkElapsed * 1000), config_published: exists(checkConfig),
+      response_still_withheld: !phaseEvents('check-deadline', 'finished').some(entry => entry.operation === 'check'),
+      stderr: checkResult.stderr.slice(-4000)};
+    saveJson('check-deadline-result.json', checkFailure);
+    emit('check_deadline_attempt', checkFailure);
+    requireCondition(checkFailure.exit === 1 && checkElapsed >= 4.5 && checkElapsed < 6 &&
+      !checkFailure.config_published && checkFailure.response_still_withheld,
+    'Check must fail closed near five seconds, before its real six-second response arrives');
+    // Actual timing, upstream decision and absent publication establish the
+    // timeout; either Tokio or reqwest may supply the preserved raw stderr.
+    checkFailure.real_check = verifyEmptyStoreCheck('check-deadline');
+    await waitFor(() => phaseEvents('check-deadline', 'finished').some(entry => entry.operation === 'check'),
+      10, 'completion of delayed real deny Check');
+    verifyPhase('check-deadline', [
+      'health', 'create_store', 'model_post', 'get_store', 'model_get', 'read', 'check'
+    ], ['check']);
+    saveJson('check-deadline-result.json', checkFailure);
+    emit('check_deadline_fail_closed', checkFailure);
     phase('opt-in', 6, 6);
     docker(['exec', STACK, 'touch', '/tmp/native-start-bootstrap']);
     await waitFor(() => exists('/tmp/native-bootstrap-done'), 90, 'opt-in real model provisioning');
     await waitFor(() => ['model_post', 'model_get'].every(op =>
       phaseEvents('opt-in', 'finished').some(entry => entry.operation === op)), 10, 'completed opt-in delayed responses');
-    verifyPhase('opt-in', ['health', 'create_store', 'model_post', 'get_store', 'model_get', 'read'], ['model_post', 'model_get']);
+    verifyPhase('opt-in', [
+      'health', 'create_store', 'model_post', 'get_store', 'model_get', 'read', 'check'
+    ], ['model_post', 'model_get']);
     const reads = phaseEvents('opt-in', 'upstream').filter(entry => entry.operation === 'read');
     requireCondition(reads.length === 1 && reads[0].tuple_count === 0 && reads[0].continuation_token === '',
       'The real new store was not proven empty');
     const config = JSON.parse(docker(['exec', STACK, 'cat', '/tmp/browser-lab/config.json']).stdout);
     requireCondition(config.model_sha256 === MODEL_SHA && ['store_id', 'model_id'].every(key =>
       new RegExp('^' + ULID + '$').test(config[key])), 'Published binding identity differs');
+    const emptyStoreCheck = verifyEmptyStoreCheck('opt-in', config);
+    const tuples = docker(['exec', STACK, 'psql', '-X', '-qAt', '-w', '-v', 'ON_ERROR_STOP=1',
+      '-h', '/tmp/browser-lab', '-U', 'authzlab', '-d', 'openfga',
+      '-c', 'SELECT count(*) FROM tuple']).stdout.trim();
+    requireCondition(tuples === '0', 'A real tuple was written before the original app migration');
     const models = docker(['exec', STACK, 'psql', '-X', '-qAt', '-w', '-v', 'ON_ERROR_STOP=1',
       '-h', '/tmp/browser-lab', '-U', 'authzlab', '-d', 'openfga',
       '-c', 'SELECT count(*) FROM authorization_model']).stdout.trim();
-    requireCondition(models === '3', 'Expected the three actual PostgreSQL authorization models');
+    requireCondition(models === '4', 'Expected the four actual PostgreSQL authorization models');
     phase('passthrough');
     docker(['exec', STACK, 'touch', '/tmp/native-start-app']);
     await waitFor(() => docker(['exec', STACK, '/usr/local/bin/lab-tool', 'probe'], {check: false}).returncode === 0,
@@ -376,6 +456,8 @@ async function main() {
       binary_sha256: binaryHash, openfga_binary_sha256: fgaSha,
       default_failures: defaults, opt_in_model_timeout_seconds: 30,
       delayed_model_post_and_get_seconds: 6, actual_postgres_model_count: Number(models),
+      empty_store_check: emptyStoreCheck, empty_store_check_deadline_failure: checkFailure,
+      delayed_empty_store_check_seconds: 6, actual_postgres_tuple_count_before_app: Number(tuples),
       native_passes: passes, browser_acceptance_verified: false};
     saveJson('native-result.json', result);
     emit('native_proof', result);
