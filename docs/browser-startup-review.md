@@ -1,15 +1,208 @@
 # Browser OpenFGA startup review
 
-Status of this review on 13 November 2026: **approved changes under validation;
-browser acceptance has not passed**. The latest completed browser gate below is
-commit `5d18ed2fda49fe84a9ac03c7b8571940f0891819`, run `43388600974`.
-The Browser preview run for the current PR head is the authority for later
-acceptance results. The initial proposal was prepared against PR #36 head
-`c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
-and additional checks. The PR has not been merged and Pages has not been
-published.
+Status on 13 November 2026: **the OpenFGA `.8` native proof and versioned
+bootstrap producer have passed; browser acceptance remains a separate
+required gate**. The completed
+retained-runtime [check 43434436745](https://github.com/qqrm/openfga-axum-lab/actions/runs/43434436745)
+recorded **zero of two required acceptance passes in both browsers**, with
+complete captures and no page errors. Chromium completed model provisioning
+but failed the first tuple Write. Firefox reached Axum startup but failed the
+application's model readback after a successful RPC. These observations used
+OpenFGA `.7`. The required browser result remains two genuine consecutive
+sequences per engine; native success does not imply a browser pass. Consult
+the current PR's **Browser preview** checks for the browser result; that
+production gate remains the publication authority.
 
-## Current retained result and a local PostgreSQL socket
+The user approved publishing changes and additional checks. The PR has not
+been merged and Pages has not been published. The initial proposal below was
+prepared against PR #36 head `c527f3ca016b317350a29c0dca38c07e7699230b`;
+older observations retain their original source/runtime scope.
+
+## Current model-bootstrap budget and verified producer
+
+The kernel now enables ACPI and `X86_PM_TIMER` alongside the existing IPC and
+`HPET_TIMER` settings; its build retains the complete resolved configuration
+diff. The launcher removes only the reviewed Linux `acpi=off` token, retains
+two sockets/CPUs, 512 MiB and MTTCG, and does not force a clocksource.
+The [two-CPU ACPI diagnostic 43424228941](https://github.com/qqrm/openfga-axum-lab/actions/runs/43424228941)
+started PostgreSQL and OpenFGA in both browsers but failed initial model
+provisioning at the existing five-second client limit. Neither browser reached
+an acceptance pass. Its successful diagnostic workflow means observations
+were collected, not that the backend passed acceptance.
+
+[Reader 43427570912](https://github.com/qqrm/openfga-axum-lab/actions/runs/43427570912)
+validated contiguous captures and exported the full console bytes. Their
+verified SHA-256s identify Chromium's outer `Elapsed(())` failure and Firefox's
+reqwest `TimedOut` failure. These establish the failing client boundary without
+attributing the delay to a particular emulator, database or scheduling cause.
+
+The narrow Rust change adds `BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS`: default
+5, strict ASCII integer range 5–30. Only initial model POST and verification
+GET use the selected budget, in both reqwest and the enclosing Tokio timeout,
+including body consumption. Browser startup selects 30. Health, store
+creation/verification and tuple reads remain at five seconds; application
+authorization stays at two seconds, OpenFGA requests at three, and original
+acceptance requests at five. Migration behavior and limits are unchanged.
+Invalid settings, response/URL/schema mismatches, failed model readback or a
+nonempty new store fail closed. No uncertain operation is retried or silently
+reset; configuration is published atomically only after all checks succeed.
+
+The fourth verified startup payload provides only the initial bootstrap CLI.
+The original rootfs still supplies PostgreSQL, Axum, the model, and the absolute
+`/usr/local/bin/lab-tool` used by probe and both acceptance executions.
+The [preparation instructions](../browser-single/README.md#pages-startup-adaptation-and-acceptance-gate)
+use the versioned producer with fixed Rust source `53ff85cfdd3d84c26ae432189790e1e0f72d61db`
+and packaging fixture `d7f7ead003c774e30584798adfde38afb854528d`.
+
+[Native run 43433122340](https://github.com/qqrm/openfga-axum-lab/actions/runs/43433122340)
+passed all 19 bootstrap Rust tests, both default-five-second failure cases,
+opt-in provisioning with each genuine model response delayed for six seconds,
+and two actual `403 → 204 → 200 → 204 → 403` acceptance sequences.
+The versioned Node implementation then passed its own
+[producer verification 43435460160](https://github.com/qqrm/openfga-axum-lab/actions/runs/43435460160).
+It passed seven payload tests and the same 19 Rust tests. Default model POST
+failed after 5067 ms and verification GET after 5068 ms, each with exit 1,
+no published configuration, and the genuine response still withheld. Opt-in
+30 completed both real delayed operations, confirmed an empty store and three
+actual PostgreSQL model rows, then passed both original native sequences.
+The proxy delays complete real responses; it supplies no substitute success.
+
+The producer exports from the exact tested image and passes the production
+payload validator. The executable is 7415568 bytes, SHA-256
+`d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f`,
+identical to the bootstrap used in browser run 43434436745.
+[Artifact 14042363529](https://github.com/qqrm/openfga-axum-lab/actions/runs/43435460160/artifacts/14042363529)
+contains the four producer outputs; its ZIP is 3306727 bytes, SHA-256
+`cbe04e8e25a102037bd26daaedfe51fdc2f005f477a292e4ffaf7a40193e33e9`.
+Source, tested image, input OpenFGA, helper and proof identities are retained
+in the build record. This result establishes native producer behavior and
+export identity, not browser performance or authorization acceptance.
+
+Chromium [job 131915790998](https://github.com/qqrm/openfga-axum-lab/actions/runs/43434436745/job/131915790998)
+completed model POST/GET and two real Read calls. Its first tuple POST,
+`/write` with a 3419-byte body, then failed: the RPC observer recorded Code
+2000, `context_state=deadline`, `error_kind=model_resolution_deadline` and
+about 3300 ms; HTTP recorded 3814 ms. Capture is complete, the page-error list
+is empty and no acceptance execution passed. These are guest-observer
+durations; they are not a controlled host-time performance comparison.
+The original request deadline remains in force. The tested OpenFGA `.7`
+binary does not include the new one-shot resolver transfer.
+
+Firefox [job 131915791390](https://github.com/qqrm/openfga-axum-lab/actions/runs/43434436745/job/131915791390)
+also completed model provisioning. Its bootstrap model POST took 5209 ms HTTP
+and 2052 ms RPC, with a 968 ms decoder cache hit; the verification GET took
+5977 ms HTTP and 1077 ms RPC. An empty Read completed in 1062 ms, followed by
+`starting real Axum`. The application's separate `ReadAuthorizationModel`
+RPC then succeeded in 56 ms, but its HTTP request ended canceled after 5644 ms.
+The original application has both a five-second reqwest timeout and an outer
+five-second timeout. No acceptance execution passed.
+
+The approximately 5.44 seconds between that RPC completion and HTTP completion
+covers gateway protobuf decoding, response JSON encoding, writing and
+scheduling. It does not prove that any one function caused the delay.
+Bootstrap's opt-in 30 seconds does not apply to this application request and
+has not changed its deadline.
+
+## Current .8 candidate and completed native verification
+
+The source at
+[501cfc25](https://github.com/qqrm/openfga-axum-lab/commit/501cfc2535f09826550aae97225fa5cbda86f08d)
+adds two narrow reuses to the existing browser adaptation. The first privately
+retains the fully validated warmup TypeSystem for one matching resolver cache
+miss, after the existing accessor has returned the actual model. A single
+atomic claim, exact pinned-body comparison, actual nonempty model/store IDs,
+private key and cancellation checks preserve ownership. The actual model ID
+is installed before the object escapes. Other requests retain their previous
+paths; this does not share mutable graphs between independent TypeSystems.
+
+The second can retain one successful, bounded JSON serialization of a real
+`ReadAuthorizationModelResponse`. A later hit requires equality of the
+entire newly returned protobuf, including its actual model ID and unknown
+fields, under the exact intended JSONPb options. The key and returned bytes
+are privately copied. Every real RPC/model retrieval still runs, and failures
+or unsupported inputs use the original path. The warmup fixture cannot seed
+this entry. Existing datastore/model caches may serve an accessor; neither
+change promises a physical PostgreSQL query on every RPC.
+
+The encoder records its own duration and cache-hit flag, so a browser trace can
+distinguish that work from the complete post-RPC interval. These changes target
+observed boundaries; they do not establish their complete cause or guarantee
+meeting the existing deadlines. No application authorization, migration,
+OpenFGA request or acceptance timeout is increased.
+
+The first native attempt,
+[43439983302](https://github.com/qqrm/openfga-axum-lab/actions/runs/43439983302),
+failed only `gofmt` on six test-lambda formatting hunks, before Go tests, race
+checks or native services ran. The corrected source changes only that formatting.
+
+[Run 43440821229](https://github.com/qqrm/openfga-axum-lab/actions/runs/43440821229)
+then completed the actual OpenFGA build and tests, including the new encoder
+cases and one-shot transfer. Reported passing test counts were:
+
+| Package | Regular tests | Focused race tests |
+| --- | ---: | ---: |
+| `cmd/run` | 30 | 30 |
+| `pkg/typesystem` | 16 | 16 |
+| `pkg/server/commands` | 41 | Not selected |
+| `pkg/server` | 4 | 1 |
+
+The optional retained-Rust-wire test was skipped because that optional input
+was not supplied. The regular/race gates used the actual patched source.
+The output OpenFGA executable is **63066296 bytes**, SHA-256
+`5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f`;
+its `build.json` SHA-256 is
+`d7f903c286657d193eddee5b4bf98ccdc2a56431f1924d7b456555fd506d6315`.
+
+That workflow's seven payload tests and 19 Rust tests passed, but the overall
+run failed before the backend proof. The service's executable-availability
+guard reported `OpenFGA executable is unavailable: /native-openfga/openfga`.
+[Data-only reader 43443951581](https://github.com/qqrm/openfga-axum-lab/actions/runs/43443951581)
+verified the retained archive and the complete 59-byte stack log, SHA-256
+`6374ba75ae3f7089e011e84e0695190d20cf62a878d19b47dc24ca1e3da88d56`.
+The ZIP records the executable's mode as 0555; the historical host directory's
+permissions were not retained. The evidence establishes the failed
+availability guard, not that directory's exact mode.
+
+The [nine-line producer staging correction b267fefd](https://github.com/qqrm/openfga-axum-lab/commit/b267fefdba375395d496e6d89413786c048c70d2)
+copies only the already verified binary into an owned mode-0755 directory,
+sets the copied executable to 0555 and rechecks its hash. It leaves the
+original OpenFGA output untouched and preserves the unprivileged service
+user, original availability guard and all runtime/authentication behavior.
+
+[Native verification 43445129977](https://github.com/qqrm/openfga-axum-lab/actions/runs/43445129977)
+completed successfully with that correction. It reused the exact retained
+Go-tested `.8` executable and its source/build/race evidence; it did not rerun
+the Go build. The regression fixture deliberately made the original input
+directory 0700 with a 0555 file. Both original modes remained unchanged,
+while the verified staged copy was accessible to the service.
+
+The actual producer again passed seven payload tests and 19 Rust tests.
+Default model POST failed after **5082 ms** and verification GET after
+**5083 ms**, each with exit 1, no configuration publication, and the genuine
+response still withheld. With the opt-in 30-second budget, both actual model
+responses were delayed for six seconds and then delivered unchanged. The
+proof confirmed an empty store and three PostgreSQL model rows, started the
+real Axum application, and passed **two consecutive native**
+`403 → 204 → 200 → 204 → 403` sequences.
+
+The tested native image is
+`sha256:413c5b08d493090a77e5c1c2ed26acf3c2a0148d19372766ca7b0c0499bc6bfd`.
+Its exported bootstrap remains 7415568 bytes with the `d47425c1…` SHA-256
+recorded above; the production output validator passed.
+[Bootstrap artifact 14047378538](https://github.com/qqrm/openfga-axum-lab/actions/runs/43445129977/artifacts/14047378538)
+is 3306734 bytes, SHA-256
+`f4eb84008b06c01c7457f6ed8c6b2c5675469c726dcaa7eb0f1cfacaa117146e`.
+[Evidence artifact 14048022132](https://github.com/qqrm/openfga-axum-lab/actions/runs/43445129977/artifacts/14048022132)
+is 23967145 bytes, SHA-256
+`d7277d2cbca89d6c522b22f574d20dfc1cecadab64f2bd04480d3e9d61846dca`.
+
+This closes the native regression/provenance gate for the combined candidate;
+it does not establish browser latency or browser acceptance. The current PR's
+**Browser preview** checks must still verify both real sequences in each
+engine, with complete captures and no bypass of ordinary deadlines. See the
+[OpenFGA implementation and tests](../browser-single/openfga/README.md).
+
+## Earlier retained result and the PostgreSQL socket change
 
 [Run 43388600974](https://github.com/qqrm/openfga-axum-lab/actions/runs/43388600974)
 still completed **zero authorization acceptance passes in each browser**.
@@ -35,7 +228,7 @@ virtio block device. Both page-error lists are empty. The last Firefox module
 snapshot has 1024 registrations on core 0 and no detachments/GC, well below its
 8192 limit. These observations do not identify a cap or memory-barrier cause.
 
-This commit changes **only OpenFGA's PostgreSQL connection host**:
+The subsequent `379e3280` change altered **only OpenFGA's PostgreSQL connection host**:
 `&host=/tmp/browser-lab` selects the already listening Unix socket. The existing
 pgx default `cache_statement`, binary protocol, role, database, SQL statements
 and PostgreSQL durability settings remain. Rust's `DATABASE_URL`, the model,
@@ -140,11 +333,11 @@ so its two-vCPU configuration requires at least two slots. The accepted count
 is retained in VM evidence. This is a precondition check, not a claim that
 inconsistent reports caused the observed browser failures.
 
-The original authorization model, Rust application, bootstrap and acceptance
-programs are unchanged. The two/three/five-second request deadlines, startup
-budget, emulator instance budgets and both required consecutive passes remain
-unchanged. The next full QEMU build and Chromium/Firefox acceptance are still
-required before any merge or Pages publication.
+At that decoder-correction stage, the original authorization model, Rust
+application, bootstrap and acceptance programs were unchanged. Request limits,
+startup and emulator budgets, and both required consecutive passes were
+preserved. The later bootstrap-only model budget is documented above; all
+authorization deadlines and the browser publication requirement remain.
 
 ## Preceding capture and Firefox admission correction
 
@@ -212,9 +405,9 @@ timeouts to that defect or establish browser acceptance. Source context:
 [pinned emitter](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32/tcg-target.c.inc).
 
 The actual corrected emulator passed the emitted-Wasm regression checks in CI
-but still encountered the Firefox OOM above. The OpenFGA `.6` build and request
-deadlines remain unchanged. A separately tested one-shot TypeSystem transfer
-has not been included: the latest run provides no captured model-resolution
+but still encountered the Firefox OOM above. That run retained the OpenFGA `.6`
+build and request deadlines. A separately tested one-shot TypeSystem transfer
+was not included at that stage: that run provided no captured model-resolution
 deadline to justify it. Ordinary CI and the native single-image checks passed;
 the separate native Delivery job failed readiness recovery after restarting its
 official OpenFGA container. No service logs were retained for that failure, so
@@ -245,35 +438,39 @@ filesystem. Editing the repository's entrypoint alone does not update that
 filesystem. The launcher must explicitly supply the reviewed startup files
 and adapted executable to the guest.
 
-## Proposed change
+## Adaptation retained in this source
 
 - Build OpenFGA from the exact upstream commit with Go 1.24.6. Change
   the gateway startup self-dial budget from three to 60 seconds, observing
   parent cancellation. Preserve `grpc.WithBlock()`, TLS options and fatal
   startup failure. Record source, patch, compiler and executable provenance.
 - Before opening listeners, exercise real codecs and fully validate the exact
-  pinned model once under one 60-second startup budget. Retain only the proven
-  validity of its immutable conditionless schema body. Matching real model
-  writes reuse this validation and still write PostgreSQL; resolver loads create
-  a fresh TypeSystem with the real ID. Full protobuf comparison excludes only
-  the generated model ID; every other model uses the original validator.
-  No datastore state, graph, TypeSystem or authorization decision is cached by
-  this adaptation. Record stage timings. Omit unary raw-payload logging work
-  while retaining compact transport metadata and the security middleware.
+  pinned model once under one 60-second startup budget. Retain its proven
+  conditionless-schema validity and one privately owned, fully validated
+  TypeSystem for the first matching resolver cache miss after actual model
+  retrieval. Matching model writes still write PostgreSQL; later or unsupported
+  resolver calls retain their existing paths. The body comparison excludes
+  only the generated ID, and the one claimed TypeSystem receives the actual
+  model ID before escape. No tuple or authorization decision is cached.
+  Record stage timings. Omit unary raw-payload logging work while retaining
+  compact transport metadata and the security middleware.
 - Reuse JSON-to-protobuf decoding only for the exact pinned raw model body,
   preparing a private prototype within that same successful startup phase.
   Keep the standard streaming JSON parser, copy the protobuf independently for
   each matching request, and retain default decoding for every other input.
   The generated gateway supplies the real URL store ID; gRPC, validation,
-  authentication, deadlines and the actual model write still run. This codec
-  change targets the latest pre-observer delay, not resolver graph construction.
-- Supply the adapted executable and current entrypoint through the existing
-  host mount, with checksums verified before VM initialization. Use the
+  authentication, deadlines and the actual model write still run. Separately,
+  retain at most one exact successful encoding of a real model-read response;
+  full response equality, actual ID, private copies and fixed options guard
+  reuse after the real RPC. Other responses and errors keep their usual path.
+- Supply the guest wrapper, adapted executable, current entrypoint and separate
+  initial-bootstrap executable through the existing host mount, with all four
+  sizes and checksums verified before VM initialization. Use the
   converter's `mr` instruction for a read-only bind mount. Its `m`
   instruction is writable; see the pinned
   [mount parser](https://github.com/container2wasm/container2wasm/blob/087c313479d51cdf255e4f28ded6ae7d8141297b/cmd/init/main.go).
 - Wait for OpenFGA's loopback HTTP listener with a bounded wait and process
-  liveness checks, then invoke the original bootstrap once. A listening
+  liveness checks, then invoke the verified initial bootstrap once. A listening
   socket only schedules bootstrap: the real `SERVING` response, exact model
   binding and subsequent operations still decide readiness.
 - Require a distinct start/result pair for each acceptance pass, retain both
@@ -288,9 +485,11 @@ and adapted executable to the guest.
 The PostgreSQL and Axum binaries, `lab-tool acceptance` and the pinned Lakekeeper
 model stay unchanged. `initdb` receives the existing runtime connection/memory
 budget; this does not skip its real IPC probes or change durability. No
-response is synthesized. Existing request deadlines remain unchanged:
-two seconds for Axum's OpenFGA client, five seconds for bootstrap operations
-and the acceptance HTTP client, and the original OpenFGA request deadlines.
+authorization response is synthesized. Ordinary request deadlines remain:
+two seconds for Axum's OpenFGA client, three seconds for OpenFGA requests,
+five seconds for application model readback, ordinary bootstrap operations
+and the acceptance HTTP client. Only initial bootstrap model POST/verification
+GET opt in to 30 seconds; migration behavior and its limits are unchanged.
 
 ## Observed verification and its limits
 
@@ -379,7 +578,7 @@ cache. The candidate must still pass the real browser gate with unchanged
 request deadlines. The current checker attempts Firefox even if Chromium
 fails, so both engines can provide independent evidence.
 
-## Latest real browser failure and the next bounded candidate
+## Earlier 4096-instance browser failure and its next bounded candidate
 
 [Run 43318362131](https://github.com/qqrm/openfga-axum-lab/actions/runs/43318362131)
 tested `077452de` in both browsers independently. It completed **zero acceptance

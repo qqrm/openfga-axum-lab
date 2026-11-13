@@ -72,18 +72,34 @@ of the successfully validated **conditionless schema body**. The copy excludes
 only `AuthorizationModel.Id`. Every other field, nested message and unknown
 field participates in `proto.Equal` for subsequent matches. The pinned protobuf
 descriptor is tested so that adding a future field cannot silently broaden the
-match. No caller receives a reference to this private copy.
+match. No caller receives a reference to this private copy, and it does not
+alias the separately retained TypeSystem.
 
 The real write-model command previously built a TypeSystem solely for validation
 and immediately discarded it. For an exact match it now reuses the established
 validity; generated request validation, type/size limits, new model ID and the
-actual PostgreSQL write remain in place. A resolver cache miss still reads the
-actual model from the actual datastore. If its body matches, a fresh `New(model)`
-builds both graphs, maps and independent mutable state with the real model ID.
-All mismatches, absent cache entries and conditional models use the complete
-original validator. No authorization answer, tuple, datastore existence or
-TypeSystem is memoized by this new cache. Upstream's existing store/model-bound
-resolver cache remains unchanged.
+actual PostgreSQL write remain in place. All body mismatches, absent cache
+entries and conditional models use the complete original validator. No
+authorization answer, tuple or datastore existence is memoized.
+
+Browser build `.8` also retains the fully validated warmup TypeSystem in a
+private atomic slot, separately from the cloned comparison key. The first
+matching resolver cache miss can claim it only **after the existing resolver
+accessor has returned the actual model**. The claim requires a nonempty store
+and resolved model ID, equality of that ID with the returned model, and the
+complete pinned body comparison. An atomic swap removes the object from the
+slot permanently; one caller receives exclusive ownership. Its actual model ID
+is set before it escapes. The pinned graph builders do not encode that model
+ID in their graph state.
+
+Context checks before and after the claim preserve cancellation; a claimed
+object is discarded on cancellation rather than returned or reinserted.
+Other callers retain `NewAndValidate`: a matching conditionless model gets
+a fresh `New(model)`, while every other model gets the complete validator.
+Independently constructed TypeSystems do not share this retained object's
+mutable state or comparison key. Upstream's store/model-bound resolver cache
+remains. Its model accessor may use an existing datastore cache; this does
+not promise a physical PostgreSQL query on every call.
 
 This narrow reuse is justified by the pinned `NewAndValidate` implementation:
 after `New(model)`, conditionless schema validation does not mutate the returned
@@ -129,8 +145,9 @@ The browser codec retains the first step unchanged. Only an exact raw-byte
 match of the pinned model can replace the second step with an independent
 protobuf copy of the already decoded request. Internal whitespace changes,
 different fields, unknown fields and malformed bodies use the original
-decoder and its original errors. Other message types, decoder options,
-encoding and HTTP-body behavior retain the original JSONPb path.
+decoder and its original errors. Other request types and decoder options keep
+the original JSONPb behavior. The separate, narrowly guarded response encoder
+is described below; HTTP-body handling remains unchanged.
 
 The ordinary JSONPb decoder prepares a private prototype during the existing
 bounded startup phase. The caller receives this codec only after every warmup
@@ -140,7 +157,8 @@ Each real request receives another independent copy, with no fixture store ID.
 The generated gateway still supplies the actual `store_id` from the URL and
 calls the real gRPC client. Validation, authentication, context/deadlines, model
 size checks, real model ID generation and PostgreSQL writes remain mandatory.
-No RPC response, store existence, tuple or authorization result is cached.
+This decoder entry stores no response, store existence, tuple or authorization
+result.
 
 One fixed diagnostic event records decode duration, byte count, cache hit and
 failure state without the JSON body. The native parity and real HTTP/gRPC
@@ -187,7 +205,9 @@ and checks authorization before providing the option. Every tuple/condition,
 implicit-relation, duplicate, size and deletion check remains, followed by the
 actual datastore write with the original request context and error handling.
 
-This does not add a global TypeSystem cache. Upstream already caches models by
+This same-request Write reuse does not itself add a global TypeSystem cache.
+The separate one-shot warmup transfer described above is consumed by one
+resolver call. Upstream already caches models by
 store/model because model bodies are immutable: the API creates a new ID and
 PostgreSQL inserts the model. The second model read was already allowed to hit
 that cache without SQL. Reusing the TypeSystem from the same resolved request
@@ -195,9 +215,10 @@ does not replace any Check or return a successful write without its datastore
 operation. Full command tests, including the original validation cases, and
 the existing server Write/authorization/schema tests guard this path.
 
-The optimization has no demonstrated browser performance result yet. A cold
-resolver still builds one TypeSystem, and subsequent real migration Checks,
-readiness and acceptance remain required. The same Chromium trace contains
+The same-request optimization has not established browser acceptance. Before
+`.8`, a cold resolver still built one TypeSystem; the one-shot transfer targets
+that first matching construction. Subsequent real migration Checks, readiness
+and acceptance remain required. The same earlier Chromium trace contains
 full-model HTTP reads of 2.79, 2.61 and 2.17 seconds; the application's HTTP
 readiness adapter retains its two-second request deadline. This is a possible
 later bottleneck, not the failed operation in that run. Firefox memory pressure
@@ -218,6 +239,84 @@ Service affinity is removed separately, restoring scheduling across both CPUs.
 Firefox again failed during PostgreSQL initialization; both browsers recorded
 zero acceptance passes. The final evidence ZIP SHA-256 is
 `339bad2536bfdd6d88ec4246fcafc6929366958bbb54e354912c4fc9c91f90df`.
+
+## Exact encoding of one real model-read response
+
+The completed [run 43434436745](https://github.com/qqrm/openfga-axum-lab/actions/runs/43434436745)
+used browser build `.7` with the separately verified bootstrap executable.
+Both browsers completed initial model provisioning and recorded **zero of the
+two required acceptance passes**. Chromium's first tuple Write failed with
+`context_state=deadline` and `error_kind=model_resolution_deadline`: RPC
+about 3300 ms, HTTP 3814 ms. That observation motivates the one-shot resolver
+transfer; it does not measure graph construction alone.
+
+Firefox completed bootstrap model POST and verification GET under their
+opt-in 30-second client budget, then entered the original Axum startup path.
+The application's separate `ReadAuthorizationModel` RPC succeeded in 56 ms,
+while HTTP ended canceled after 5644 ms under the unchanged five-second
+application deadline. The approximately 5.44-second interval after RPC
+completion includes gateway protobuf decoding, JSON encoding, writing and
+scheduling. It does not identify one serialization function as the cause.
+The [retained review](../../docs/browser-startup-review.md) records the
+individual operation timings and their limits.
+
+The generated gateway still calls the real gRPC client and handles its errors
+before forwarding a successful response. Its `ForwardResponseMessage` calls
+the HTTP marshaler's `Marshal` method. Browser build `.8` intercepts only
+`ReadAuthorizationModelResponse` at that point and can retain **one eligible
+successful serialization, at most 1 MiB**, per codec instance. Admission requires
+the pinned conditionless model, its actual nonempty valid model ID, no
+unsupported response/body fields, and the exact intended JSONPb options.
+Unsupported cases use the original marshaler.
+
+The encoder first obtains the successful bytes from the original JSONPb
+implementation, then stores a private deep protobuf key and a private byte
+copy with a single compare-and-swap. It neither substitutes a warmup ID nor
+creates a response before a real read. Every hit requires `proto.Equal` on
+the **entire newly returned response**, including its actual model ID and
+unknown fields. A hit returns another private byte copy. Mutation of input
+or returned bytes cannot change the stored entry; concurrent first responses
+cannot replace an already published entry.
+
+A different model or ID, different options, unsupported response type,
+oversized encoding or encoding error keeps the original path. All eight
+exported `protojson.MarshalOptions` fields are guarded against the intended
+settings, and a descriptor-style reflection test detects additional fields.
+`NewEncoder` remains the original JSONPb method, so warmup's response fixture
+cannot populate the entry. The real RPC/model retrieval still executes on
+every request reaching this marshaler; the existing model cache may satisfy
+an accessor without physical SQL. No authorization decision, missing-model
+result, auth failure or canceled RPC becomes a successful cached response.
+
+Each eligible response path emits a fixed `model_encode` event with encoding
+duration, byte count, cache-hit/store flags and failure state, without payload
+or identifiers. This measures the wrapped encoding path, not the entire
+post-RPC HTTP interval. The first eligible read pays the extra bounded clone
+cost. Reusing its encoding is a testable latency hypothesis, not an established
+Firefox fix or a reason to change application, migration, OpenFGA request or
+acceptance deadlines.
+
+The first `.8` native attempt,
+[43439983302](https://github.com/qqrm/openfga-axum-lab/actions/runs/43439983302),
+stopped at `gofmt` before Go/race/native-service execution. The format-only
+correction was followed by [43440821229](https://github.com/qqrm/openfga-axum-lab/actions/runs/43440821229),
+whose actual OpenFGA regular and focused race tests passed, including the new
+encoder and resolver-transfer cases. Its later native-service proof stopped
+at the original executable-availability guard. The producer now stages the
+verified executable with traversable directory permissions and rechecks its
+hash, preserving the unprivileged service user and original input.
+
+[Native verification 43445129977](https://github.com/qqrm/openfga-axum-lab/actions/runs/43445129977)
+then reused the identical Go-tested `.8` binary and completed the real
+PostgreSQL/OpenFGA/Axum proof: default-five-second failure cases, opt-in
+30-second provisioning with six-second-delayed genuine responses, and two
+consecutive native acceptance sequences. The original input directory was
+deliberately 0700 and remained unchanged. The
+[retained review](../../docs/browser-startup-review.md#current-8-candidate-and-completed-native-verification)
+records counts, binary/artifact hashes and the earlier failure's limits.
+Native success does not establish browser acceptance. The current PR's
+**Browser preview** checks remain authoritative for the required two genuine
+sequences in each Chromium and Firefox.
 
 ## Build and check
 
@@ -261,9 +360,18 @@ Tests invoke the same helper called by the patched server:
   The real HTTP/gRPC integration compares default and cached decoding with
   model writes/readback, separate store bindings, auth failures, invalid models
   and cancellation without a datastore write.
-- Exact-schema cache tests cover generated IDs, nested/unknown-field mismatches,
-  invalid-model fallback, independent inputs/TypeSystems and cancellation. The
-  cache contains validation evidence only and never substitutes a Check result.
+- Response-encoding tests compare original JSONPb bytes, actual-ID/body/unknown
+  field and option fallbacks, failed/oversized encodings, independent key/output
+  copies and concurrent single-entry publication. The real HTTP/gRPC tests prime
+  a successful entry, then require ordinary auth, wrong-store, missing-model and
+  canceled-request failures to retain their original behavior. Real RPC/model
+  retrieval is observed; this does not assert physical SQL on each request.
+- Exact-schema and one-shot transfer tests cover generated IDs,
+  nested/unknown-field mismatches, invalid-model fallback, independent
+  inputs/TypeSystems, one concurrent claimant, and cancellation before or after
+  a claim. Generic calls cannot consume or refill the slot. Real server
+  Write/Check/delete tests compare the original behavior and errors using the
+  real memory datastore. No cached value substitutes a Check result.
 - Write-command tests cover exact store/model reuse, mismatched/nil/latest-model
   fallback, unsupported schema, original tuple/condition errors, real in-memory
   writes/deletes and duplicate-write failure, datastore failure and concurrency.
@@ -271,7 +379,8 @@ Tests invoke the same helper called by the patched server:
   context-aware adapter over the real memory datastore, whose own Write does
   not check cancellation. These native tests do not prove PostgreSQL behavior.
 - The full command suite and existing server Write, write-authorization and
-  invalid-schema tests run with the final combined patch.
+  invalid-schema tests run with the final combined patch. The focused HTTP,
+  model and resolver-transfer tests also run under Go's race detector.
 
 The tests include a deliberate 60-second wait to verify the production bound.
 They do not substitute for the real PostgreSQL/OpenFGA/Axum browser acceptance.
@@ -279,17 +388,18 @@ Both Chromium and Firefox must still pass the actual sequence twice, in order:
 `403 → 204 → 200 → 204 → 403`.
 
 Output contains `openfga`, `build.json`, `dial-tests.log`,
-`model-validation-tests.log`, `write-typesystem-tests.log`, `LICENSE`, `SOURCE.txt`,
-the exact source patch, injected helpers and the new codec and Write-command test sources.
+`model-validation-tests.log`, `write-typesystem-tests.log`,
+`model-reuse-race-tests.log`, `LICENSE`, `SOURCE.txt`, the exact source patch,
+injected helpers, and codec, Write-command and resolver-transfer test sources.
 `build.json` is created only after passing
 tests and records the source commit, compiler version, canonical UTC commit
 date, patch/helper/test digests, metadata-only diagnostics, omitted unary logging,
 the pinned warmup model identity and budget, native warmup proof, same-request
-store/model TypeSystem reuse, exact JSON decoder and native parity/transport
-proof, native write-test proof, dependency checksum and
-executable SHA-256. This proof means the native APIs/tests passed; it is not
+store/model TypeSystem reuse, exact JSON decoder, one-shot resolver transfer,
+one full real-response encoding, native parity/transport and race-test proof,
+dependency checksum and executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.7`.
+`v1.10.3-browser-startup.8`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its
