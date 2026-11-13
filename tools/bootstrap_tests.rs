@@ -919,11 +919,11 @@ async fn empty_store_check_keeps_five_seconds_with_model_override() -> ToolResul
 #[tokio::test]
 async fn short_model_budget_does_not_shorten_empty_store_check() -> ToolResult {
     let stub = Stub::start().await?;
-    stub.delay("check", Duration::from_millis(250)).await;
+    stub.delay("check", Duration::from_millis(650)).await;
     let directory = tempfile::tempdir()?;
     let model = model_path(directory.path());
     let path = directory.path().join("config.json");
-    provision(&stub.url, &path, &model, Duration::from_millis(100), true).await?;
+    provision(&stub.url, &path, &model, Duration::from_millis(500), true).await?;
     validate_existing(&serde_json::from_slice(&fs::read(path)?)?, MODEL_BYTES)?;
     Ok(())
 }
