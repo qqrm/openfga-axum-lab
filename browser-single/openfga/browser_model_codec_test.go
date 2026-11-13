@@ -427,20 +427,32 @@ func TestBrowserHTTPModelCodecReadEncodingFallbacks(t *testing.T) {
 		name   string
 		change func(*openfgav1.ReadAuthorizationModelResponse)
 	}{
-		{"other_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "01J00000000000000000000002" }},
+		{"other_id", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.Id = "01J00000000000000000000002"
+		}},
 		{"empty_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "" }},
 		{"invalid_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = "invalid" }},
 		{"warmup_id", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.Id = browserHTTPWarmupID }},
 		{"schema", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.SchemaVersion = "invalid" }},
-		{"metadata", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].Metadata.Module = "changed" }},
+		{"metadata", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.TypeDefinitions[0].Metadata.Module = "changed"
+		}},
 		{"conditions", func(r *openfgav1.ReadAuthorizationModelResponse) {
 			r.AuthorizationModel.Conditions = map[string]*openfgav1.Condition{"extra": {Name: "extra", Expression: "true"}}
 		}},
-		{"response_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
-		{"model_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
-		{"nested_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01}) }},
+		{"response_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
+		}},
+		{"model_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
+		}},
+		{"nested_unknown", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.TypeDefinitions[0].ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
+		}},
 		{"missing_model", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel = nil }},
-		{"invalid_utf8", func(r *openfgav1.ReadAuthorizationModelResponse) { r.AuthorizationModel.TypeDefinitions[0].Type = string([]byte{0xff}) }},
+		{"invalid_utf8", func(r *openfgav1.ReadAuthorizationModelResponse) {
+			r.AuthorizationModel.TypeDefinitions[0].Type = string([]byte{0xff})
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
