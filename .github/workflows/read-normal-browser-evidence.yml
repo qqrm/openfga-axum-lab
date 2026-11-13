@@ -354,7 +354,7 @@ jobs:
                       for engine, console in complete_exports:
                           encoded_size = 4*((len(console)+2)//3)
                           envelope_budget = ((encoded_size+4999)//5000)*180 + 2000
-                          if len(console) <= 160*1024 and used + encoded_size + envelope_budget + 16000 <= OUTPUT_LIMIT:
+                          if len(console) <= 512*1024 and used + encoded_size + envelope_budget + 16000 <= OUTPUT_LIMIT:
                               encoded = base64.b64encode(console).decode("ascii")
                               emit(engine + ".full_console", {**record(console), "encoded_characters": len(encoded), "part_size": 5000})
                               for offset in range(0, len(encoded), 5000):
@@ -362,7 +362,7 @@ jobs:
                               emit(engine + ".console_end", {"parts": (len(encoded)+4999)//5000, "encoded_characters": len(encoded), **record(console)})
                           else:
                               emit(engine + ".full_console_omitted", {**record(console),
-                                  "reason": "Console exceeds 160 KiB or remaining 1 MiB output budget",
+                                  "reason": "Console exceeds 512 KiB or remaining 1 MiB output budget",
                                   "bounded_sections_emitted": True, "all_matching_line_omissions_explicit": True})
                       valid = all(all(checks.values()) for checks in engine_checks.values()) and set(engine_checks) == {"chromium", "firefox"}
                       emit("finished", {"data_integrity_valid": valid, "source_conclusion_preserved": "failure",
