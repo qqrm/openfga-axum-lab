@@ -84,7 +84,6 @@ mkdir "$bootstrap_workdir/artifacts"
 ln -s "$core_dir" "$bootstrap_workdir/source"
 ln -s "$fixture_dir" "$bootstrap_workdir/packaging"
 ln -s "$proof_dir" "$bootstrap_workdir/artifacts/native-bootstrap"
-ln -s "$repo_root/artifacts/browser-openfga" "$bootstrap_workdir/artifacts/native-bootstrap-input"
 cp "$repo_root/browser-single/bootstrap/native-proof.mjs" "$proof_dir/native-proof.mjs"
 chmod 0644 "$proof_dir/native-proof.mjs"
 export GITHUB_RUN_ID="$bootstrap_run_id"
@@ -150,6 +149,15 @@ console.log(JSON.stringify({scope: 'reuse verified OpenFGA build', binary_sha256
     binary_bytes: info.size, source_commit: build.source_commit}));
 NODE
 IFS= read -r openfga_sha <"$proof_dir/openfga.sha256"
+
+# A local Buildx export may retain directory permissions inaccessible to the
+# unprivileged service user. Stage only the verified executable in an owned,
+# traversable directory; keep the producer's OpenFGA output untouched.
+mkdir -m 0755 "$bootstrap_workdir/artifacts/native-bootstrap-input"
+install -m 0555 "$repo_root/artifacts/browser-openfga/openfga" \
+    "$bootstrap_workdir/artifacts/native-bootstrap-input/openfga"
+printf '%s  %s\n' "$openfga_sha" "$bootstrap_workdir/artifacts/native-bootstrap-input/openfga" \
+    | sha256sum --check --status
 node --check "$proof_dir/native-proof.mjs"
 bash -euo pipefail -s -- "$repo_root" <<'CHECK' 2>&1 | tee "$proof_dir/wrapper-tests.log"
 repo_root=$1
