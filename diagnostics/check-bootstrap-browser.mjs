@@ -6,7 +6,7 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 
-const sourceCommit = '427ef0305c48e094c2873cd3ce380f7f0e3d5683';
+const sourceCommit = 'd7f7ead003c774e30584798adfde38afb854528d';
 const engine = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(engine),'Expected one allowlisted engine');
 const source = path.resolve('source-candidate');
@@ -42,7 +42,34 @@ const transformProof = {
   modelExplorerBuildVerified:false,diagnosticOnly:true
 };
 await fs.writeFile(path.join(evidenceDirectory,engine+'-checker-transform.json'),JSON.stringify(transformProof,null,2)+'\n');
-console.log('BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof}));
+// Use the current Actions job's actual start, including checkout/preflight.
+// A late local timestamp must never manufacture another 30-minute budget.
+const jobTiming = JSON.parse(await fs.readFile(path.resolve('prepared/job-timing.json'),'utf8'));
+assert.equal(jobTiming.source,'GitHub Actions current job API');
+assert.equal(jobTiming.name,'Bootstrap browser gate ('+engine+')');
+assert.equal(jobTiming.run_id,Number(process.env.GITHUB_RUN_ID));
+assert.equal(jobTiming.run_attempt,1);
+assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');
+assert.equal(jobTiming.head_sha,process.env.GITHUB_SHA);
+assert(Number.isSafeInteger(jobTiming.id) && jobTiming.id>0);
+const checkedAt = Date.now();
+const jobStartedAt = Date.parse(jobTiming.started_at);
+const elapsed = checkedAt-jobStartedAt;
+const jobBudget = {
+  ...jobTiming,checkedAt:new Date(checkedAt).toISOString(),
+  jobElapsedMilliseconds:Number.isFinite(elapsed)?elapsed:null,
+  latestLaunchJobElapsedMilliseconds:240000,outerJobMinutes:30,runtimeStepMinutes:25,
+  launchPermitted:Number.isFinite(elapsed) && elapsed>=0 && elapsed<=240000
+};
+await fs.writeFile(path.join(evidenceDirectory,engine+'-job-budget.json'),JSON.stringify(jobBudget,null,2)+'\n');
+if (!jobBudget.launchPermitted) {
+  const stopped = {phase:'preflight_stop',engine,sourceCommit,checkerLaunched:false,
+    passes:null,reason:'Insufficient or unverified remaining Actions job budget',jobBudget};
+  await fs.writeFile(path.join(evidenceDirectory,engine+'-preflight-stop.json'),JSON.stringify(stopped,null,2)+'\n');
+  console.log('BOOTSTRAP_BROWSER_GATE '+JSON.stringify(stopped));
+  throw new Error('Refusing to start a VM more than four minutes after the Actions job began');
+}
+console.log('BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
 const startedAt = new Date().toISOString();
 const child = spawn(process.execPath,[copiedPath],{cwd:source,env:process.env,stdio:'inherit'});
 const outcome = await new Promise(resolve=>{
@@ -110,7 +137,7 @@ const summary = {
   }:null,
   pageErrors:result?.pageErrors ?? null,logCapture:result?.logCapture ?? null,
   failure:result?.failure ?? null,readError:readError ?? null,validationError:validationError ?? null,
-  files,sourceTransformation:transformProof,
+  files,sourceTransformation:transformProof,jobBudget,
   bootstrapBuild:materialization.bootstrapBuild,
   data:materialization.data,loader:materialization.loader,kernel:materialization.kernel,
   rootfsUnchanged:materialization.rootfsUnchanged,

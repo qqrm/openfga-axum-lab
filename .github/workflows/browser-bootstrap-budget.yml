@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   browser:
+    name: Bootstrap browser gate (${{ matrix.engine }})
     if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/bootstrap-model-budget-379e'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -28,18 +29,20 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 427ef0305c48e094c2873cd3ce380f7f0e3d5683
+          ref: d7f7ead003c774e30584798adfde38afb854528d
           path: source-candidate
           persist-credentials: false
       - name: Verify pinned archives and extract only the required runtime/proof members
         timeout-minutes: 4
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
+          BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
         shell: bash
         run: |
           python3 - <<'PY'
           import hashlib, json, os, pathlib, re, stat, urllib.error, urllib.request, zipfile
           from urllib.parse import urlsplit
+          from datetime import datetime, timezone
           M = 1024**2
           REPO = "qqrm/openfga-axum-lab"
           root = pathlib.Path("prepared")
@@ -94,6 +97,26 @@ jobs:
                       output.write(block); digest.update(block)
               require(size == info.file_size, "Truncated selected ZIP member")
               return {"bytes": size, "sha256": digest.hexdigest()}
+          engine = os.environ["BROWSER_DIAGNOSTIC_ENGINE"]
+          require(engine in ["chromium", "firefox"], "Unexpected matrix engine")
+          current_run = int(os.environ["GITHUB_RUN_ID"])
+          current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
+          jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
+          require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
+          job_name = "Bootstrap browser gate (" + engine + ")"
+          matching = [job for job in jobs["jobs"] if job["name"] == job_name]
+          require(len(matching) == 1, "Expected exactly one current matrix job")
+          job = matching[0]
+          require(job["run_id"] == current_run and job["run_attempt"] == current_attempt and
+                  job["head_sha"] == os.environ["GITHUB_SHA"] and job["status"] == "in_progress" and
+                  isinstance(job["started_at"], str) and job["started_at"].endswith("Z"),
+                  "Current job start metadata identity mismatch")
+          job_timing = {key: job[key] for key in ["id", "name", "run_id", "run_attempt", "head_sha", "started_at"]}
+          job_timing["source"] = "GitHub Actions current job API"
+          job_timing["observed_at"] = datetime.now(timezone.utc).isoformat()
+          (root / "job-timing.json").write_text(json.dumps(job_timing, indent=2) + "\n")
+          print(json.dumps({"current_job_timing": job_timing}), flush=True)
           for label, run_id, head, aid, name, size, sha, conclusion, event in specs:
               run, artifact = api("/actions/runs/" + str(run_id)), api("/actions/artifacts/" + str(aid))
               require(run["id"] == run_id and run["status"] == "completed" and run["conclusion"] == conclusion and
@@ -188,7 +211,7 @@ jobs:
                           "Kernel build metadata identity mismatch")
               else:
                   built = json.loads((source_root / "artifacts/browser-bootstrap/build.json").read_text())
-                  require(built["source_commit"] == "386c1a32d1775b24033e2c090e28b80fad3658e2" and
+                  require(built["source_commit"] == "53ff85cfdd3d84c26ae432189790e1e0f72d61db" and
                           built["native_tests"] == "passed" and
                           built["binary_bytes"] == members["bootstrap"]["bytes"] and
                           built["binary_sha256"] == members["bootstrap"]["sha256"] and
@@ -228,6 +251,7 @@ jobs:
           path: |
             artifacts/bootstrap-browser-gate/
             prepared/*-archive-provenance.json
+            prepared/job-timing.json
             source-candidate/artifacts/browser-wasm/
             source-candidate/artifacts/browser-bootstrap/
             source-candidate/browser-output/wasm/runtime/startup-manifest.json

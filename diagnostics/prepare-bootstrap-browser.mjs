@@ -5,7 +5,7 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '427ef0305c48e094c2873cd3ce380f7f0e3d5683';
+const sourceCommit = 'd7f7ead003c774e30584798adfde38afb854528d';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
 const evidence = path.resolve('artifacts/bootstrap-browser-gate');
@@ -143,7 +143,7 @@ assert.deepEqual(startup.openfga_build,openfga);
 assert.deepEqual(startup.emulator_build,emulator);
 assert.deepEqual(Object.keys(startup.files).sort(),
   ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap'].sort());
-assert.equal(startup.bootstrap_build.source_commit,'386c1a32d1775b24033e2c090e28b80fad3658e2');
+assert.equal(startup.bootstrap_build.source_commit,'53ff85cfdd3d84c26ae432189790e1e0f72d61db');
 assert.equal(startup.bootstrap_build.native_tests,'passed');
 assert.equal(startup.bootstrap_build.browser_model_timeout_seconds,30);
 assert.equal(derived.startup_overlay.sha256,(await fileRecord(path.join(runtime,'startup-manifest.json'))).sha256);
