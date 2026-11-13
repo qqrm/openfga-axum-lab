@@ -749,3 +749,204 @@ func TestBrowserModelResolverConcurrentStoresClaimOnce(t *testing.T) {
 		t.Fatal("same-body reinstallation replenished or replaced the consumed slot")
 	}
 }
+
+func TestBrowserModelUserPathsPinnedParity(t *testing.T) {
+	isolateBrowserValidation(t)
+	model := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, model)
+	got := prepared.resolverTypesystem.Load()
+	if got == nil || len(got.browserUserPaths) != 316 {
+		t.Fatalf("pinned startup paths were not prepared: %v", got)
+	}
+	want, err := newAndValidate(context.Background(), proto.Clone(model).(*openfgav1.AuthorizationModel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want.browserUserPaths != nil {
+		t.Fatal("the original constructor unexpectedly seeded browser paths")
+	}
+	before := make(map[browserUserPathKey]bool, len(got.browserUserPaths))
+	for key, value := range got.browserUserPaths {
+		before[key] = value
+	}
+	users := []string{"user:alice", "user:other-id", "user:*", "user:alice#assignee", "role:analysts#assignee", "missing:alice"}
+	for objectType, relations := range want.GetAllRelations() {
+		for relation := range relations {
+			for _, user := range users {
+				wantPath, wantErr := want.PathExists(user, relation, objectType)
+				gotPath, gotErr := got.PathExists(user, relation, objectType)
+				if gotPath != wantPath || fmt.Sprint(gotErr) != fmt.Sprint(wantErr) {
+					t.Fatalf("seeded path differs for %s -> %s#%s: %v/%v", user, objectType, relation, gotErr, wantErr)
+				}
+			}
+		}
+	}
+	for _, target := range []browserUserPathKey{
+		{objectType: "missing", relation: "viewer"},
+		{objectType: "lakekeeper_table", relation: "missing"},
+	} {
+		wantPath, wantErr := want.PathExists("user:alice", target.relation, target.objectType)
+		gotPath, gotErr := got.PathExists("user:alice", target.relation, target.objectType)
+		if wantErr == nil || gotPath != wantPath || fmt.Sprint(gotErr) != fmt.Sprint(wantErr) {
+			t.Fatalf("unknown target did not preserve its original error: %v/%v", gotErr, wantErr)
+		}
+	}
+	if len(got.browserUserPaths) != len(before) {
+		t.Fatal("queries inserted new entries into the startup-only map")
+	}
+	for key, value := range before {
+		if actual, ok := got.browserUserPaths[key]; !ok || actual != value {
+			t.Fatal("queries changed a prepared structural path")
+		}
+	}
+	installBrowserValidation(t, prepared)
+	fresh, err := NewAndValidate(context.Background(), model)
+	if err != nil || fresh == nil || fresh.browserUserPaths != nil {
+		t.Fatalf("a generic constructor shared the startup map: %v", err)
+	}
+}
+
+func browserUserPathTestModel(sourceType string, relationCount int) *openfgav1.AuthorizationModel {
+	relations := make(map[string]*openfgav1.Userset, relationCount)
+	metadata := make(map[string]*openfgav1.RelationMetadata, relationCount)
+	for i := 0; i < relationCount; i++ {
+		relation := fmt.Sprintf("viewer_%03d", i)
+		relations[relation] = This()
+		metadata[relation] = &openfgav1.RelationMetadata{
+			DirectlyRelatedUserTypes: []*openfgav1.RelationReference{{Type: sourceType}},
+		}
+	}
+	return &openfgav1.AuthorizationModel{
+		Id:            "01J00000000000000000000300",
+		SchemaVersion: "1.2",
+
+		TypeDefinitions: []*openfgav1.TypeDefinition{
+			{Type: sourceType},
+			{
+				Type:      "document",
+				Relations: relations,
+				Metadata:  &openfgav1.Metadata{Relations: metadata},
+			},
+		},
+	}
+}
+
+func TestBrowserModelUserPathsEligibilityAndBound(t *testing.T) {
+	for _, test := range []struct {
+		name, sourceType string
+		relations        int
+		wantSeeded       int
+	}{
+		{name: "no_user_type", sourceType: "person", relations: 2},
+		{name: "exact_limit", sourceType: "user", relations: browserUserPathLimit, wantSeeded: browserUserPathLimit},
+		{name: "above_limit", sourceType: "user", relations: browserUserPathLimit + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			isolateBrowserValidation(t)
+			model := browserUserPathTestModel(test.sourceType, test.relations)
+			prepared := prepareBrowserValidation(t, model)
+			got := prepared.resolverTypesystem.Load()
+			if got == nil || len(got.browserUserPaths) != test.wantSeeded {
+				t.Fatalf("unexpected seed bound: %v", got)
+			}
+			if test.wantSeeded == 0 && got.browserUserPaths != nil {
+				t.Fatal("an ineligible model should retain the nil-map fallback")
+			}
+			want, err := newAndValidate(context.Background(), proto.Clone(model).(*openfgav1.AuthorizationModel))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, user := range []string{test.sourceType + ":alice", "user:alice", "role:reader#member"} {
+				wantPath, wantErr := want.PathExists(user, "viewer_000", "document")
+				gotPath, gotErr := got.PathExists(user, "viewer_000", "document")
+				if gotPath != wantPath || fmt.Sprint(gotErr) != fmt.Sprint(wantErr) {
+					t.Fatalf("ineligible/capped path changed: %v/%v", gotErr, wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestBrowserModelUserPathsFailureDoesNotPublish(t *testing.T) {
+	t.Run("graph_error", func(t *testing.T) {
+		model := browserUserPathTestModel("user", 2)
+		typesys, err := newAndValidate(context.Background(), model)
+		if err != nil {
+			t.Fatal(err)
+		}
+		node, err := typesys.authorizationModelGraph.GetNodeByLabel("document#viewer_001")
+		if err != nil {
+			t.Fatal(err)
+		}
+		typesys.authorizationModelGraph.RemoveNode(node.ID())
+		_, wantErr := typesys.pathExists("user:browser-warmup", "viewer_001", "document")
+		if wantErr == nil {
+			t.Fatal("the original predicate did not report the damaged graph")
+		}
+		err = typesys.prepareBrowserUserPaths(context.Background())
+		if fmt.Sprint(err) != fmt.Sprint(wantErr) || typesys.browserUserPaths != nil {
+			t.Fatalf("a failed seed published partial paths or hid its error: %v", err)
+		}
+	})
+	t.Run("canceled_seed", func(t *testing.T) {
+		isolateBrowserValidation(t)
+		model := browserUserPathTestModel("user", 2)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		checks := 0
+		duringSeed := &browserCancelOnCheck{Context: ctx, cancel: cancel, when: func() bool {
+			checks++
+			// Three preparation checks precede seeding; then entry and
+			// before/after the first real BFS. Cancel before the second BFS.
+			return checks >= 7
+		}}
+		prepared, err := PrepareBrowserModelValidation(duringSeed, model)
+		if !errors.Is(err, context.Canceled) || prepared != nil || checks < 7 {
+			t.Fatalf("canceled preparation returned reusable paths: %v", err)
+		}
+		if browserModelValidation.Load() != nil {
+			t.Fatal("canceled seeding published the startup model")
+		}
+	})
+}
+
+func TestBrowserModelUserPathsConcurrentReadonly(t *testing.T) {
+	isolateBrowserValidation(t)
+	model := browserValidationFixture(t)
+	prepared := prepareBrowserValidation(t, model)
+	got := prepared.resolverTypesystem.Load()
+	if got == nil || len(got.browserUserPaths) != 316 {
+		t.Fatal("missing pinned startup map")
+	}
+	want, err := newAndValidate(context.Background(), proto.Clone(model).(*openfgav1.AuthorizationModel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath, wantErr := want.PathExists("user:alice", "can_get_metadata", "lakekeeper_table")
+	if wantErr != nil {
+		t.Fatal(wantErr)
+	}
+	var workers sync.WaitGroup
+	errorsFound := make(chan error, 16)
+	for worker := 0; worker < 16; worker++ {
+		workers.Add(1)
+		go func(index int) {
+			defer workers.Done()
+			for request := 0; request < 16; request++ {
+				path, err := got.PathExists(fmt.Sprintf("user:reader_%d_%d", index, request), "can_get_metadata", "lakekeeper_table")
+				if err != nil || path != wantPath {
+					errorsFound <- fmt.Errorf("concurrent path changed: %v", err)
+					return
+				}
+			}
+		}(worker)
+	}
+	workers.Wait()
+	close(errorsFound)
+	for err := range errorsFound {
+		t.Error(err)
+	}
+	if len(got.browserUserPaths) != 316 {
+		t.Fatal("concurrent entity IDs grew the structural map")
+	}
+}

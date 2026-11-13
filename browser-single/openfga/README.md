@@ -1,5 +1,38 @@
 # Browser-only OpenFGA startup adaptation
 
+## Detached .9 candidate: bounded schema reachability reuse
+
+This is a source-only fallback candidate. It has not been activated in a browser
+workflow, and its new tests have not yet been run. Actual .8 browser traces include
+real Check requests that exceeded the unchanged three-second RPC deadline; those
+traces do not establish whether schema graph traversal dominates the request.
+
+The privately owned startup TypeSystem now prepares a read-only map of the
+original `PathExists` predicate for plain `user` subjects and every known
+object-type/relation pair in the pinned policy. It contains 316 pairs and has a
+512-pair bound. Filling happens inside the existing 60-second startup phase;
+errors or cancellation prevent publication. These are 316 calls to the original
+predicate: a negative direct path can also query the wildcard path. Each graph
+traversal is synchronous and does not take a context; cancellation is checked
+before and after each predicate call, while the existing outer startup deadline
+still bounds the caller. This extra work can exhaust that same budget. Native
+stage timings do not establish that it will fit in browser emulation.
+Models without a `user` type or above the bound keep the original path. No other
+TypeSystem shares this map.
+
+Only this structural predicate can use the map. Every actual Check still runs
+the original rewrite and datastore evaluation. Entity IDs, tuples, model/store
+existence and authorization decisions are not cached. Unknown target keys,
+usersets and other subject types use the original method, including its errors.
+The existing one-shot claim still requires a matching persisted model read.
+
+The build gate adds all upstream TypeSystem tests and checks the patched
+TypeSystem formatting. The focused parity, bounded-fallback, cancellation and
+concurrent-read tests also run under the existing race detector gate; the real
+in-memory server Write/Check/delete/Check proof remains. Default resolver breadth,
+request deadlines, the pinned model and services are unchanged. This candidate
+must be reviewed and natively validated before any browser experiment.
+
 Upstream is OpenFGA v1.10.3 at
 [`293893b22a53d8a130a5f7c97cab4bc8e91bcaa4`](https://github.com/openfga/openfga/tree/293893b22a53d8a130a5f7c97cab4bc8e91bcaa4).
 Its HTTP gateway starts the gRPC server, then makes a blocking connection to it
@@ -399,7 +432,7 @@ store/model TypeSystem reuse, exact JSON decoder, one-shot resolver transfer,
 one full real-response encoding, native parity/transport and race-test proof,
 dependency checksum and executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.8`.
+`v1.10.3-browser-startup.9`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

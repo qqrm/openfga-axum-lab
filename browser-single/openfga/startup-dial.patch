@@ -96,10 +96,17 @@ index 602a42acafa218e1b8a9bdb925d39ded36eec0ed..0a33145d2df7b06e59ff784842688fbc
 @@ -55,0 +56 @@ func (s *Server) Write(ctx context.Context, req *openfgav1.WriteRequest) (*openf
 +		commands.WithWriteCmdResolvedTypesystem(storeID, typesys),
 diff --git a/pkg/typesystem/typesystem.go b/pkg/typesystem/typesystem.go
-index 781f99d0889d068eb5e73187e130e75fa33b9eb3..47d420050fd53c8e9fffbdf547ce361b980e7da1 100644
+index 781f99d0889d068eb5e73187e130e75fa33b9eb3..93aaac7b0caa5991e5f76e6d4d15a3f87525da7d 100644
 --- a/pkg/typesystem/typesystem.go
 +++ b/pkg/typesystem/typesystem.go
-@@ -1118 +1118 @@ func hasEntrypoints(
+@@ -184,0 +185,3 @@ type TypeSystem struct {
++
++	// Browser startup fills this private map before the TypeSystem can escape.
++	browserUserPaths map[browserUserPathKey]bool
+@@ -704 +707 @@ func (t *TypeSystem) PathExists(user, relation, objectType string) (bool, error) {
+-func (t *TypeSystem) PathExists(user, relation, objectType string) (bool, error) {
++func (t *TypeSystem) pathExists(user, relation, objectType string) (bool, error) {
+@@ -1118 +1121 @@ func hasEntrypoints(
 -func NewAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
 +func newAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
 diff --git a/pkg/typesystem/resolver.go b/pkg/typesystem/resolver.go
