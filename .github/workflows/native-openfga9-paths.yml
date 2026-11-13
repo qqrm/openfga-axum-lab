@@ -1,0 +1,426 @@
+name: Verify fresh OpenFGA schema reachability and native deny proof
+on:
+  push:
+    branches: [diag/native-openfga9-paths]
+    paths: [.github/workflows/native-openfga9-paths.yml]
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/native-openfga9-paths'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COMBINED_SOURCE_COMMIT: fe42a6bcb91b0702b38836dbec51fa1549cc97be
+      RUNTIME_SOURCE_COMMIT: b04bad4ac109a5fdab185a9025b1ae3982953629
+      BOOTSTRAP_CORE_COMMIT: 207d15fab685d3adb9c5d51a048982c2236ae75c
+      BOOTSTRAP_FIXTURE_COMMIT: 4b7a1e1933083232fb8305a60a47bdd3c32e6689
+      NATIVE_PROOF_BLOB: b9f889e63f6fd6c3fc1bfa146e59c160958eae92
+      NATIVE_DENY_PROBE_CONTRACT: real_empty_store_check_v1
+    steps:
+      - name: Require a reviewed immutable source before checkout or build
+        timeout-minutes: 1
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          for (const name of ['COMBINED_SOURCE_COMMIT','RUNTIME_SOURCE_COMMIT','BOOTSTRAP_CORE_COMMIT','BOOTSTRAP_FIXTURE_COMMIT','NATIVE_PROOF_BLOB']) {
+            assert.match(process.env[name] ?? '', /^[0-9a-f]{40}$/, 'The reviewed immutable pin is still missing: '+name);
+          }
+          assert.equal(process.env.NATIVE_DENY_PROBE_CONTRACT,'real_empty_store_check_v1','Real deny-probe proof contract is not reviewed');
+          assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1','This finite native verification forbids workflow reruns');
+          console.log(JSON.stringify({phase:'source_pin',producerSource:process.env.COMBINED_SOURCE_COMMIT,runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,browserAcceptanceVerified:false}));
+          JS
+      - name: Check out the exact combined versioned producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.COMBINED_SOURCE_COMMIT }}
+          path: producer
+          persist-credentials: false
+      - name: Check out the fixed Rust source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.BOOTSTRAP_CORE_COMMIT }}
+          path: source
+          persist-credentials: false
+      - name: Check out the exact reviewed entrypoint fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.BOOTSTRAP_FIXTURE_COMMIT }}
+          path: packaging
+          persist-credentials: false
+      - name: Check out the exact runtime source only to bind all OpenFGA inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RUNTIME_SOURCE_COMMIT }}
+          path: runtime-source
+          persist-credentials: false
+      - name: Check out pinned upstream only to verify preimages and module hashes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openfga/openfga
+          ref: 293893b22a53d8a130a5f7c97cab4bc8e91bcaa4
+          path: upstream
+          persist-credentials: false
+      - name: Check source identity, repository contract and both producer scripts
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          test "$(git -C producer rev-parse HEAD)" = "$COMBINED_SOURCE_COMMIT"
+          test "$(git -C source rev-parse HEAD)" = "$BOOTSTRAP_CORE_COMMIT"
+          test "$(git -C packaging rev-parse HEAD)" = "$BOOTSTRAP_FIXTURE_COMMIT"
+          git -C producer diff --exit-code HEAD --
+          git -C source diff --exit-code HEAD --
+          git -C packaging diff --exit-code HEAD --
+          test "$(git -C runtime-source rev-parse HEAD)" = "$RUNTIME_SOURCE_COMMIT"
+          test "$(git -C upstream rev-parse HEAD)" = 293893b22a53d8a130a5f7c97cab4bc8e91bcaa4
+          git -C runtime-source diff --exit-code HEAD --
+          git -C upstream diff --exit-code HEAD --
+          (cd upstream && sha256sum --check ../producer/browser-single/openfga/upstream.sha256)
+          test "$(git -C producer hash-object browser-single/bootstrap/native-proof.mjs)" = "$NATIVE_PROOF_BLOB"
+          for script in producer/browser-single/openfga/build.sh producer/browser-single/bootstrap/build.sh; do
+            bash -n "$script"
+            shellcheck "$script"
+          done
+          node --check producer/browser-single/bootstrap/native-proof.mjs
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {execFileSync} from 'node:child_process';
+          import {createHash} from 'node:crypto';
+          import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+          const files = execFileSync('git', ['ls-files', '-z'], {cwd:'producer',encoding:'utf8'}).split('\0').filter(Boolean);
+          for (const path of files) {
+            assert(!path.endsWith('.py') && !path.endsWith('.pyw'), 'Forbidden tracked runtime: ' + path);
+            if (path.startsWith('.github/workflows/') || path === 'compose.yaml' || path === 'Dockerfile') {
+              assert(!readFileSync('producer/' + path, 'utf8').toLowerCase().includes('python'), 'Forbidden workflow runtime: ' + path);
+            }
+          }
+          assert(files.includes('browser-single/bootstrap/native-proof.mjs'));
+          for (const path of ['browser-single/entrypoint.sh','browser-single/pages/guest.sh',
+            'browser-single/pages/startup-payload.mjs','browser-single/startup-payload.test.mjs',
+            'browser-single/prepare-pages.sh','browser-single/check-pages.mjs']) {
+            assert(readFileSync('producer/'+path).equals(readFileSync('packaging/'+path)), 'Reviewed runtime fixture changed: '+path);
+          }
+          const expectedInputPaths = [".dockerignore","browser-single/OpenFGA.Dockerfile","browser-single/openfga/browser_http_dial.go","browser-single/openfga/browser_http_dial_test.go","browser-single/openfga/browser_http_warmup.go","browser-single/openfga/browser_http_warmup_test.go","browser-single/openfga/browser_model_codec.go","browser-single/openfga/browser_model_codec_integration_test.go","browser-single/openfga/browser_model_codec_test.go","browser-single/openfga/browser_model_validation.go","browser-single/openfga/browser_model_validation_test.go","browser-single/openfga/browser_resolver_transfer_integration_test.go","browser-single/openfga/browser_write_typesystem_test.go","browser-single/openfga/build.sh","browser-single/openfga/startup-dial.patch","browser-single/openfga/upstream.sha256","fga/model.json"];
+          const relevant = path => path === '.dockerignore' || path === 'fga/model.json' ||
+            path === 'browser-single/OpenFGA.Dockerfile' || path === 'browser-single/OpenFGA.Dockerfile.dockerignore' ||
+            (path.startsWith('browser-single/openfga/') && path !== 'browser-single/openfga/README.md');
+          const listed = directory => Object.fromEntries(execFileSync('git',['ls-files','--stage','-z'],
+            {cwd:directory,encoding:'utf8'}).split('\0').filter(Boolean).map(row=>{
+              const match=/^([0-7]{6}) ([0-9a-f]{40}) 0\t(.+)$/.exec(row);
+              assert(match,'Unexpected staged-file identity');
+              return [match[3],{mode:match[1],git_blob:match[2]}];
+            }).filter(([path])=>relevant(path)));
+          const producerInputs=listed('producer');
+          const runtimeInputs=listed('runtime-source');
+          assert.deepEqual(Object.keys(producerInputs).sort(),expectedInputPaths.slice().sort(),
+            'Unexpected OpenFGA build/test input membership');
+          assert.deepEqual(producerInputs,runtimeInputs,'Native/runtime OpenFGA inputs differ');
+          const verifiedInputs={};
+          for(const path of expectedInputPaths){
+            const bytes=readFileSync('producer/'+path);
+            assert(bytes.equals(readFileSync('runtime-source/'+path)),'Native/runtime OpenFGA bytes differ: '+path);
+            verifiedInputs[path]={...producerInputs[path],bytes:bytes.length,
+              sha256:createHash('sha256').update(bytes).digest('hex')};
+          }
+          const inputSetSha256=createHash('sha256').update(JSON.stringify(verifiedInputs)).digest('hex');
+          const digest = path => createHash('sha256').update(readFileSync('producer/'+path)).digest('hex');
+          const proof = {schemaVersion:3,experiment:'fresh_openfga9_schema_reachability_and_bootstrap_deny',producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,
+            rustSource:process.env.BOOTSTRAP_CORE_COMMIT,
+            packagingSource:process.env.BOOTSTRAP_FIXTURE_COMMIT,
+            workflowCommit:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,
+            repositoryRuntimeContract:'passed',scriptSyntaxAndShellCheck:'passed',
+            openfgaInputScope:'exact_openfga_build_inputs_and_tests',verifiedInputs,inputSetSha256,
+            runtimeOpenfgaInputsMatchProducer:true,otherRuntimeFilesCompared:false,
+            excludedDocumentation:['browser-single/openfga/README.md'],
+            sourceSha256:Object.fromEntries(['browser-single/OpenFGA.Dockerfile',
+              'browser-single/openfga/build.sh','browser-single/bootstrap/build.sh',
+              'browser-single/bootstrap/native-proof.mjs'].map(path=>[path,digest(path)])),
+            scope:'native producers and real native service verification; no emulator, kernel build or browser VM',
+            browserAcceptanceVerified:false};
+          mkdirSync('producer/artifacts',{recursive:true});
+          writeFileSync('producer/artifacts/openfga9-verifier-input.json',JSON.stringify(proof,null,2)+'\n');
+          console.log(JSON.stringify(proof));
+          JS
+      - name: Build and regression-test the fresh OpenFGA .9 producer
+        timeout-minutes: 25
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          test ! -e artifacts/browser-openfga
+          timeout --kill-after=15s 1470s docker buildx build --platform linux/amd64 --progress plain \
+            --file browser-single/OpenFGA.Dockerfile \
+            --output type=local,dest=artifacts/browser-openfga . \
+            2>&1 | tee artifacts/browser-openfga-build.log
+      - name: Bind the fresh binary to exact inputs and actual regular and race tests
+        timeout-minutes: 2
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {chmodSync,lstatSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
+          const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+          const digest=path=>hash(readFileSync(path));
+          const readJSON=path=>JSON.parse(readFileSync(path,'utf8'));
+          const inputPath='producer/artifacts/openfga9-verifier-input.json';
+          const input=readJSON(inputPath);
+          assert.equal(input.producerSource,process.env.COMBINED_SOURCE_COMMIT);
+          assert.equal(input.runtimeSource,process.env.RUNTIME_SOURCE_COMMIT);
+          assert.equal(input.inputSetSha256,hash(Buffer.from(JSON.stringify(input.verifiedInputs))));
+          assert.equal(Object.keys(input.verifiedInputs).length,17);
+          for(const [name,info] of Object.entries(input.verifiedInputs)){
+            for(const directory of ['producer','runtime-source']){
+              assert.equal(lstatSync(directory+'/'+name).size,info.bytes);
+              assert.equal(digest(directory+'/'+name),info.sha256);
+            }
+          }
+          const root='producer/artifacts/browser-openfga/';
+          const names=['LICENSE','SOURCE.txt','build.json','openfga','startup-dial.patch','browser_http_dial.go',
+            'browser_http_warmup.go','browser_model_validation.go','browser_model_validation_test.go',
+            'browser_model_codec.go','browser_model_codec_test.go','browser_model_codec_integration_test.go',
+            'browser_write_typesystem_test.go','browser_resolver_transfer_integration_test.go',
+            'dial-tests.log','model-validation-tests.log','write-typesystem-tests.log','model-reuse-race-tests.log'];
+          assert.deepEqual(readdirSync(root).sort(),names.slice().sort(),'Unexpected fresh OpenFGA output membership');
+          const members={};
+          for(const name of names){
+            const info=lstatSync(root+name);
+            assert(info.isFile()&&info.size>0,'Expected a nonempty regular OpenFGA output: '+name);
+            members[name]={bytes:info.size,sha256:digest(root+name)};
+          }
+          const build=readJSON(root+'build.json');
+          assert.equal(build.binary_sha256,members.openfga.sha256);
+          for(const [key,want] of Object.entries({
+            upstream_version:'1.10.3',source_commit:'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4',
+            go_version:'go1.24.6',target:'linux/amd64',startup_dial_timeout_seconds:60,
+            authorization_request_timeout_default_seconds:3,warmup_timeout_seconds:60,warmup_cycles:1,
+            warmup_model_bytes:52709,warmup_model_sha256:'a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d',
+            model_json_decoder:'pinned_json_decode_private_clone',model_json_encoder:'single_exact_real_model_response',
+            first_resolver_typesystem_reuse:'one_shot_after_real_model_read',
+            schema_reachability_reuse:'readonly_plain_user_paths_on_startup_typesystem',
+            schema_reachability_max_relations:512,schema_reachability_tests:'passed',
+            tuple_write_typesystem_reuse:'same_request_store_and_model',warmup_generated_validation:'ValidateAll',
+            startup_dial_tests:'passed',transport_diagnostics_tests:'passed',warmup_tests:'passed',
+            model_codec_tests:'passed',model_validation_tests:'passed',write_typesystem_tests:'passed',
+            model_reuse_race_tests:'passed'
+          }))assert.equal(build[key],want,'Unexpected fresh OpenFGA field: '+key);
+          const sources={
+            patch_sha256:'startup-dial.patch',helper_sha256:'browser_http_dial.go',tests_sha256:'browser_http_dial_test.go',
+            warmup_helper_sha256:'browser_http_warmup.go',warmup_tests_sha256:'browser_http_warmup_test.go',
+            model_codec_helper_sha256:'browser_model_codec.go',model_codec_tests_sha256:'browser_model_codec_test.go',
+            model_codec_integration_tests_sha256:'browser_model_codec_integration_test.go',
+            model_validation_helper_sha256:'browser_model_validation.go',model_validation_tests_sha256:'browser_model_validation_test.go',
+            write_typesystem_tests_sha256:'browser_write_typesystem_test.go',
+            resolver_transfer_integration_tests_sha256:'browser_resolver_transfer_integration_test.go'
+          };
+          for(const [key,name] of Object.entries(sources)){
+            assert.equal(build[key],digest('producer/browser-single/openfga/'+name),'Compiled input identity differs: '+key);
+            if(Object.hasOwn(members,name))assert.equal(build[key],members[name].sha256,'Exported source identity differs: '+name);
+          }
+          assert.equal(build.go_sum_sha256,digest('upstream/go.sum'));
+          assert.equal(members.LICENSE.sha256,digest('upstream/LICENSE'));
+          assert.equal(build.warmup_model_sha256,digest('producer/fga/model.json'));
+          assert.equal(build.model_reuse_race_tests_sha256,members['model-reuse-race-tests.log'].sha256);
+          assert(readFileSync(root+'SOURCE.txt','utf8').includes('Browser build v1.10.3-browser-startup.9 '));
+          const pathTests=['TestBrowserModelUserPathsPinnedParity','TestBrowserModelUserPathsEligibilityAndBound',
+            'TestBrowserModelUserPathsFailureDoesNotPublish','TestBrowserModelUserPathsConcurrentReadonly'];
+          for(const name of ['model-validation-tests.log','model-reuse-race-tests.log']){
+            const log=readFileSync(root+name,'utf8');
+            assert(!/^(?:--- FAIL:|FAIL(?:\s|$))/m.test(log),'Go failures in '+name);
+            for(const test of pathTests)assert(new RegExp('^--- PASS: '+test+' \\(','m').test(log),
+              'Missing actual completed path test in '+name+': '+test);
+            assert(/^ok\s+github\.com\/openfga\/openfga\/pkg\/typesystem\s+/m.test(log),'TypeSystem test package did not pass');
+          }
+          // Exercise the existing producer's verified staging copy, without changing its code.
+          chmodSync(root,0o700);
+          assert.equal(lstatSync(root).mode&0o777,0o700);
+          assert.equal(lstatSync(root+'openfga').mode&0o777,0o555);
+          const verified={schemaVersion:1,kind:'fresh_go_build',producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,workflowCommit:process.env.GITHUB_SHA,
+            runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,
+            inputRecordSha256:digest(inputPath),inputSetSha256:input.inputSetSha256,members,
+            buildLogSha256:digest('producer/artifacts/browser-openfga-build.log'),completedPathTests:pathTests,
+            directoryPermissionFixture:'0700',browserAcceptanceVerified:false};
+          writeFileSync('producer/artifacts/openfga9-build-verification.json',JSON.stringify(verified,null,2)+'\n');
+          console.log(JSON.stringify({freshGoBuildVerified:true,producerSource:verified.producerSource,
+            runtimeSource:verified.runtimeSource,binary:members.openfga,build:members['build.json'],
+            raceLog:members['model-reuse-race-tests.log'],completedPathTests:pathTests,browserAcceptanceVerified:false}));
+          JS
+      - name: Execute the versioned native bootstrap producer with this exact OpenFGA output
+        timeout-minutes: 25
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          timeout --kill-after=15s 1470s bash browser-single/bootstrap/build.sh ../source ../packaging \
+            2>&1 | tee artifacts/bootstrap-producer-run.log
+      - name: Verify all four outputs and their real native OpenFGA provenance
+        timeout-minutes: 2
+        working-directory: producer
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {readFileSync,readdirSync,statSync} from 'node:fs';
+          import {validateBootstrapBuild} from './browser-single/pages/startup-payload.mjs';
+          const root = 'artifacts/browser-bootstrap/';
+          assert.deepEqual(readdirSync(root).sort(), ['SOURCE.txt','bootstrap','build.json','native-tests.log'].sort());
+          const binary = readFileSync(root+'bootstrap');
+          const digest = value => createHash('sha256').update(value).digest('hex');
+          const hashFile = path => digest(readFileSync(path));
+          const build = JSON.parse(readFileSync(root+'build.json','utf8'));
+          validateBootstrapBuild(build,{bytes:binary.length,sha256:digest(binary)});
+          assert.equal(build.source_commit,process.env.BOOTSTRAP_CORE_COMMIT);
+          assert.equal(build.packaging_commit,process.env.BOOTSTRAP_FIXTURE_COMMIT);
+          for(const [key,value] of Object.entries({
+            empty_store_check:'one_real_higher_consistency_ownership_deny',
+            empty_store_check_default:false,browser_empty_store_check:true,
+            empty_store_check_timeout_seconds:5,empty_store_check_tests:'passed',
+            timeout_scope:'bootstrap_model_post_and_get',default_model_timeout_seconds:5,
+            min_model_timeout_seconds:5,max_model_timeout_seconds:30,browser_model_timeout_seconds:30
+          }))assert.equal(build[key],value,'Bootstrap-only proof metadata differs: '+key);
+          const proof=JSON.parse(readFileSync('artifacts/browser-bootstrap-proof/native-result.json','utf8'));
+          assert.equal(proof.passed,true);
+          assert.equal(proof.source_commit,process.env.BOOTSTRAP_CORE_COMMIT);
+          assert.equal(proof.packaging_commit,process.env.BOOTSTRAP_FIXTURE_COMMIT);
+          assert.equal(proof.binary_sha256,digest(binary));
+          assert.equal(proof.browser_acceptance_verified,false);
+          assert.equal(proof.delayed_empty_store_check_seconds,6);
+          assert.equal(proof.empty_store_check.request_count,1);
+          assert.equal(proof.empty_store_check.status,200);
+          assert.equal(proof.empty_store_check.allowed,false);
+          assert.equal(proof.empty_store_check.consistency,'HIGHER_CONSISTENCY');
+          assert.equal(proof.empty_store_check.tuple_count_before,0);
+          assert.deepEqual(proof.empty_store_check.tuple_key,{
+            user:'user:browser-bootstrap-probe',relation:'ownership',
+            object:'lakekeeper_table:browser-bootstrap-probe'
+          });
+          const denied=proof.empty_store_check_deadline_failure;
+          assert.equal(denied.exit,1);
+          assert.equal(denied.config_published,false);
+          assert.equal(denied.response_still_withheld,true);
+          assert(Number.isSafeInteger(denied.elapsed_ms)&&denied.elapsed_ms>=4500&&denied.elapsed_ms<6000);
+          assert.equal(typeof denied.stderr,'string');
+          for(const actual of [proof.empty_store_check,denied.real_check]){
+            assert.equal(actual.request_count,1);
+            assert.equal(actual.status,200);
+            assert.equal(actual.allowed,false);
+            assert.equal(actual.consistency,'HIGHER_CONSISTENCY');
+            assert.equal(actual.tuple_count_before,0);
+            assert.deepEqual(actual.tuple_key,proof.empty_store_check.tuple_key);
+            assert.match(actual.store_id,/^[0-9A-HJKMNP-TV-Z]{26}$/);
+            assert.match(actual.authorization_model_id,/^[0-9A-HJKMNP-TV-Z]{26}$/);
+          }
+          assert.notEqual(proof.empty_store_check.store_id,denied.real_check.store_id);
+          assert.notEqual(proof.empty_store_check.authorization_model_id,denied.real_check.authorization_model_id);
+          assert.equal(proof.actual_postgres_tuple_count_before_app,0);
+          assert.equal(proof.actual_postgres_model_count,4);
+          assert.deepEqual(proof.default_failures.map(value=>value.phase),['default-post','default-get']);
+          for(const failure of proof.default_failures){
+            assert.equal(failure.exit,1);
+            assert.equal(failure.config_published,false);
+            assert.equal(failure.response_still_withheld,true);
+            assert(Number.isSafeInteger(failure.elapsed_ms)&&failure.elapsed_ms>=4500&&failure.elapsed_ms<6000);
+          }
+          assert.equal(proof.opt_in_model_timeout_seconds,30);
+          assert.equal(proof.delayed_model_post_and_get_seconds,6);
+          assert.equal(proof.native_passes.length,2);
+          for(const pass of proof.native_passes){
+            assert.equal(pass.accepted,true);
+            assert.deepEqual(pass.statuses,[403,204,200,204,403]);
+          }
+          assert.equal(build.native_test_log_sha256,hashFile(root+'native-tests.log'));
+          assert.equal(build.bootstrap_source_sha256,hashFile('../source/tools/bootstrap.rs'));
+          assert.equal(build.bootstrap_tests_sha256,hashFile('../source/tools/bootstrap_tests.rs'));
+          assert.equal(build.producer_sha256,hashFile('browser-single/bootstrap/build.sh'));
+          assert.equal(build.native_harness_sha256,hashFile('browser-single/bootstrap/native-proof.mjs'));
+          assert.equal(build.native_proof_sha256,hashFile('artifacts/browser-bootstrap-proof/native-result.json'));
+          assert.equal(build.browser_acceptance_verified,false);
+          const verifierInputPath='artifacts/openfga9-verifier-input.json';
+          const verifierInput=JSON.parse(readFileSync(verifierInputPath,'utf8'));
+          const verified=JSON.parse(readFileSync('artifacts/openfga9-build-verification.json','utf8'));
+          assert.equal(verified.kind,'fresh_go_build');
+          assert.equal(verified.producerSource,process.env.COMBINED_SOURCE_COMMIT);
+          assert.equal(verified.runtimeSource,process.env.RUNTIME_SOURCE_COMMIT);
+          assert.equal(verified.workflowCommit,process.env.GITHUB_SHA);
+          assert.equal(String(verified.runId),process.env.GITHUB_RUN_ID);
+          assert.equal(String(verified.runAttempt),process.env.GITHUB_RUN_ATTEMPT);
+          assert.equal(verified.inputRecordSha256,hashFile(verifierInputPath));
+          assert.equal(verified.inputSetSha256,digest(Buffer.from(JSON.stringify(verifierInput.verifiedInputs))));
+          assert.equal(Object.keys(verifierInput.verifiedInputs).length,17);
+          for(const [name,record] of Object.entries(verifierInput.verifiedInputs)){
+            for(const prefix of ['', '../runtime-source/']){
+              assert.equal(statSync(prefix+name).size,record.bytes);
+              assert.equal(hashFile(prefix+name),record.sha256);
+            }
+          }
+          for(const [name,record] of Object.entries(verified.members)){
+            assert.equal(statSync('artifacts/browser-openfga/'+name).size,record.bytes);
+            assert.equal(hashFile('artifacts/browser-openfga/'+name),record.sha256);
+          }
+          assert.equal(verified.buildLogSha256,hashFile('artifacts/browser-openfga-build.log'));
+          assert.equal(statSync('artifacts/browser-openfga').mode&0o777,0o700);
+          assert.equal(statSync('artifacts/browser-openfga/openfga').mode&0o777,0o555);
+          const fga=JSON.parse(readFileSync('artifacts/browser-openfga/build.json','utf8'));
+          assert.equal(fga.binary_sha256,hashFile('artifacts/browser-openfga/openfga'));
+          assert.equal(build.openfga_binary_sha256,fga.binary_sha256);
+          assert.equal(proof.openfga_binary_sha256,fga.binary_sha256);
+          assert.equal(build.openfga_build_sha256,hashFile('artifacts/browser-openfga/build.json'));
+          assert.equal(build.workflow_commit,process.env.GITHUB_SHA);
+          assert.equal(String(build.run_id),process.env.GITHUB_RUN_ID);
+          assert.equal(String(build.run_attempt),process.env.GITHUB_RUN_ATTEMPT);
+          console.log(JSON.stringify({producerOutputVerified:true,producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,binaryBytes:binary.length,binarySha256:digest(binary),
+            openfgaBinarySha256:fga.binary_sha256,openfgaBuildSha256:build.openfga_build_sha256,
+            freshGoBuildVerificationSha256:hashFile('artifacts/openfga9-build-verification.json'),
+            nativePasses:proof.native_passes,emptyStoreCheckDeadlineMs:denied.elapsed_ms,
+            browserAcceptanceVerified:false}));
+          JS
+      - name: Record actual native startup timing without a browser performance claim
+        if: always()
+        timeout-minutes: 1
+        run: |
+          node --input-type=module - <<'JS'
+          import {createHash} from 'node:crypto';
+          import {existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+          const file='producer/artifacts/browser-bootstrap-proof/native-bootstrap-stack.log';
+          const bytes=existsSync(file)?readFileSync(file):null;
+          const lines=bytes?bytes.toString('utf8').split(/\r?\n/).filter(line=>
+            /\[browser-openfga\].*\bwarmup_(?:start|cycle|end)\b/.test(line)):[];
+          const record={scope:'native service startup observations only',producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,stackLogAvailable:bytes!==null,
+            stackLogBytes:bytes?.length??null,stackLogSha256:bytes?createHash('sha256').update(bytes).digest('hex'):null,
+            sourceExpectedPredicateCalls:316,sourceMaximumRelations:512,existingWarmupTimeoutSeconds:60,
+            typesystemStageIncludesOriginalValidationAndSchemaSeed:true,
+            warmupRecords:lines.slice(0,8),warmupRecordCount:lines.length,recordsTruncated:lines.length>8,
+            browserPerformanceVerified:false,browserAcceptanceVerified:false};
+          mkdirSync('producer/artifacts',{recursive:true});
+          writeFileSync('producer/artifacts/openfga9-native-startup-timing.json',JSON.stringify(record,null,2)+'\n');
+          console.log(JSON.stringify(record));
+          JS
+      - name: Clean only proof containers owned by this run
+        if: always()
+        timeout-minutes: 2
+        working-directory: producer
+        run: bash browser-single/bootstrap/build.sh --cleanup
+      - name: Retain the four-file verified native bootstrap output
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-bootstrap-openfga9-paths
+          path: producer/artifacts/browser-bootstrap/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain full OpenFGA output and native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-openfga9-paths-native-evidence
+          path: |
+            producer/artifacts/browser-openfga/
+            producer/artifacts/browser-openfga-build.log
+            producer/artifacts/browser-bootstrap/
+            producer/artifacts/browser-bootstrap-proof/
+            producer/artifacts/bootstrap-producer-run.log
+            producer/artifacts/openfga9-verifier-input.json
+            producer/artifacts/openfga9-build-verification.json
+            producer/artifacts/openfga9-native-startup-timing.json
+          if-no-files-found: warn
+          retention-days: 7
