@@ -1,7 +1,7 @@
-name: Inspect retained browser evidence 43388600974
+name: Inspect retained browser evidence 43402635950
 on:
   push:
-    branches: [diag/read-browser-evidence-43388600974]
+    branches: [diag/read-browser-evidence-43402635950]
     paths: [.github/workflows/inspect-retained-browser-evidence.yml]
 permissions:
   actions: read
@@ -15,27 +15,32 @@ jobs:
         shell: bash
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
-          EVIDENCE_ARTIFACT_ID: '14022525580'
-          EVIDENCE_ZIP_BYTES: '260792741'
-          EVIDENCE_ZIP_SHA256: '972dd8399bb8cc85f75412d824f14a02241dbec4bff7cb76afafa9edf98a9900'
+          EVIDENCE_ARTIFACT_ID: '0' # Fill only from the completed run.
+          EVIDENCE_ZIP_BYTES: '0'
+          EVIDENCE_ZIP_SHA256: 'PENDING_COMPLETED_ARTIFACT'
+          EVIDENCE_RUN_CONCLUSION: 'PENDING_COMPLETED_RUN'
         run: |
           python3 - <<'PY'
-          import base64, collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
+          import collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
           from urllib.parse import urlsplit
 
           REPO = "qqrm/openfga-axum-lab"
-          RUN = 43388600974
-          HEAD = "5d18ed2fda49fe84a9ac03c7b8571940f0891819"
+          RUN = 43402635950
+          HEAD = "379e3280c2a1c789071292af141648eb2fc3ffbc"
           NAME = "pages-browser-vm-evidence"
           AID = int(os.environ["EVIDENCE_ARTIFACT_ID"])
           SIZE = int(os.environ["EVIDENCE_ZIP_BYTES"])
           SHA = os.environ["EVIDENCE_ZIP_SHA256"]
+          CONCLUSION = os.environ["EVIDENCE_RUN_CONCLUSION"]
+          EXPECTED_STATUSES = [403, 204, 200, 204, 403]
+          EXPECTED_ENTRYPOINT = {"bytes": 5019, "sha256": "7763b800c5f4bed8df12c6498b13474ef6adafdc4442694b7271f0b16fe3f5ed"}
 
           def require(ok, message):
               if not ok:
                   raise SystemExit(message)
 
-          require(AID > 0 and 0 < SIZE <= 512 * 1024**2 and re.fullmatch(r"[0-9a-f]{64}", SHA),
+          require(AID > 0 and 0 < SIZE <= 512 * 1024**2 and re.fullmatch(r"[0-9a-f]{64}", SHA)
+                  and CONCLUSION in ("success", "failure", "cancelled", "timed_out"),
                   "Fill immutable artifact pins after the source run completes; ZIP budget is 512 MiB")
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -60,8 +65,8 @@ jobs:
               return json.loads(raw)
 
           run = api("/actions/runs/" + str(RUN))
-          require(run["status"] == "completed" and run["head_sha"] == HEAD and run["run_attempt"] == 1
-                  and run["event"] == "pull_request" and run["conclusion"] == "failure",
+          require(run["id"] == RUN and run["status"] == "completed" and run["head_sha"] == HEAD and run["run_attempt"] == 1
+                  and run["event"] == "pull_request" and run["conclusion"] == CONCLUSION,
                   "Source run identity/status/attempt mismatch")
           artifact = api("/actions/artifacts/" + str(AID))
           require(artifact["id"] == AID and artifact["name"] == NAME and not artifact["expired"],
@@ -124,7 +129,7 @@ jobs:
                               "Unsafe ZIP member name")
                       emit("source", {"run": RUN, "head": HEAD, "conclusion": run["conclusion"],
                                       "artifact": AID, "bytes": size, "sha256": SHA,
-                                      "zip_members": len(names), "acceptance_verified": False})
+                                      "zip_members": len(names), "scope": "retained evidence validation; no guest execution"})
 
                       def member(suffix, limit):
                           matches = [n for n in names if n == suffix or n.endswith("/" + suffix)]
@@ -142,17 +147,43 @@ jobs:
                                           "sha256": hashlib.sha256(raw).hexdigest()})
                           return raw
 
+                      metadata, metadata_sha = {}, {}
                       for suffix in ["browser-openfga/build.json", "browser-emulator/build.json",
                                      "runtime/derived-runtime.json", "runtime/startup-manifest.json"]:
                           raw = member(suffix, 4 * 1024**2)
                           if raw is not None:
-                              emit(suffix, json.loads(raw))
+                              metadata[suffix] = json.loads(raw)
+                              require(isinstance(metadata[suffix], dict), "Metadata is not a JSON object")
+                              metadata_sha[suffix] = hashlib.sha256(raw).hexdigest()
+                              emit(suffix, metadata[suffix])
+                      startup = metadata.get("runtime/startup-manifest.json", {})
+                      derived = metadata.get("runtime/derived-runtime.json", {})
+                      provenance = {
+                          "all_metadata_present": len(metadata) == 4,
+                          "base_source": startup.get("base_source_commit") == derived.get("source") ==
+                              "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58",
+                          "entrypoint_is_uds_candidate": startup.get("files", {}).get("entrypoint.sh") == EXPECTED_ENTRYPOINT,
+                          "retained_manifest_digest": derived.get("startup_overlay", {}).get("sha256") ==
+                              metadata_sha.get("runtime/startup-manifest.json") and
+                              "runtime/startup-manifest.json" in metadata_sha,
+                          "openfga_build_bound": startup.get("openfga_build") ==
+                              metadata.get("browser-openfga/build.json") and "browser-openfga/build.json" in metadata,
+                          "emulator_build_bound": startup.get("emulator_build") == derived.get("emulator_build") ==
+                              metadata.get("browser-emulator/build.json") and "browser-emulator/build.json" in metadata,
+                          "original_model": startup.get("openfga_build", {}).get("warmup_model_sha256") ==
+                              "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
+                          "authorization_deadline_unchanged": startup.get("openfga_build", {}).get(
+                              "authorization_request_timeout_default_seconds") == 3,
+                      }
+                      emit("provenance_validation", provenance)
+                      engine_validation, raw_lab_corroboration = {}, {}
 
                       for engine in ["chromium", "firefox"]:
-                          data = {}
+                          data, integrity = {}, {"available": False}
                           raw = member("browser-wasm/" + engine + ".json", 4 * 1024**2)
                           if raw is not None:
                               data = json.loads(raw)
+                              require(isinstance(data, dict), "Browser result is not a JSON object")
                               selected = {k: data.get(k) for k in [
                                   "engine", "browser", "passed", "passes", "failure", "pageErrors",
                                   "startedAt", "finishedAt", "logCapture", "screenshotError"]}
@@ -164,15 +195,9 @@ jobs:
                                   "booted", "ready", "accepted", "checks", "statuses", "passes", "error", "vm", "source"]}
                               emit(engine + ".result", selected)
 
-                          raw = member("browser-wasm/" + engine + "-console.txt", 16 * 1024**2)
+                          raw = member("browser-wasm/" + engine + "-console.txt", 8 * 1024**2)
                           if raw is None:
                               continue
-                          require(len(raw) <= 128 * 1024, "Full console exceeded its emission budget")
-                          encoded = base64.b64encode(raw).decode("ascii")
-                          for offset in range(0, len(encoded), 4096):
-                              emit(engine + ".full_console_base64", {
-                                  "offset": offset, "total_encoded_chars": len(encoded),
-                                  "decoded_bytes": len(raw), "data": encoded[offset:offset + 4096]})
                           stream = member("browser-wasm/" + engine + "-stream.jsonl", 64 * 1024**2)
                           if stream is not None:
                               def js_utf8(value):
@@ -193,43 +218,149 @@ jobs:
                                       require(count <= 1000000 and encoded_bytes <= 16 * 1024**2, "Captured stream exceeded bounds")
                                       texts.append(value)
                               capture = data.get("logCapture") or {}
-                              emit(engine + ".stream_integrity", {
+                              integrity = {
                                   "format_matches": capture.get("format") == "browser-lab-log-batches-v1",
                                   "reconstructed_console_equal": js_utf8("".join(texts)) == raw,
                                   "chunks": count, "batches": batches, "encoded_chunk_bytes": encoded_bytes,
                                   "metadata_counts_match": [capture.get(k) for k in ["chunks", "batches", "bytes"]] == [count, batches, encoded_bytes],
                                   "recorded_cutoff_matches": capture.get("expectedSequence") == count,
-                                  "recorded_complete": capture.get("complete"), "recorded_error": capture.get("error")})
-                          text = raw.decode("utf-8", errors="replace")
+                                  "recorded_complete": capture.get("complete"), "recorded_error": capture.get("error")}
+                              emit(engine + ".stream_integrity", integrity)
+                          text = raw.decode("utf-8")
+                          # Validate full records. Mixed console LAB lines are corroboration only:
+                          # the pinned page parser consumes PTY bytes separately from emulator stderr.
+                          guest = data.get("guest") or {}
+                          require(isinstance(guest, dict), "Guest evidence is not a JSON object")
+                          passes = guest.get("passes")
+                          pass_ok = isinstance(passes, list) and len(passes) == 2 and all(
+                              isinstance(p, dict) and type(p.get("id")) is int and p.get("id") == index and
+                              p.get("accepted") is True and p.get("statuses") == EXPECTED_STATUSES
+                              for index, p in enumerate(passes, 1))
+                          labs, kinds, wire_passes, wire_errors = [], [], [], []
+                          lines = text.replace("\r", "").split("\n")
+                          for number, line in enumerate(lines[:-1], 1):
+                              if not line.startswith("LAB|"):
+                                  continue
+                              record = {"line": number, "bytes": len(line.encode("utf-8"))}
+                              if line in ("LAB|boot", "LAB|ready"):
+                                  record["kind"] = line[4:]
+                              elif line.startswith("LAB|verification-start"):
+                                  match = re.fullmatch(r"LAB\|verification-start\|([1-9][0-9]*)", line)
+                                  record["kind"] = "start"
+                                  record["id"] = int(match[1]) if match else None
+                                  if not match: wire_errors.append(number)
+                              elif line.startswith("LAB|result"):
+                                  match = re.fullmatch(r"LAB\|result\|([1-9][0-9]*)\|(.*)", line)
+                                  record["kind"] = "result"
+                                  record["id"] = int(match[1]) if match else None
+                                  try:
+                                      result = json.loads(match[2]) if match else None
+                                      if not isinstance(result, dict): raise ValueError("Invalid result object")
+                                      wire_passes.append({**result, "id": record["id"]})
+                                      record.update({"accepted": result.get("accepted"), "statuses": result.get("statuses"),
+                                                     "payload_sha256": hashlib.sha256(match[2].encode()).hexdigest()})
+                                  except (ValueError, TypeError, KeyError):
+                                      wire_errors.append(number)
+                              else:
+                                  record["kind"] = "other"
+                                  record["text"] = line[:600]
+                                  record["truncated"] = len(line) > 600
+                              kinds.append((record["kind"], record.get("id")))
+                              labs.append(record)
+                          expected_kinds = [("boot", None), ("ready", None), ("start", 1),
+                                            ("result", 1), ("start", 2), ("result", 2)]
+                          # stdout may omit explicit middle markers; validation used them all.
+                          chosen_labs = {x["line"]: x for x in labs[:8] + labs[-8:]}
+                          emit(engine + ".lab_selection", {"total": len(labs), "emitted": len(chosen_labs),
+                                                           "omitted_middle": len(labs) - len(chosen_labs),
+                                                           "partial_final_line": bool(lines[-1])})
+                          for number in sorted(chosen_labs):
+                              emit(engine + ".lab", chosen_labs[number])
+                          raw_match = not wire_errors and kinds == expected_kinds and wire_passes == passes
+                          raw_lab_corroboration[engine] = {
+                              "status": "matched" if raw_match else "indeterminate",
+                              "exact_observed_frames_match": raw_match,
+                              "malformed_observed_lines": wire_errors[:8] + wire_errors[-8:] if len(wire_errors) > 16 else wire_errors,
+                              "malformed_observed_line_count": len(wire_errors),
+                              "scope": "mixed serial and emulator console, not an isolated PTY transcript",
+                              "limitation": "Unlabeled channels can interleave. No text is stripped to infer missing successes.",
+                          }
+                          emit(engine + ".raw_lab_corroboration", raw_lab_corroboration[engine])
+                          vm = guest.get("vm") or {}
+                          require(isinstance(vm, dict), "VM evidence is not a JSON object")
+                          capture_ok = integrity.get("format_matches") is True and all(
+                              integrity.get(key) is True for key in ["reconstructed_console_equal",
+                              "metadata_counts_match", "recorded_cutoff_matches", "recorded_complete"]) and (
+                              integrity.get("recorded_error") is None)
+                          validation = {
+                              "engine_matches": data.get("engine") == engine,
+                              "browser_version_recorded": isinstance(data.get("browser"), str) and bool(data["browser"]),
+                              "passed_without_failure": data.get("passed") is True and "failure" not in data,
+                              "no_page_errors": data.get("pageErrors") == [],
+                              "guest_ready_and_accepted": all(guest.get(key) is True for key in ["booted", "ready", "accepted"])
+                                  and guest.get("checks") == 2 and guest.get("statuses") == EXPECTED_STATUSES,
+                              "guest_has_no_error_or_pending_request": not any(key in guest for key in ["error", "pending", "requested"]),
+                              "two_pass_objects": pass_ok and data.get("passes") == passes,
+                              "full_capture": capture_ok,
+                              "observed_manifest_bound": len(metadata) == 4 and guest.get("startupManifest") == startup,
+                              "observed_source_matches": guest.get("source") == startup.get("base_source_commit") ==
+                                  "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58",
+                              "observed_vm_configuration": vm.get("cpus") == 2 and vm.get("memoryMiB") == 512 and
+                                  vm.get("cpuTopology") == "2,sockets=2,cores=1,threads=1" and vm.get("kernelLogLevel") == 7 and
+                                  type(vm.get("reportedLogicalCPUs")) is int and vm["reportedLogicalCPUs"] >= 2 and
+                                  vm.get("qemuLiveInstanceLimit") == (8192 if engine == "firefox" else 15000),
+                              "provenance_valid": all(provenance.values()),
+                          }
+                          engine_validation[engine] = validation
+                          emit(engine + ".acceptance_validation", validation)
+
                           first, tail, qemu_tail = [], collections.deque(maxlen=36), collections.deque(maxlen=2)
                           decode_first, decode_tail = [], collections.deque(maxlen=4)
-                          matches = 0
+                          error_first, error_tail = [], collections.deque(maxlen=4)
+                          matches = fault_count = 0
                           pattern = re.compile(r"LAB[|_]|model_decode|payload|ReadAuthorizationModel|resolver|phase|rpc|duration|bootstrap|postgres|openfga|axum|gateway|ready|listen|migration|fatal|panic|deadline|timed out|error", re.I)
-                          for number, line in enumerate(text.split("\n"), 1):
+                          fault = re.compile(r"LAB\|(?:boot-failed|verification-failed|service-failed)|\b(?:ERROR|FATAL|panic|[A-Za-z]*Error)\b|instantiate_throw|out of memory|Elapsed\(\(\)\)|context canceled|deadline exceeded|timed out|TimeoutError|failed=true|context_state=\"(?:canceled|deadline_exceeded)\"|error_kind=\"(?!none\")[^\"]+\"|rpc_end.*status=\"(?!OK\")[^\"]+\"", re.I)
+                          for number, line in enumerate(lines, 1):
                               if "model_decode" in line:
                                   item = (number, line)
-                                  if len(decode_first) < 4:
-                                      decode_first.append(item)
+                                  if len(decode_first) < 4: decode_first.append(item)
                                   decode_tail.append(item)
+                              if fault.search(line):
+                                  fault_count += 1
+                                  item = (number, line)
+                                  if len(error_first) < 4: error_first.append(item)
+                                  error_tail.append(item)
                               if "[browser-qemu]" in line:
                                   qemu_tail.append((number, line))
-                                  if not re.search(r"error|exception|out of memory|panic", line, re.I):
-                                      continue
-                              if pattern.search(line):
+                                  if not fault.search(line): continue
+                              if pattern.search(line) or fault.search(line):
                                   matches += 1
                                   item = (number, line)
-                                  if len(first) < 12:
-                                      first.append(item)
+                                  if len(first) < 12: first.append(item)
                                   tail.append(item)
-                          chosen = dict(first + list(tail) + decode_first + list(decode_tail))
+                          chosen = {number: line for number, line in first + list(tail) + decode_first + list(decode_tail)}
+                          chosen_errors = {number: line for number, line in error_first + list(error_tail)}
                           emit(engine + ".selection", {"matched_lines": matches, "selected_lines": len(chosen),
+                                                        "omitted_middle_lines": matches - len(chosen),
+                                                        "fault_lines": fault_count, "selected_fault_lines": len(chosen_errors),
+                                                        "omitted_middle_fault_lines": fault_count - len(chosen_errors),
                                                         "utf8_replacement_present": "\ufffd" in text})
-                          for number, line in sorted(chosen.items()):
-                              emit(engine + ".service", {"line": number, "text": line[:800],
-                                                         "truncated": len(line) > 800})
+                          for label, selected in [("service", chosen), ("fault", chosen_errors)]:
+                              for number, line in sorted(selected.items()):
+                                  emit(engine + "." + label, {"line": number, "text": line[:600],
+                                                             "truncated": len(line) > 600})
                           for number, line in qemu_tail:
                               emit(engine + ".last_qemu", {"line": number, "text": line[:2000],
                                                            "truncated": len(line) > 2000})
+                      verified = (CONCLUSION == "success" and set(engine_validation) == {"chromium", "firefox"}
+                                  and all(all(checks.values()) for checks in engine_validation.values()))
+                      emit("overall", {"scope": "retained evidence only; no new guest execution",
+                                       "source_run": RUN, "source_head": HEAD, "source_conclusion": CONCLUSION,
+                                       "recorded_browser_acceptance_consistent": verified,
+                                       "validation_scope": "pinned source workflow, final page protocol state, exact capture and startup provenance",
+                                       "raw_lab_corroboration": {engine: value["status"] for engine, value in raw_lab_corroboration.items()},
+                                       "validated_engines": sorted(engine_validation),
+                                       "required_passes_per_engine": 2})
               finally:
                   print("::" + stop + "::")
           PY
