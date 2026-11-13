@@ -4,7 +4,15 @@ name: Dependabot Automerge
 # The native gates and --match-head-commit bind the write to the checked commit.
 on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
-    workflows: [CI, Workflow Security]
+    workflows:
+      - CI
+      - Workflow Security
+      - Secret scan
+      - Delivery verification
+      - CodeQL
+      - Browser lab verification
+      - Browser single-image feasibility
+      - Browser preview
     types: [completed]
 
 # Metadata only: never check out PR code or consume its artifacts here.
@@ -12,6 +20,7 @@ permissions:
   contents: write
   pull-requests: write
   checks: read
+  statuses: read
 
 concurrency:
   group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
@@ -22,7 +31,8 @@ jobs:
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -31,41 +41,112 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          pr="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
-          if [[ ! "$pr" =~ ^[0-9]+$ ]]; then
-            echo 'No associated pull request; nothing to merge.'
+          if [[ ! "$CHECKED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Invalid checked SHA; no automatic merge.'
             exit 0
           fi
-          info="$(gh pr view "$pr" --repo "$REPO" --json author,isCrossRepository,headRefOid,baseRefName,isDraft,state,statusCheckRollup)"
-          if ! jq -e --arg sha "$CHECKED_SHA" '
-            (.author.login == "app/dependabot" or .author.login == "dependabot[bot]") and
-            .isCrossRepository == false and .baseRefName == "main" and
-            .state == "OPEN" and .isDraft == false and .headRefOid == $sha and
-            (["ci-gate", "workflow-security-gate"] -
-              [.statusCheckRollup[] | select(.status == "COMPLETED" and .conclusion == "SUCCESS") | .name] | length == 0)
-          ' <<< "$info" >/dev/null; then
-            echo 'The current Dependabot commit has not passed both required gates.'
+          # workflow_run.pull_requests may be empty, even on a successful PR CI.
+          # Discover the PR by the exact checked commit. Never trust a PR number
+          # or branch name extracted from an untrusted artifact.
+          if ! associated="$(gh api "repos/$REPO/commits/$CHECKED_SHA/pulls?per_page=100" --paginate --slurp)"; then
+            echo 'Cannot resolve a PR for the checked commit.' >&2
+            exit 1
+          fi
+          if ! pr="$(jq -er --arg sha "$CHECKED_SHA" --arg repo "$REPO" --arg branch "$HEAD_BRANCH" '
+            [.[][] | select(
+              .state == "open" and .draft == false and
+              .user.login == "dependabot[bot]" and
+              .base.ref == "main" and
+              .head.repo.full_name == $repo and
+              .head.ref == $branch and .head.sha == $sha)]
+            | if length == 1 then .[0].number else empty end
+          ' <<< "$associated")"; then
+            echo 'No unique, open, in-repository Dependabot PR at the checked SHA.'
             exit 0
           fi
-          # A private repository may not have access to branch protection on its
-          # current plan. Never enable automerge without the required gates.
-          if ! protection="$(gh api "repos/$REPO/branches/main/protection" 2>/dev/null)"; then
-            echo 'Branch protection unavailable; leaving the PR for manual review.'
+
+          # Read only the current PR commit's check runs, not stale PR rollup data.
+          # Check-run IDs distinguish retries: the newest run for each name+app
+          # must pass. Old cancelled jobs must not mask successful retries.
+          if ! checks="$(gh api "repos/$REPO/commits/$CHECKED_SHA/check-runs?filter=all&per_page=100" --paginate --slurp)"; then
+            echo 'Cannot read checks for the exact Dependabot SHA.'
             exit 0
           fi
           if ! jq -e '
-            .required_status_checks.strict == true and
-            .enforce_admins.enabled == true and
-            .allow_force_pushes.enabled == false and
-            .allow_deletions.enabled == false and
-            (["ci-gate", "workflow-security-gate"] -
-              [.required_status_checks.checks[]? | select(.app_id == 15368) | .context] | length == 0)
-          ' <<< "$protection" >/dev/null; then
-            echo 'Required branch protection is missing; leaving the PR for manual review.'
+            [.[].check_runs[]]
+            | group_by([.name, .app.id])
+            | map(max_by(.id)) as $latest
+            | (["ci-gate", "workflow-security-gate", "gitleaks"] -
+               [$latest[] | select(.app.id == 15368 and
+                 .status == "completed" and .conclusion == "success") | .name]
+               | length == 0) and
+              all($latest[];
+                .status == "completed" and
+                (.conclusion == "success" or .conclusion == "neutral" or
+                 .conclusion == "skipped"))
+          ' <<< "$checks" >/dev/null; then
+            echo 'The checked SHA lacks a successful required gate or has an unfinished/failed latest check.'
             exit 0
           fi
-          # Native protection enforces checks and an up-to-date branch, without reviews.
+          # Also reject pending or failed legacy commit-status contexts.
+          if ! statuses="$(gh api "repos/$REPO/commits/$CHECKED_SHA/status")"; then
+            echo 'Cannot read commit statuses for the checked SHA.'
+            exit 0
+          fi
+          if ! jq -e '
+            [.statuses[]?] | group_by(.context) |
+            all(.[]; max_by(.id).state == "success")
+          ' <<< "$statuses" >/dev/null; then
+            echo 'A current commit-status context is not successful.'
+            exit 0
+          fi
+
+          # This endpoint is readable by GITHUB_TOKEN; /protection is not (403).
+          # GitHub still enforces all native branch restrictions at merge time.
+          if ! branch="$(gh api "repos/$REPO/branches/main")"; then
+            echo 'Cannot read target branch metadata; no automatic merge.'
+            exit 0
+          fi
+          if ! jq -e '
+            .protected == true and .protection.enabled == true and
+            .protection.required_status_checks.enforcement_level == "everyone" and
+            (["ci-gate", "workflow-security-gate", "gitleaks"] -
+              [.protection.required_status_checks.checks[]? |
+                select(.app_id == 15368) | .context] | length == 0)
+          ' <<< "$branch" >/dev/null; then
+            echo 'Native branch protection with all required security gates is missing.'
+            exit 0
+          fi
+
+          # Require every commit to be signed and bot-attributed, not only the PR.
+          commits="$(gh api "repos/$REPO/pulls/$pr/commits?per_page=100" --paginate --slurp)"
+          if ! jq -e --arg sha "$CHECKED_SHA" '
+            add | length > 0 and .[-1].sha == $sha and
+            all(.[]; .author.login == "dependabot[bot]" and
+              .committer.login == "web-flow" and
+              .commit.verification.verified == true)
+          ' <<< "$commits" >/dev/null; then
+            echo 'Unsigned or non-Dependabot commits; no automatic merge.'
+            exit 0
+          fi
+          # No stale base, even when native branch protection is configured non-strict.
+          base="$(jq -er '.commit.sha' <<< "$branch")"
+          comparison="$(gh api "repos/$REPO/compare/$base...$CHECKED_SHA")"
+          if ! jq -e --arg base "$base" '
+            .behind_by == 0 and .merge_base_commit.sha == $base
+          ' <<< "$comparison" >/dev/null; then
+            echo 'Dependabot must refresh after main changed; no automatic merge.'
+            exit 0
+          fi
+          # Refuse if main changed after the comparison; --match-head-commit
+          # guards the other side of the race. GitHub remains the merge arbiter.
+          current_main="$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')"
+          if [[ "$current_main" != "$base" ]]; then
+            echo 'main advanced while validating; no automatic merge.'
+            exit 0
+          fi
           gh pr merge "$pr" --repo "$REPO" --auto --squash \
             --match-head-commit "$CHECKED_SHA"
