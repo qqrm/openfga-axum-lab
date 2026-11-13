@@ -506,8 +506,8 @@ jobs:
             assert.deepEqual(pass.statuses,[403,204,200,204,403]);
           }
           assert.equal(build.native_test_log_sha256,hashFile(root+'native-tests.log'));
-          assert.equal(build.bootstrap_source_sha256,hashFile('tools/bootstrap.rs'));
-          assert.equal(build.bootstrap_tests_sha256,hashFile('tools/bootstrap_tests.rs'));
+          assert.equal(build.bootstrap_source_sha256,hashFile('../source/tools/bootstrap.rs'));
+          assert.equal(build.bootstrap_tests_sha256,hashFile('../source/tools/bootstrap_tests.rs'));
           assert.equal(build.producer_sha256,hashFile('browser-single/bootstrap/build.sh'));
           assert.equal(build.native_harness_sha256,hashFile('browser-single/bootstrap/native-proof.mjs'));
           assert.equal(build.native_proof_sha256,hashFile('artifacts/browser-bootstrap-proof/native-result.json'));
