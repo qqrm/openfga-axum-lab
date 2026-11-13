@@ -15,7 +15,7 @@ jobs:
       - name: Check out the exact versioned producer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: PRODUCER_SOURCE_PIN
+          ref: 1d6697b5aa6e18bb07a6a074da0d436314185fd0
           path: producer
           persist-credentials: false
       - name: Check out the fixed Rust source
@@ -34,7 +34,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set -euo pipefail
-          test "$(git -C producer rev-parse HEAD)" = PRODUCER_SOURCE_PIN
+          test "$(git -C producer rev-parse HEAD)" = 1d6697b5aa6e18bb07a6a074da0d436314185fd0
           git -C producer diff --exit-code HEAD --
           node --input-type=module - <<'JS'
           import assert from 'node:assert/strict';
@@ -48,7 +48,7 @@ jobs:
             }
           }
           assert(files.includes('browser-single/bootstrap/native-proof.mjs'));
-          console.log(JSON.stringify({producerSource:'PRODUCER_SOURCE_PIN',repositoryRuntimeContract:'passed',scope:'source preflight; not Rust integration-test execution'}));
+          console.log(JSON.stringify({producerSource:'1d6697b5aa6e18bb07a6a074da0d436314185fd0',repositoryRuntimeContract:'passed',scope:'source preflight; not Rust integration-test execution'}));
           JS
       - name: Verify retained OpenFGA bytes and build record for the versioned producer
         timeout-minutes: 4
