@@ -27,7 +27,7 @@ const kernelPath = path.join(kernel, 'bzImage');
 const kernelSize = (await fs.stat(kernelPath)).size;
 assert(kernelSize > 1024 * 1024 && kernelSize < 32 * 1024 * 1024, 'Unexpected kernel size');
 const config = await fs.readFile(path.join(kernel, 'linux.config'), 'utf8');
-for (const option of ['CONFIG_SYSVIPC=y', 'CONFIG_IPC_NS=y', 'CONFIG_ACPI=y', 'CONFIG_X86_PM_TIMER=y', 'CONFIG_HPET_TIMER=y']) assert(config.split('\n').includes(option), `Missing ${option}`);
+for (const option of ['CONFIG_SYSVIPC=y', 'CONFIG_IPC_NS=y', 'CONFIG_ACPI=y', 'CONFIG_X86_PM_TIMER=y', 'CONFIG_HPET_TIMER=y', 'CONFIG_HW_RANDOM=y', 'CONFIG_HW_RANDOM_VIRTIO=y', 'CONFIG_VIRTIO_PCI=y']) assert(config.split('\n').includes(option), `Missing ${option}`);
 const outputPath = `${dataPath}.new`;
 const output = createWriteStream(outputPath, {flags:'wx'});
 const hash = createHash('sha256');
@@ -60,7 +60,7 @@ try {
   await fs.writeFile(path.join(runtime, 'derived-runtime.json'), JSON.stringify({
     source:'99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58',
     linux_source:'830b3c68c1fb1e9176028d02ef86f3cf76aa2476',
-    changes:['Linux kernel configuration: SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI and X86_PM_TIMER', 'remove unused 128 MiB migration snapshot'],
+    changes:['Linux kernel configuration: SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI, X86_PM_TIMER and HW_RANDOM_VIRTIO', 'remove unused 128 MiB migration snapshot'],
     rootfs_changed:false,
     data:{bytes:position,sha256:hash.digest('hex')},
     loader_sha256:createHash('sha256').update(loader).digest('hex'),

@@ -155,6 +155,17 @@ async function start() {
     const network = args.indexOf('-netdev');
     if (network < 0) throw new Error('Missing reviewed virtual network argument');
     args[network + 1] = 'hubport,id=vmnic,hubid=0';
+    // Emscripten's host /dev/urandom reads Web Crypto bytes. Linux's VirtIO
+    // RNG driver credits them; getrandom retains its normal readiness checks.
+    if (typeof globalThis.crypto?.getRandomValues !== 'function') throw new Error('Web Crypto is required for guest entropy');
+    if (args.some(arg => typeof arg === 'string' &&
+        (arg === '-seed' || arg.startsWith('-seed=') || arg.includes('browser_rng') ||
+         /^(?:rng-(?:random|builtin|egd)|virtio-rng)/.test(arg)))) {
+      throw new Error('Unexpected existing or deterministic guest entropy configuration');
+    }
+    args.push('-object', 'rng-random,filename=/dev/urandom,id=browser_rng',
+      '-device', 'virtio-rng-pci,rng=browser_rng');
+    window.labEvidence.vm.entropyConfiguration = {backend:'rng-random',hostDevice:'/dev/urandom',guestDevice:'virtio-rng-pci',webCryptoRequired:true};
     module.preRun.push(mod => {
       // The exported setter writes shared C state before main starts any CPU.
       // Record the returned value, and stop if this binary refuses the policy.

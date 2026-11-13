@@ -20,4 +20,7 @@ else
 fi
 grep -qx 'CONFIG_SYSVIPC=y' "$output/linux.config"
 grep -qx 'CONFIG_IPC_NS=y' "$output/linux.config"
+grep -qx 'CONFIG_HW_RANDOM=y' "$output/linux.config"
+grep -qx 'CONFIG_HW_RANDOM_VIRTIO=y' "$output/linux.config"
+grep -qx 'CONFIG_VIRTIO_PCI=y' "$output/linux.config"
 test -s "$output/bzImage"

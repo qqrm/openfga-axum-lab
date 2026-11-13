@@ -1,4 +1,4 @@
-# Rebuild Linux 6.1 with the required IPC and normal ACPI timer discovery.
+# Rebuild Linux 6.1 with IPC, normal ACPI timer discovery and VirtIO entropy.
 # Emulator and application/rootfs bytes are kept from the verified artifact.
 FROM ubuntu:22.04 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,9 +24,16 @@ RUN scripts/config --enable SYSVIPC --enable SYSVIPC_SYSCTL --enable IPC_NS \
     && scripts/config --enable ACPI --enable X86_PM_TIMER \
     && make ARCH=x86 CROSS_COMPILE=x86_64-linux-gnu- olddefconfig \
     && scripts/diffconfig /tmp/ipc-baseline.config .config > /tmp/acpi.config.diff \
+    && cp .config /tmp/acpi-baseline.config \
+    && printf '%s\n' 'fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8  .config' | sha256sum --check --status \
+    && scripts/config --enable HW_RANDOM_VIRTIO \
+    && make ARCH=x86 CROSS_COMPILE=x86_64-linux-gnu- olddefconfig \
+    && scripts/diffconfig /tmp/acpi-baseline.config .config > /tmp/rng.config.diff \
+    && test "$(cat /tmp/rng.config.diff)" = ' HW_RANDOM_VIRTIO n -> y' \
     && for option in \
          CONFIG_SYSVIPC=y CONFIG_SYSVIPC_SYSCTL=y CONFIG_IPC_NS=y \
          CONFIG_ACPI=y CONFIG_X86_PM_TIMER=y CONFIG_HPET_TIMER=y \
+         CONFIG_HW_RANDOM=y CONFIG_HW_RANDOM_VIRTIO=y CONFIG_VIRTIO=y CONFIG_VIRTIO_PCI=y \
          CONFIG_X86_64=y CONFIG_SMP=y CONFIG_X86_MPPARSE=y \
          CONFIG_X86_LOCAL_APIC=y CONFIG_X86_IO_APIC=y \
          CONFIG_HZ_PERIODIC=y CONFIG_HZ_100=y CONFIG_HZ=100 \
@@ -41,9 +48,11 @@ RUN scripts/config --enable SYSVIPC --enable SYSVIPC_SYSCTL --enable IPC_NS \
     && cp /tmp/upstream.config /out/upstream.config \
     && cp /tmp/ipc-baseline.config /out/ipc-baseline.config \
     && cp /tmp/acpi.config.diff /out/acpi.config.diff \
+    && cp /tmp/acpi-baseline.config /out/acpi-baseline.config \
+    && cp /tmp/rng.config.diff /out/rng.config.diff \
     && cp COPYING /out/COPYING \
     && cp LICENSES/preferred/GPL-2.0 /out/GPL-2.0 \
-    && printf '%s\n' 'Linux 6.1, source commit 830b3c68c1fb1e9176028d02ef86f3cf76aa2476; unmodified source, configuration enables SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI and X86_PM_TIMER; HPET, SMP and HZ=100 are retained. See ipc-baseline.config and acpi.config.diff for resolved changes. Rebuild with browser-single/Kernel.Dockerfile.' > /out/SOURCE.txt \
-    && sha256sum /out/bzImage /out/linux.config /out/ipc-baseline.config /out/acpi.config.diff > /out/build.sha256
+    && printf '%s\n' 'Linux 6.1, source commit 830b3c68c1fb1e9176028d02ef86f3cf76aa2476; unmodified source, configuration enables SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI, X86_PM_TIMER and HW_RANDOM_VIRTIO; HPET, SMP and HZ=100 are retained. The checksummed ACPI baseline changes only HW_RANDOM_VIRTIO from n to y. See ipc-baseline.config, acpi.config.diff, acpi-baseline.config and rng.config.diff for resolved changes. Rebuild with browser-single/Kernel.Dockerfile.' > /out/SOURCE.txt \
+    && sha256sum /out/bzImage /out/linux.config /out/ipc-baseline.config /out/acpi.config.diff /out/acpi-baseline.config /out/rng.config.diff > /out/build.sha256
 FROM scratch
 COPY --from=build /out/ /
