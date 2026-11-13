@@ -3,7 +3,7 @@
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.py upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
@@ -17,7 +17,7 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && grep -qx '#define MAX_INSTANCE_ALIVE 8192' /qemu/tcg/wasm32.c \
     && grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' /qemu/tcg/wasm32.c \
     && mkdir /emulator-out \
-    && python3 /browser-qemu-input/check-instance-budget.py /qemu/tcg/wasm32.c > /emulator-out/instance-budget-tests.log \
+    && node /browser-qemu-input/check-instance-budget.mjs /qemu/tcg/wasm32.c > /emulator-out/instance-budget-tests.log \
     && cat /emulator-out/instance-budget-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
 
@@ -67,7 +67,7 @@ metadata = {
     "patch_sha256": digest("instance-budget.patch"),
     "builder_sha256": digest("build.sh"),
     "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
-    "budget_test_sha256": digest("check-instance-budget.py"),
+    "budget_test_sha256": digest("check-instance-budget.mjs"),
     "files": files,
     "browser_acceptance": "not_run",
 }

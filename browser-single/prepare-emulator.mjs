@@ -33,7 +33,7 @@ for (const [key,name] of [
   ['patch_sha256','instance-budget.patch'],
   ['builder_sha256','build.sh'],
   ['dockerfile_appendix_sha256','Dockerfile.appendix'],
-  ['budget_test_sha256','check-instance-budget.py']
+  ['budget_test_sha256','check-instance-budget.mjs']
 ]) {
   assert.equal(build[key],await hashFile(`browser-single/qemu/${name}`),`Changed emulator source: ${name}`);
   assert.equal(build[key],await hashFile(path.join(buildDirectory,name)),`Missing emulator source: ${name}`);
@@ -60,7 +60,7 @@ for (const [name,expected] of before) assert.equal(await hashFile(path.join(runt
 const provenance = path.join(runtime,'emulator-build');
 await fs.mkdir(provenance,{recursive:true});
 for (const name of ['build.json','SOURCE.txt','instance-budget.patch','build.sh','Dockerfile.appendix',
-  'check-instance-budget.py','instance-budget-tests.log',
+  'check-instance-budget.mjs','instance-budget-tests.log',
   'upstream.Dockerfile','emscripten-version.txt','config-host.mak','submodules.txt','COPYING','COPYING.LIB','LICENSE']) {
   await fs.copyFile(path.join(buildDirectory,name),path.join(provenance,name));
 }

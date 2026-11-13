@@ -26,7 +26,7 @@ curl --fail --silent --show-error --location --retry 3 --max-time 180 \
 printf '%s  %s\n' "$converter_dockerfile_sha256" "$context_dir/upstream.Dockerfile" \
     | sha256sum --check -
 cp -- "$script_dir/build.sh" "$script_dir/Dockerfile.appendix" \
-    "$script_dir/instance-budget.patch" "$script_dir/check-instance-budget.py" "$context_dir/"
+    "$script_dir/instance-budget.patch" "$script_dir/check-instance-budget.mjs" "$context_dir/"
 cat "$context_dir/upstream.Dockerfile" "$context_dir/Dockerfile.appendix" > "$context_dir/Dockerfile"
 
 git -C "$source_dir" init -q
@@ -50,7 +50,7 @@ test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = 207a59b01ee8655fb54217
 grep -qx '#define MAX_INSTANCE_ALIVE 8192' "$source_dir/tcg/wasm32.c"
 grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' "$source_dir/tcg/wasm32.c"
 git -C "$source_dir" diff --check HEAD --
-python3 "$script_dir/check-instance-budget.py" "$source_dir/tcg/wasm32.c"
+node "$script_dir/check-instance-budget.mjs" "$source_dir/tcg/wasm32.c"
 git -C "$source_dir" apply --unidiff-zero --reverse --whitespace=error-all "$context_dir/instance-budget.patch"
 check_clean_source
 
@@ -90,7 +90,7 @@ for key, name in [
     ("patch_sha256", "instance-budget.patch"),
     ("builder_sha256", "build.sh"),
     ("dockerfile_appendix_sha256", "Dockerfile.appendix"),
-    ("budget_test_sha256", "check-instance-budget.py"),
+    ("budget_test_sha256", "check-instance-budget.mjs"),
 ]:
     assert metadata[key] == hashlib.sha256((source / name).read_bytes()).hexdigest(), key
     assert (output / name).read_bytes() == (source / name).read_bytes(), name

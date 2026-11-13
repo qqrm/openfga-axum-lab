@@ -1,25 +1,23 @@
-#!/usr/bin/env python3
-"""Exercise extracted QEMU budget functions; no browser, VM, or model copy."""
-import hashlib
-import os
-from pathlib import Path
-import re
-import resource
-import signal
-import subprocess
-import sys
-import tempfile
+#!/usr/bin/env node
+// Exercise extracted QEMU budget functions; no browser, VM, or model copy.
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-if len(sys.argv) != 2:
-    raise SystemExit(f"usage: {sys.argv[0]} /path/to/qemu/tcg/wasm32.c")
-source = Path(sys.argv[1]).read_text()
-start, end = "int instance_alive_global = 0;", "static void add_instance_running_local"
-assert source.count(start) == source.count(end) == 1, "Unexpected source boundaries"
-region = source[source.index(start):source.index(end)]
-guard = "if (instance_running_local < MAX_INSTANCE_RUNNING_LOCAL)"
-assert region.count(guard) == 1, "Missing retained-instance guard"
+assert.equal(process.argv.length, 3, `usage: ${process.argv[1]} /path/to/qemu/tcg/wasm32.c`);
+const source = readFileSync(process.argv[2], 'utf8');
+const start = 'int instance_alive_global = 0;';
+const end = 'static void add_instance_running_local';
+assert.equal(source.split(start).length, 2, 'Unexpected source start');
+assert.equal(source.split(end).length, 2, 'Unexpected source end');
+const region = source.slice(source.indexOf(start), source.indexOf(end));
+const guard = 'if (instance_running_local < MAX_INSTANCE_RUNNING_LOCAL)';
+assert.equal(region.split(guard).length, 2, 'Missing retained-instance guard');
 
-PREFIX = r'''
+const prefix = String.raw`
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -50,8 +48,8 @@ static int budget_read(const int *p) {
     __atomic_compare_exchange_n(p, &observed, next, false, \
                                __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); observed; })
 static void remove_module_js(void);
-'''
-SUFFIX = r'''
+`;
+const suffix = String.raw`
 static int detached;
 static void remove_module_js(void) {
     assert(to_remove_instance_idx == 1024);
@@ -124,34 +122,48 @@ int main(void) {
     assert(pthread_barrier_destroy(&admission_gate) == 0);
     puts("PASS concurrent admission at 8191 reserves exactly one final slot");
 }
-'''
-old_guard = region.replace(guard, "if (instance_pending_gc_local() > 0)")
-racy_reserve, replacements = re.subn(
-    r"static bool try_reserve_instance\((?:void)?\)\n\{.*?\n\}",
-    "static bool try_reserve_instance(void)\n{\n"
-    "    check_instance_garbage_collected();\n"
-    "    if (!can_add_instance()) return false;\n"
-    "    qatomic_inc(&instance_alive_global);\n    return true;\n}", region, flags=re.S)
-assert replacements == 1, "Unexpected reservation function"
-resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-with tempfile.TemporaryDirectory(prefix="qemu-budget-test-") as directory:
-    for name, code, failure in [
-        ("candidate", region, None),
-        ("old-pending-guard", old_guard, "instance_running_local == 1024"),
-        ("non-atomic-admission", racy_reserve, "winners == 1"),
-    ]:
-        path = Path(directory) / f"{name}.c"
-        binary = path.with_suffix("")
-        path.write_text(PREFIX + code + SUFFIX)
-        subprocess.run([os.environ.get("BROWSER_QEMU_NATIVE_CC", "cc"), "-std=gnu11", "-Wall", "-Wextra",
-                        "-Werror", "-Wno-unused-function", "-Wno-sign-compare", "-pthread", str(path),
-                        "-o", str(binary)], check=True, timeout=30)
-        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
-        if failure is None:
-            assert result.returncode == 0, result.stderr
-            print(result.stdout, end="")
-        else:
-            assert result.returncode == -signal.SIGABRT and failure in result.stderr, result
-            print(f"PASS negative control rejects {name}")
-print("PASS extracted-region SHA256", hashlib.sha256(region.encode()).hexdigest())
-print("Native budget checks exclude JS GC timing, pointer-width TB lookup, and browser acceptance.")
+`;
+
+const oldGuard = region.replace(guard, 'if (instance_pending_gc_local() > 0)');
+const reservePattern = /static bool try_reserve_instance\((?:void)?\)\n\{.*?\n\}/gs;
+assert.equal([...region.matchAll(reservePattern)].length, 1, 'Unexpected reservation function');
+const racyReserve = region.replace(reservePattern, String.raw`static bool try_reserve_instance(void)
+{
+    check_instance_garbage_collected();
+    if (!can_add_instance()) return false;
+    qatomic_inc(&instance_alive_global);
+    return true;
+}`);
+const directory = mkdtempSync(join(tmpdir(), 'qemu-budget-test-'));
+try {
+  for (const [name, code, failure] of [
+    ['candidate', region, null],
+    ['old-pending-guard', oldGuard, 'instance_running_local == 1024'],
+    ['non-atomic-admission', racyReserve, 'winners == 1'],
+  ]) {
+    const path = join(directory, `${name}.c`);
+    const binary = join(directory, name);
+    writeFileSync(path, prefix + code + suffix);
+    const compiled = spawnSync(process.env.BROWSER_QEMU_NATIVE_CC ?? 'cc', [
+      '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
+      '-Wno-sign-compare', '-pthread', path, '-o', binary,
+    ], { encoding: 'utf8', timeout: 30_000 });
+    assert.ifError(compiled.error);
+    assert.equal(compiled.status, 0, compiled.stderr);
+    const result = spawnSync('bash', ['-c', 'ulimit -c 0\nexec "$1"', 'budget-test', binary],
+      { encoding: 'utf8', timeout: 10_000 });
+    assert.ifError(result.error);
+    if (failure === null) {
+      assert.equal(result.status, 0, result.stderr);
+      process.stdout.write(result.stdout);
+    } else {
+      assert.equal(result.signal, 'SIGABRT', result.stderr);
+      assert.ok(result.stderr.includes(failure), result.stderr);
+      console.log(`PASS negative control rejects ${name}`);
+    }
+  }
+} finally {
+  rmSync(directory, { recursive: true, force: true });
+}
+console.log('PASS extracted-region SHA256', createHash('sha256').update(region).digest('hex'));
+console.log('Native budget checks exclude JS GC timing, pointer-width TB lookup, and browser acceptance.');
