@@ -1,0 +1,169 @@
+name: Verify combined OpenFGA .8 and native bootstrap
+on:
+  push:
+    branches: [diag/native-openfga8-bootstrap]
+    paths: [.github/workflows/native-openfga8-bootstrap.yml]
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/native-openfga8-bootstrap'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COMBINED_SOURCE_COMMIT: PENDING_REVIEWED_COMBINED_OPENFGA_8_SOURCE
+    steps:
+      - name: Require a reviewed immutable source before checkout or build
+        timeout-minutes: 1
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          assert.match(process.env.COMBINED_SOURCE_COMMIT ?? '', /^[0-9a-f]{40}$/, 'The reviewed combined OpenFGA .8 source pin is still missing');
+          console.log(JSON.stringify({phase:'source_pin',producerSource:process.env.COMBINED_SOURCE_COMMIT,browserAcceptanceVerified:false}));
+          JS
+      - name: Check out the exact combined versioned producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.COMBINED_SOURCE_COMMIT }}
+          path: producer
+          persist-credentials: false
+      - name: Check out the fixed Rust source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 53ff85cfdd3d84c26ae432189790e1e0f72d61db
+          path: source
+          persist-credentials: false
+      - name: Check out the exact reviewed entrypoint fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: d7f7ead003c774e30584798adfde38afb854528d
+          path: packaging
+          persist-credentials: false
+      - name: Check source identity, repository contract and both producer scripts
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          test "$(git -C producer rev-parse HEAD)" = "$COMBINED_SOURCE_COMMIT"
+          test "$(git -C source rev-parse HEAD)" = 53ff85cfdd3d84c26ae432189790e1e0f72d61db
+          test "$(git -C packaging rev-parse HEAD)" = d7f7ead003c774e30584798adfde38afb854528d
+          git -C producer diff --exit-code HEAD --
+          git -C source diff --exit-code HEAD --
+          git -C packaging diff --exit-code HEAD --
+          test "$(git -C producer hash-object browser-single/bootstrap/native-proof.mjs)" = 9d4b03e4102786f71e76d2928e8d13f723296e8b
+          for script in producer/browser-single/openfga/build.sh producer/browser-single/bootstrap/build.sh; do
+            bash -n "$script"
+            shellcheck "$script"
+          done
+          node --check producer/browser-single/bootstrap/native-proof.mjs
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {execFileSync} from 'node:child_process';
+          import {createHash} from 'node:crypto';
+          import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+          const files = execFileSync('git', ['ls-files', '-z'], {cwd:'producer',encoding:'utf8'}).split('\0').filter(Boolean);
+          for (const path of files) {
+            assert(!path.endsWith('.py') && !path.endsWith('.pyw'), 'Forbidden tracked runtime: ' + path);
+            if (path.startsWith('.github/workflows/') || path === 'compose.yaml' || path === 'Dockerfile') {
+              assert(!readFileSync('producer/' + path, 'utf8').toLowerCase().includes('python'), 'Forbidden workflow runtime: ' + path);
+            }
+          }
+          assert(files.includes('browser-single/bootstrap/native-proof.mjs'));
+          for (const path of ['browser-single/entrypoint.sh','browser-single/pages/guest.sh',
+            'browser-single/pages/startup-payload.mjs','browser-single/startup-payload.test.mjs',
+            'browser-single/prepare-pages.sh','browser-single/check-pages.mjs']) {
+            assert(readFileSync('producer/'+path).equals(readFileSync('packaging/'+path)), 'Reviewed runtime fixture changed: '+path);
+          }
+          const digest = path => createHash('sha256').update(readFileSync('producer/'+path)).digest('hex');
+          const proof = {producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            rustSource:'53ff85cfdd3d84c26ae432189790e1e0f72d61db',
+            packagingSource:'d7f7ead003c774e30584798adfde38afb854528d',
+            workflowCommit:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,
+            repositoryRuntimeContract:'passed',scriptSyntaxAndShellCheck:'passed',
+            sourceSha256:Object.fromEntries(['browser-single/OpenFGA.Dockerfile',
+              'browser-single/openfga/build.sh','browser-single/bootstrap/build.sh',
+              'browser-single/bootstrap/native-proof.mjs'].map(path=>[path,digest(path)])),
+            scope:'native producers and real native service verification; no emulator, kernel build or browser VM',
+            browserAcceptanceVerified:false};
+          mkdirSync('producer/artifacts',{recursive:true});
+          writeFileSync('producer/artifacts/openfga8-verifier-input.json',JSON.stringify(proof,null,2)+'\n');
+          console.log(JSON.stringify(proof));
+          JS
+      - name: Build and regression-test the actual combined OpenFGA producer
+        timeout-minutes: 25
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          test ! -e artifacts/browser-openfga
+          mkdir -p artifacts
+          timeout --kill-after=15s 1470s docker buildx build --platform linux/amd64 --progress plain \
+            --file browser-single/OpenFGA.Dockerfile \
+            --output type=local,dest=artifacts/browser-openfga . \
+            2>&1 | tee artifacts/browser-openfga-build.log
+      - name: Execute the versioned native bootstrap producer with this exact OpenFGA output
+        timeout-minutes: 25
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          timeout --kill-after=15s 1470s bash browser-single/bootstrap/build.sh ../source ../packaging \
+            2>&1 | tee artifacts/bootstrap-producer-run.log
+      - name: Verify all four outputs and their real native OpenFGA provenance
+        timeout-minutes: 2
+        working-directory: producer
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {readFileSync,readdirSync} from 'node:fs';
+          import {validateBootstrapBuild} from './browser-single/pages/startup-payload.mjs';
+          const root = 'artifacts/browser-bootstrap/';
+          assert.deepEqual(readdirSync(root).sort(), ['SOURCE.txt','bootstrap','build.json','native-tests.log'].sort());
+          const binary = readFileSync(root+'bootstrap');
+          const digest = value => createHash('sha256').update(value).digest('hex');
+          const hashFile = path => digest(readFileSync(path));
+          const build = JSON.parse(readFileSync(root+'build.json','utf8'));
+          validateBootstrapBuild(build,{bytes:binary.length,sha256:digest(binary)});
+          assert.equal(build.native_test_log_sha256,hashFile(root+'native-tests.log'));
+          assert.equal(build.bootstrap_source_sha256,hashFile('tools/bootstrap.rs'));
+          assert.equal(build.bootstrap_tests_sha256,hashFile('tools/bootstrap_tests.rs'));
+          assert.equal(build.producer_sha256,hashFile('browser-single/bootstrap/build.sh'));
+          assert.equal(build.native_harness_sha256,hashFile('browser-single/bootstrap/native-proof.mjs'));
+          assert.equal(build.native_proof_sha256,hashFile('artifacts/browser-bootstrap-proof/native-result.json'));
+          assert.equal(build.browser_acceptance_verified,false);
+          const fga = JSON.parse(readFileSync('artifacts/browser-openfga/build.json','utf8'));
+          assert.equal(fga.binary_sha256,hashFile('artifacts/browser-openfga/openfga'));
+          assert.equal(build.openfga_binary_sha256,fga.binary_sha256);
+          assert.equal(build.openfga_build_sha256,hashFile('artifacts/browser-openfga/build.json'));
+          assert.equal(build.workflow_commit,process.env.GITHUB_SHA);
+          assert.equal(String(build.run_id),process.env.GITHUB_RUN_ID);
+          assert.equal(String(build.run_attempt),process.env.GITHUB_RUN_ATTEMPT);
+          console.log(JSON.stringify({producerOutputVerified:true,producerSource:process.env.COMBINED_SOURCE_COMMIT,
+            binaryBytes:binary.length,binarySha256:digest(binary),openfgaBinarySha256:fga.binary_sha256,
+            openfgaBuildSha256:build.openfga_build_sha256,
+            browserAcceptanceVerified:false}));
+          JS
+      - name: Clean only proof containers owned by this run
+        if: always()
+        timeout-minutes: 2
+        working-directory: producer
+        run: bash browser-single/bootstrap/build.sh --cleanup
+      - name: Retain the four-file verified native bootstrap output
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-bootstrap-openfga8
+          path: producer/artifacts/browser-bootstrap/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain full OpenFGA output and native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-openfga8-native-evidence
+          path: |
+            producer/artifacts/browser-openfga/
+            producer/artifacts/browser-openfga-build.log
+            producer/artifacts/browser-bootstrap/
+            producer/artifacts/browser-bootstrap-proof/
+            producer/artifacts/bootstrap-producer-run.log
+            producer/artifacts/openfga8-verifier-input.json
+          if-no-files-found: warn
+          retention-days: 7
