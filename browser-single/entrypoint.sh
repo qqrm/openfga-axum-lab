@@ -19,7 +19,7 @@ export PGDATA="$runtime_dir/postgres"
 export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=authzlab
 export DATABASE_URL="postgres://authzlab@127.0.0.1:5432/authzlab?sslmode=disable"
 export OPENFGA_DATASTORE_ENGINE=postgres
-export OPENFGA_DATASTORE_URI="postgres://authzlab@127.0.0.1:5432/openfga?sslmode=disable"
+export OPENFGA_DATASTORE_URI="postgres://authzlab@127.0.0.1:5432/openfga?sslmode=disable&host=/tmp/browser-lab"
 export OPENFGA_DATASTORE_MAX_OPEN_CONNS=10
 export OPENFGA_HTTP_ADDR=127.0.0.1:8080
 export OPENFGA_GRPC_ADDR=127.0.0.1:8081

@@ -2,14 +2,71 @@
 
 Status of this review on 13 November 2026: **approved changes under validation;
 browser acceptance has not passed**. The latest completed browser gate below is
-commit `6934232bb04036b75aef6383008ceb6db14ad928`, run `43378543550`.
+commit `5d18ed2fda49fe84a9ac03c7b8571940f0891819`, run `43388600974`.
 The Browser preview run for the current PR head is the authority for later
 acceptance results. The initial proposal was prepared against PR #36 head
 `c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
 and additional checks. The PR has not been merged and Pages has not been
 published.
 
-## Latest retained result: model decoding before the RPC
+## Current retained result and a local PostgreSQL socket
+
+[Run 43388600974](https://github.com/qqrm/openfga-axum-lab/actions/runs/43388600974)
+still completed **zero authorization acceptance passes in each browser**.
+Both complete captured streams were reconstructed exactly through their recorded
+cutoffs in [reader 43396299271](https://github.com/qqrm/openfga-axum-lab/actions/runs/43396299271).
+[Reader 43397679133](https://github.com/qqrm/openfga-axum-lab/actions/runs/43397679133)
+then emitted both full consoles; their decoded bytes match the retained SHA-256s.
+
+Chromium booted both guest CPUs and PostgreSQL. OpenFGA warmup (24740 ms),
+self-dial (1030 ms), Health and CreateStore succeeded. Its real model decoder
+reported `cache_hit=true`, 52708 bytes and 1240 ms. The interval from model HTTP
+start to the unary observer was 2750 ms. The RPC then ended after 2310 ms with
+code 2058 (`cancelled`) and a canceled context; HTTP ended after 5230 ms.
+PostgreSQL identified the canceled statement as the genuine six-parameter
+`INSERT INTO authorization_model`. Bootstrap failed closed and Axum acceptance
+did not start. The decoder improvement is exercised but insufficient for the
+whole request; the later TypeSystem-resolver transfer remains excluded.
+
+Firefox 159.0 reached neither `LAB|boot` nor the services before its 1200000 ms
+host limit. The kernel had brought both CPUs online. From devtmpfs initialization
+onward, console timestamps stayed at `3.770000`; the last line reports the
+virtio block device. Both page-error lists are empty. The last Firefox module
+snapshot has 1024 registrations on core 0 and no detachments/GC, well below its
+8192 limit. These observations do not identify a cap or memory-barrier cause.
+
+This commit changes **only OpenFGA's PostgreSQL connection host**:
+`&host=/tmp/browser-lab` selects the already listening Unix socket. The existing
+pgx default `cache_statement`, binary protocol, role, database, SQL statements
+and PostgreSQL durability settings remain. Rust's `DATABASE_URL`, the model,
+HTTP/gRPC paths and all authorization/request deadlines are unchanged. This
+avoids sending local database traffic through the emulated TCP/IP stack; the
+resulting WASM latency is still to be measured.
+
+[Native compatibility run 43401420833](https://github.com/qqrm/openfga-axum-lab/actions/runs/43401420833)
+passed two consecutive original `lab-tool acceptance` executions:
+`403 → 204 → 200 → 204 → 403`. It used the actual browser OpenFGA `.7`
+executable, 63054008 bytes, SHA-256
+`57ef124e5b339dcf1c3dbcbe2c3083c03f5db74a799a1472014e875292cc1066`.
+The native image was freshly built; it is not claimed byte-identical to the
+retained guest image. SQL proved role `authzlab`, the existing local trust rule
+and ten OpenFGA client connections, all through Unix sockets. Its independent
+SQL probe used the other database, so it could not satisfy that pool assertion.
+This verifies real-service compatibility; it is not browser performance proof.
+
+The isolated [Firefox boot comparison 43401457205](https://github.com/qqrm/openfga-axum-lab/actions/runs/43401457205)
+used both retained emulator pairs with one common current launcher and identical
+checked kernel, data and arguments. All four fresh Firefox 159.0 observations
+reached `LAB|boot`: old 59549 ms, new 61942 ms, new 60836 ms, old 58385 ms.
+Each capture was complete and each page-error list empty. These are host elapsed
+times including browser startup and loading, not guest CPU or service timings.
+The previous early stall did not reproduce in this one controlled run; this
+neither establishes its cause nor excludes an intermittent failure. No kernel
+flag or memory-barrier change is justified by this result. This comparison
+tested kernel boot only. The required two consecutive authorization passes in
+EACH Chromium and Firefox remain the publication gate.
+
+## Previous retained result: model decoding before the RPC
 
 [Run 43378543550](https://github.com/qqrm/openfga-axum-lab/actions/runs/43378543550)
 started PostgreSQL and OpenFGA in both browsers. One-cycle warmup, blocking
@@ -51,7 +108,7 @@ contains 260772146 bytes, with SHA-256
 `f6ec83656a1d4b042623e60fdb2f8f9dd7f1f5e4abc6f0c06d5fca6370538317`.
 Both observed startup manifests exactly match the retained build manifest.
 
-## Prepared correction and native verification
+## Published decoder correction and native verification
 
 OpenFGA browser build `.7` prepares a private decoder entry during the existing
 successful warmup. The standard streaming JSON parser still reads every
