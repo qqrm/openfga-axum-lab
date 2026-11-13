@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sort"
 	"sync/atomic"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/openfga/openfga/pkg/tuple"
 )
 
 // BrowserModelValidation records one successful validation of an immutable,
@@ -43,6 +46,9 @@ func PrepareBrowserModelValidation(ctx context.Context, model *openfgav1.Authori
 		return nil, contextError
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := typesys.prepareBrowserUserPaths(ctx); err != nil {
 		return nil, err
 	}
 	// New retains protobuf-backed schema pointers. Keep the immutable comparison
@@ -174,4 +180,72 @@ func ValidateBrowserAuthorizationModel(ctx context.Context, model *openfgav1.Aut
 		return contextError
 	}
 	return err
+}
+
+// Only the privately prepared startup TypeSystem receives this read-only map.
+// It records static graph reachability, never a tuple or an authorization result.
+const browserUserPathLimit = 512
+
+type browserUserPathKey struct {
+	objectType, relation string
+}
+
+func (t *TypeSystem) prepareBrowserUserPaths(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := t.typeDefinitions["user"]; !ok {
+		return ctx.Err()
+	}
+	pairs := make([]browserUserPathKey, 0)
+	for objectType, relations := range t.relations {
+		if len(relations) > browserUserPathLimit-len(pairs) {
+			// Other valid schemas retain their original path without a new limit.
+			return ctx.Err()
+		}
+		for relation := range relations {
+			pairs = append(pairs, browserUserPathKey{objectType: objectType, relation: relation})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].objectType == pairs[j].objectType {
+			return pairs[i].relation < pairs[j].relation
+		}
+		return pairs[i].objectType < pairs[j].objectType
+	})
+	paths := make(map[browserUserPathKey]bool, len(pairs))
+	for _, key := range pairs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Call the original method while the published field is still nil.
+		reachable, err := t.pathExists("user:browser-warmup", key.relation, key.objectType)
+		if contextError := ctx.Err(); contextError != nil {
+			return contextError
+		}
+		if err != nil {
+			return err
+		}
+		paths[key] = reachable
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// The caller still owns this entire TypeSystem. Nothing can read the map
+	// until successful startup publication and the existing one-shot claim.
+	t.browserUserPaths = paths
+	return nil
+}
+
+// PathExists preserves the original graph predicate and every uncached error.
+// A true result only permits the normal Check rewrite and datastore work.
+func (t *TypeSystem) PathExists(user, relation, objectType string) (bool, error) {
+	userType, _, userRelation := tuple.ToUserParts(user)
+	if userType == "user" && userRelation == "" {
+		key := browserUserPathKey{objectType: objectType, relation: relation}
+		if reachable, ok := t.browserUserPaths[key]; ok {
+			return reachable, nil
+		}
+	}
+	return t.pathExists(user, relation, objectType)
 }
