@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
+	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/traverse"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/openfga/openfga/pkg/tuple"
@@ -214,16 +216,52 @@ func (t *TypeSystem) prepareBrowserUserPaths(ctx context.Context) error {
 		return pairs[i].objectType < pairs[j].objectType
 	})
 	paths := make(map[browserUserPathKey]bool, len(pairs))
+	var direct, wildcard *traverse.BreadthFirst
+	wildcardChecked := false
 	for _, key := range pairs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		// Call the original method while the published field is still nil.
-		reachable, err := t.pathExists("user:browser-warmup", key.relation, key.objectType)
+		// Preserve the original source-before-target lookup and its errors.
+		from, err := t.authorizationModelGraph.GetNodeByLabel("user")
 		if contextError := ctx.Err(); contextError != nil {
 			return contextError
 		}
 		if err != nil {
+			return err
+		}
+		to, err := t.authorizationModelGraph.GetNodeByLabel(tuple.ToObjectRelationString(key.objectType, key.relation))
+		if contextError := ctx.Err(); contextError != nil {
+			return contextError
+		}
+		if err != nil {
+			return err
+		}
+		if direct == nil {
+			direct, err = walkBrowserUserPaths(ctx, t.authorizationModelGraph.DirectedGraph, from)
+			if err != nil {
+				return err
+			}
+		}
+		reachable := direct.Visited(to)
+		if !reachable && !wildcardChecked {
+			wildcardChecked = true
+			wildcardFrom, lookupError := t.authorizationModelGraph.GetNodeByLabel(tuple.TypedPublicWildcard("user"))
+			if contextError := ctx.Err(); contextError != nil {
+				return contextError
+			}
+			// The original fallback treats a missing wildcard node as no path.
+			if lookupError == nil {
+				wildcard, err = walkBrowserUserPaths(ctx, t.authorizationModelGraph.DirectedGraph, wildcardFrom)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if !reachable && wildcard != nil {
+			reachable = wildcard.Visited(to)
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		paths[key] = reachable
@@ -235,6 +273,20 @@ func (t *TypeSystem) prepareBrowserUserPaths(ctx context.Context) error {
 	// until successful startup publication and the existing one-shot claim.
 	t.browserUserPaths = paths
 	return nil
+}
+
+// Use the same Gonum traversal as topo.PathExistsIn, retaining its complete
+// visited set. Cancellation discards the set rather than publishing a prefix.
+func walkBrowserUserPaths(ctx context.Context, g traverse.Graph, from graph.Node) (*traverse.BreadthFirst, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	walk := &traverse.BreadthFirst{}
+	walk.Walk(g, from, func(graph.Node, int) bool { return ctx.Err() != nil })
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return walk, nil
 }
 
 // PathExists preserves the original graph predicate and every uncached error.

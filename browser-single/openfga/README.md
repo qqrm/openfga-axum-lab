@@ -1,37 +1,47 @@
 # Browser-only OpenFGA startup adaptation
 
-## Detached .9 candidate: bounded schema reachability reuse
+## Detached .10 candidate: two walks for schema reachability
 
-This is a source-only fallback candidate. It has not been activated in a browser
-workflow, and its new tests have not yet been run. Actual .8 browser traces include
-real Check requests that exceeded the unchanged three-second RPC deadline; those
-traces do not establish whether schema graph traversal dominates the request.
+The preceding .9 build passed its fresh native Go, race and real-service gates in
+[run 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296).
+Its real Chromium run
+[43483871350](https://github.com/qqrm/openfga-axum-lab/actions/runs/43483871350)
+then exhausted the existing 60-second model warmup: the observer recorded
+60,108 ms overall and 54,245 ms in the TypeSystem stage, before the gRPC self-dial
+or HTTP listener. That stage includes validation and preparation, so these
+measurements do not isolate graph traversal time. No browser acceptance pass
+was obtained. The Firefox job in that run stopped at a preflight identity guard
+before starting a VM.
 
-The privately owned startup TypeSystem now prepares a read-only map of the
-original `PathExists` predicate for plain `user` subjects and every known
-object-type/relation pair in the pinned policy. It contains 316 pairs and has a
-512-pair bound. Filling happens inside the existing 60-second startup phase;
-errors or cancellation prevent publication. These are 316 calls to the original
-predicate: a negative direct path can also query the wildcard path. Each graph
-traversal is synchronous and does not take a context; cancellation is checked
-before and after each predicate call, while the existing outer startup deadline
-still bounds the caller. This extra work can exhaust that same budget. Native
-stage timings do not establish that it will fit in browser emulation.
-Models without a `user` type or above the bound keep the original path. No other
-TypeSystem shares this map.
+This .10 source candidate replaces repeated per-target graph searches with at
+most two existing Gonum breadth-first walks on the same immutable directed
+schema graph: one from `user`, plus a lazy `user:*` walk when a target has no
+direct path and the wildcard node exists. The pinned model's 316 target pairs
+then use visited-set membership. The read-only private map still has a
+512-pair bound. Source and target lookups keep the original error order;
+missing wildcard lookups retain the original false fallback. Zero target pairs
+perform no graph lookup. Cancellation is checked during each walk and before
+publication; a partial visited set or partially populated map cannot escape.
 
 Only this structural predicate can use the map. Every actual Check still runs
 the original rewrite and datastore evaluation. Entity IDs, tuples, model/store
 existence and authorization decisions are not cached. Unknown target keys,
 usersets and other subject types use the original method, including its errors.
-The existing one-shot claim still requires a matching persisted model read.
+Models without a `user` type or above the bound keep that original path.
+The existing one-shot claim still requires a matching real resolver model read;
+no other TypeSystem shares this map.
 
-The build gate adds all upstream TypeSystem tests and checks the patched
-TypeSystem formatting. The focused parity, bounded-fallback, cancellation and
-concurrent-read tests also run under the existing race detector gate; the real
-in-memory server Write/Check/delete/Check proof remains. Default resolver breadth,
-request deadlines, the pinned model and services are unchanged. This candidate
-must be reviewed and natively validated before any browser experiment.
+The original four reachability test groups remain. Additional tests compare all
+316 pairs with the original predicate using the actual walk helper, count graph
+expansions, cover source/target errors and wildcard fallbacks, and cancel inside
+graph traversal. Full upstream TypeSystem tests, the focused race gate and the
+real server Write/Check/delete/Check proof remain mandatory.
+
+This candidate has not yet been built or exercised in a browser. The existing
+60-second warmup, 180-second listener supervisor, 60-second self-dial and
+ordinary authorization deadlines are unchanged. Native parity and race results
+cannot establish browser performance: the complete real acceptance must still
+pass twice consecutively in Chromium and Firefox.
 
 Upstream is OpenFGA v1.10.3 at
 [`293893b22a53d8a130a5f7c97cab4bc8e91bcaa4`](https://github.com/openfga/openfga/tree/293893b22a53d8a130a5f7c97cab4bc8e91bcaa4).
@@ -432,7 +442,7 @@ store/model TypeSystem reuse, exact JSON decoder, one-shot resolver transfer,
 one full real-response encoding, native parity/transport and race-test proof,
 dependency checksum and executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.9`.
+`v1.10.3-browser-startup.10`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its
