@@ -6,11 +6,11 @@ using the dependency stages and x86_64 build flags in
 [container2wasm `087c313`](https://github.com/container2wasm/container2wasm/blob/087c313479d51cdf255e4f28ded6ae7d8141297b/Dockerfile).
 The instance-budget patch separates the retained-function threshold from the total number of
 live instances. At 2048 retained instances on a CPU, it detaches the oldest
-half before another compilation. The global backstop is the upstream value of
-15000 live instances,
+half before another compilation. The page selects a global backstop of
+8192 live instances for Firefox and the upstream 15000 for Chromium,
 including detached instances awaiting a browser GC callback. An atomic
 compare/exchange reserves a slot before compilation, so simultaneous CPU
-workers cannot exceed that count. `INSTANTIATE_NUM=1500`, `MAX_EXEC_NUM=50000`
+workers cannot exceed the selected count. `INSTANTIATE_NUM=1500`, `MAX_EXEC_NUM=50000`
 and the TCI fallback remain unchanged. PostgreSQL, OpenFGA, Axum, the
 authorization model and request deadlines are outside this patch.
 
@@ -18,6 +18,28 @@ A separate eight-line patch fixes signed and unsigned 32-bit widening
 multiplication in the Wasm emitter. It preserves the retention, diagnostic and
 execution rules above. This is an arithmetic correctness fix, not a demonstrated
 remedy for browser OOM or startup timeouts.
+
+## Startup budget interface
+
+`Module._qemu_wasm_set_instance_limit(limit)` is an explicit C export provided
+by `EMSCRIPTEN_KEEPALIVE`. It accepts only 8192 and 15000, returning that value
+on success or zero on refusal. The launcher calls it synchronously in `preRun`
+and requires the exact return value before starting the emulator. No copied
+JavaScript `Module` property or worker-local configuration is used for admission.
+
+The C state is shared by all workers. Its sign records whether configuration
+is frozen; compare/exchange linearizes a setter racing the first vCPU's
+`init_wasm32`. After that initialization starts, every setter is refused,
+including when the live count later returns to zero. The caller's `preRun`
+boundary is before `main`; the C refusal boundary is the first vCPU
+initialization, before any translated-block dispatch. The default and maximum
+remain 15000. Both admission and the existing budget-induced yield condition
+read the same frozen limit. The ring still has 15000 slots, eviction still
+starts at 2048 retained instances per CPU, and `live_limit` is included in
+the existing numeric diagnostic snapshots.
+
+This is a resource-budget candidate. It does not catch or retry OOM, force GC,
+alter an authorization deadline, or change the real-service acceptance criteria.
 
 ## Multiplication correctness
 
@@ -96,7 +118,7 @@ The console SHA-256 is
 Console-window replay was deduplicated; these are counters, not native-memory
 measurements or uninstrumented CI performance results.
 
-The current candidate restores the original 15000 global backstop while retaining
+The previous candidate restored the original 15000 global backstop while retaining
 early detachment at 2048 per CPU and strict atomic admission. Relative to the
 8192 C postimage, only this numerical backstop changes. This provides more room
 between detachment and the hard fallback limit. It does not revert to the old
@@ -136,7 +158,7 @@ evidence ZIP SHA-256 is
 Pinning did not eliminate the observed Firefox failure and is removed from the
 guest wrapper. This is not a controlled comparison of CPU scheduling policies.
 
-The next build retains these admission, eviction and execution rules and adds
+The diagnostic build retained those admission, eviction and execution rules and added
 passive per-worker counts for compilation, registration, detachment and delivered
 GC callbacks. Sparse snapshots and a failure-phase snapshot identify the
 remaining lifecycle pressure; an exception is rethrown unchanged. The counters
@@ -150,6 +172,28 @@ authorization results are introduced.
 earlier finalizer registration. A failed construction can leave those phase
 counts different. The diagnostic C postimage is
 `ccbd0ab09ada98440cda78456cdb2966443ec05d`.
+
+The next actual [run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199)
+captured the full Firefox stream and failed in `new WebAssembly.Module` during
+PostgreSQL initialization after 134.481 seconds. At the failure, core 1 had
+registered 94911 instances, detached 93184, and received 86016 GC callbacks:
+1727 retained plus 7168 detached pending callbacks, or 8895 not yet finalized
+registrations on that worker alone. The failed attempt had also reserved its
+own global slot. Thus a global cap of 8192 would have refused that admission
+under the same preceding history. The latest core 0 snapshot, 121 ms earlier,
+showed 2048 retained and no pending callbacks; these snapshots are not a
+simultaneous global memory measurement. Both eviction and delivered GC were
+active. Chromium's capture overflowed on one-character serial chunks and did
+not provide an acceptance result in that run.
+
+The current candidate therefore selects 8192 only for Firefox and retains
+15000 for Chromium. The earlier Firefox 8192 run reached OpenFGA and completed
+two warmup cycles before its former four-cycle warmup exhausted 60 seconds.
+The current one-cycle/schema-cache OpenFGA build has not completed browser
+acceptance with this selected limit. A lower limit may reduce memory pressure
+but increase TCI execution and startup latency; it guarantees neither GC timing
+nor freedom from OOM. The new C postimage is
+`e0b26bdc8d6d5b987061f9090ae0b62b76c34e16`.
 
 ## Build and provenance
 
@@ -168,12 +212,23 @@ emitter/header preimages, and checks both exact patched C postimages. Only
 A named `qemu-repo` build context supplies the clean checkout. The appended
 target independently verifies and applies both patches. Focused native tests
 extract the actual patched accounting/eviction functions, exercise competing
-reservations at the limit, delayed GC accounting and FIFO eviction, and retain
+reservations at both limits, configuration/freeze races, the actual yield
+condition, delayed GC accounting and FIFO eviction, and retain
 their result. They use native atomic/JS adapters and do not claim to execute
 the WASM engine or browser GC. Separate tests extract the actual JavaScript
 bodies, compile a real small WASM module, and check counter updates, error
 identity, failure phases and logger failure. Controlled finalizer callbacks in
 these tests do not establish browser GC timing or memory use.
+`check-instance-budget-bridge.mjs` additionally compiles the extracted C with
+SDK 4.0.10 and executes the generated ES-module glue. The actual `preRun`
+setter must be visible to `PROXY_TO_PTHREAD` main and two further pthreads;
+both limits, shared admission, invalid input and late calls are checked.
+Compiled negative controls replace the shared state with thread-local state
+and remove the export, and must fail. Raw C, glue, Wasm, logs and a hashed
+summary are retained in `instance-budget-bridge-proof/`. The fixture uses the
+production threading/Asyncify/ES-module settings with a 64 MiB heap and
+`EXIT_RUNTIME=1`; it is not a complete QEMU or browser workload. The SDK build
+target requires this proof before compiling the full emulator.
 The multiplication checker runs in both host preflight and the build target;
 an unchanged upstream emitter cannot pass as the candidate.
 Emscripten 4.0.10 is pinned

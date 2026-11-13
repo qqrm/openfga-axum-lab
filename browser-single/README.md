@@ -96,10 +96,14 @@ launcher checks every payload's size and SHA-256 before starting QEMU;
 The [QEMU adaptation](qemu/README.md) rebuilds only the emulator JS/WASM pair
 with separate early eviction and total live-instance limits. It releases half
 of a CPU's retained compiled instances at 2048, while an atomic reservation
-limits live instances, including those awaiting browser GC, to the original
-upstream backstop of 15000 globally. Both previous 4096 and 8192 candidates
-blocked compilation for long intervals while awaiting GC. Early detachment
-remains at 2048 per CPU, unlike the original late-eviction implementation.
+limits live instances, including those awaiting browser GC, to 8192 for Firefox
+and the original 15000 backstop for other engines, including Chromium. The
+launcher configures one shared C value before main starts; the backend freezes
+it at its first initialization. Invalid or late changes are rejected. The
+returned value is recorded in VM evidence and each worker's diagnostics.
+Earlier lower-cap Chromium runs blocked compilation for long intervals while
+awaiting GC. Firefox previously reached OpenFGA with 8192, but the current
+combination still needs acceptance. Early detachment remains at 2048 per CPU.
 The original data, loader,
 arguments and reviewed SYSVIPC kernel are checked before and after that overlay.
 The derived manifest records this separate emulator build; it does not rewrite
@@ -169,13 +173,27 @@ failure. Any failed browser keeps the combined gate failed; neither a skipped
 browser nor a single successful execution satisfies it.
 
 The checker subscribes to each original serial/print log chunk before starting
-the VM. It retains a full transcript plus numbered JSONL chunks with host-receipt
-timestamps, independently of the UI's 120000-character tail. A sequence gap,
-failed delivery or the host capture limits of 16 MiB/100000 chunks prevent a
-passing gate. The browser delivery queue is bounded at 4 MiB/4096 chunks, and
-a host timer bounds the final drain to ten seconds before closing the browser.
-This repairs
-an observed evidence loss in
+the VM. One pump sends batches of up to 1024 original chunks; a JSONL batch
+records its first source sequence, host-receipt time and every original text.
+This reconstructs the exact ordered stream independently of the UI's
+120000-character tail. A sequence gap, failed delivery or the host capture
+limits of 16 MiB/1000000 source chunks prevent a passing gate. The browser queue,
+including its in-flight batch, is bounded at 4 MiB/65536 chunks. A host timer
+bounds cutoff and drain to ten seconds; a delivery failure retains the guest
+snapshot taken at cutoff and still fails the gate.
+
+The original full-log implementation failed the Chromium check in
+[run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199):
+10558 of its 10567 retained chunks were single characters, and one serial host
+call per character overflowed its 4096-chunk queue. Batching addresses that
+observed transport defect. Firefox's complete 79419-byte capture reached Linux
+boot and PostgreSQL initialization, then recorded a Module OOM. At the exact
+throw, one worker alone had 8895 registered instances without a delivered GC
+callback; early detach and GC were active. The Firefox-only 8192 cap prevents
+that admission under the same history, but is not a native-memory byte bound
+or a guarantee of successful startup. Neither browser completed acceptance.
+
+Full capture was introduced after an observed evidence loss in
 [run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449):
 both browsers timed out after 1200 seconds; Chromium had not emitted the guest
 boot marker, and Firefox emitted it but never became ready. Firefox's UI tail
@@ -191,7 +209,8 @@ the signed/unsigned 32-bit multiply emitters. Extracted upstream C emits real
 Wasm for the regression tests: the original fails 42 of 96 arithmetic cases,
 and the correction passes all 96, including signed negative operands, dirty
 upper bits and register aliases. This separately demonstrated instruction
-defect is not established as the cause of the preceding browser timeouts.
+defect is not established as the cause of the preceding browser timeouts, and
+the actual corrected build still encountered the Firefox OOM recorded above.
 See the [emulator source and proof](qemu/README.md).
 
 Prepare and check locally (Docker, pinned Rust, Node and Playwright required):

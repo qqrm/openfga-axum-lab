@@ -17,14 +17,18 @@ for (const [key,value] of Object.entries({
   converter_commit:'087c313479d51cdf255e4f28ded6ae7d8141297b',
   converter_dockerfile_sha256:'f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508',
   qemu_commit:'8604ed49a3cde392890b014a8d5a959c8a2fe72a',
-  backend_postimage_blob:'ccbd0ab09ada98440cda78456cdb2966443ec05d',
+  backend_postimage_blob:'e0b26bdc8d6d5b987061f9090ae0b62b76c34e16',
   emscripten_version:'4.0.10',
   emsdk_image:'emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7',
   max_instance_alive_before:15000,
   max_instance_alive_after:15000,
+  instance_budget_configuration:'shared_c_pre_run_setter',
+  firefox_instance_limit:8192,
+  chromium_instance_limit:15000,
   max_instance_running_local:2048,
   instance_reservation:'atomic_compare_exchange',
   instance_budget_tests:'passed',
+  instance_budget_bridge_tests:'passed',
   runtime_diagnostics:'module_lifecycle_counters_v1',
   runtime_diagnostics_tests:'passed',
   i32_multiply_fix:'normalize_operands_before_widening_product',
@@ -40,6 +44,7 @@ for (const [key,name] of [
   ['builder_sha256','build.sh'],
   ['dockerfile_appendix_sha256','Dockerfile.appendix'],
   ['budget_test_sha256','check-instance-budget.mjs'],
+  ['budget_bridge_test_sha256','check-instance-budget-bridge.mjs'],
   ['diagnostics_test_sha256','check-runtime-diagnostics.mjs'],
   ['multiply_patch_sha256','i32-multiply.patch'],
   ['multiply_test_sha256','check-i32-multiply.mjs']
@@ -66,6 +71,24 @@ for (const [name,expected] of Object.entries(proof.files)) {
   assert.equal(bytes.length,expected.bytes,`Changed multiplication proof size: ${name}`);
   assert.equal(digest(bytes),expected.sha256,`Changed multiplication proof file: ${name}`);
 }
+const bridgeDirectory = path.join(buildDirectory,'instance-budget-bridge-proof');
+const bridgeBytes = await fs.readFile(path.join(bridgeDirectory,'summary.json'));
+assert.equal(digest(bridgeBytes),build.budget_bridge_proof_sha256,'Changed budget bridge proof');
+const bridge = JSON.parse(bridgeBytes);
+assert.equal(bridge.kind,'compiled_emscripten_budget_bridge');
+assert.equal(bridge.emscripten_version,build.emscripten_version);
+assert.equal(bridge.source_blob,build.backend_postimage_blob);
+assert.equal(bridge.region_sha256,'c509e30e97063cec1a3aa483006f10e6e8cddb22b7c6f013f4a607d8e433d59c');
+assert.equal(bridge.checker_sha256,build.budget_bridge_test_sha256);
+assert.deepEqual(bridge.candidate,{total:2,passed:2});
+assert.deepEqual(bridge.negative_controls,{total:2,rejected:2});
+assert.deepEqual((await fs.readdir(bridgeDirectory)).sort(),[...Object.keys(bridge.files),'summary.json'].sort());
+for (const [name,expected] of Object.entries(bridge.files)) {
+  assert(name === path.basename(name) && !['.','..','summary.json'].includes(name),'Unexpected bridge proof path');
+  const bytes = await fs.readFile(path.join(bridgeDirectory,name));
+  assert.equal(bytes.length,expected.bytes,`Changed bridge proof size: ${name}`);
+  assert.equal(digest(bytes),expected.sha256,`Changed bridge proof file: ${name}`);
+}
 const names = ['out.js','qemu-system-x86_64.wasm'];
 assert.deepEqual(Object.keys(build.files ?? {}).sort(),[...names].sort());
 const buffers = new Map();
@@ -76,7 +99,10 @@ for (const name of names) {
   assert.equal(digest(bytes),build.files[name].sha256,`Emulator checksum mismatch: ${name}`);
   buffers.set(name,bytes);
 }
-assert(WebAssembly.validate(buffers.get('qemu-system-x86_64.wasm')), 'Invalid emulator WebAssembly');
+const emulatorModule = new WebAssembly.Module(buffers.get('qemu-system-x86_64.wasm'));
+assert(WebAssembly.Module.exports(emulatorModule).some(entry =>
+  entry.name === 'qemu_wasm_set_instance_limit' && entry.kind === 'function'),
+  'The actual emulator lacks its budget setter export');
 assert(buffers.get('out.js').toString().includes('qemu-system-x86_64.wasm'), 'Unexpected emulator module name');
 
 const preserved = ['qemu-system-x86_64.data','load.js','arg-module.js','kernel-build/bzImage'];
@@ -89,16 +115,18 @@ const provenance = path.join(runtime,'emulator-build');
 await fs.mkdir(provenance,{recursive:true});
 for (const name of ['build.json','SOURCE.txt','instance-budget.patch','build.sh','Dockerfile.appendix',
   'check-instance-budget.mjs','instance-budget-tests.log',
+  'check-instance-budget-bridge.mjs','instance-budget-bridge-tests.log',
   'check-runtime-diagnostics.mjs','runtime-diagnostics-tests.log',
   'i32-multiply.patch','check-i32-multiply.mjs','i32-multiply-tests.log',
   'upstream.Dockerfile','emscripten-version.txt','config-host.mak','submodules.txt','COPYING','COPYING.LIB','LICENSE']) {
   await fs.copyFile(path.join(buildDirectory,name),path.join(provenance,name));
 }
 await fs.cp(proofDirectory,path.join(provenance,'i32-multiply-proof'),{recursive:true});
+await fs.cp(bridgeDirectory,path.join(provenance,'instance-budget-bridge-proof'),{recursive:true});
 const derivedPath = path.join(runtime,'derived-runtime.json');
 const derived = JSON.parse(await fs.readFile(derivedPath,'utf8'));
 derived.emulator_build = build;
-derived.changes.push('QEMU: evict at 2048 retained instances per CPU; reserve at most 15000 live instances globally');
+derived.changes.push('QEMU: evict at 2048 retained instances per CPU; shared startup live cap 8192 for Firefox, 15000 otherwise');
 derived.changes.push('QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged');
 derived.changes.push('QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked');
 await fs.writeFile(derivedPath,JSON.stringify(derived,null,2)+'\n');

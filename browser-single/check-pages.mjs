@@ -53,8 +53,8 @@ try {
       const wait = operation => Promise.race([pageFailure,operation]);
       await wait(page.goto(url));
       await wait(page.waitForFunction(()=>crossOriginIsolated && !document.getElementById('start').disabled, null, {timeout:30000}));
-      await page.exposeBinding('__recordBrowserLabLog', (_source, chunk) => {
-        try { guestLog.append(chunk); }
+      await page.exposeBinding('__recordBrowserLabLog', (_source, batch) => {
+        try { guestLog.appendBatch(batch); }
         catch (error) { recordPageFailure(error); throw error; }
       });
       await page.exposeBinding('__reportBrowserLabLogFailure', (_source, message) => {
@@ -63,7 +63,7 @@ try {
       await page.evaluate(async () => {
         const {subscribeToGuestLog} = await import('./log-stream.mjs');
         window.__finishBrowserLabLog = subscribeToGuestLog(window,
-          chunk => window.__recordBrowserLabLog(chunk),
+          batch => window.__recordBrowserLabLog(batch),
           {onError: error => window.__reportBrowserLabLogFailure(String(error))});
       });
       assert.equal(await page.evaluate(()=>window.labLogSequence),0);
@@ -81,6 +81,11 @@ try {
       assert.equal(first.startupManifest.openfga_build.tuple_write_typesystem_reuse,'same_request_store_and_model');
       assert.equal(first.startupManifest.openfga_build.write_typesystem_tests,'passed');
       assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,15000);
+      assert.equal(first.vm?.qemuLiveInstanceLimit,name==='firefox'?8192:15000);
+      assert.equal(first.startupManifest.emulator_build?.instance_budget_configuration,'shared_c_pre_run_setter');
+      assert.equal(first.startupManifest.emulator_build?.instance_budget_bridge_tests,'passed');
+      assert.equal(first.startupManifest.emulator_build?.firefox_instance_limit,8192);
+      assert.equal(first.startupManifest.emulator_build?.chromium_instance_limit,15000);
       assert.equal(first.startupManifest.emulator_build?.max_instance_running_local,2048);
       assert.equal(first.startupManifest.emulator_build?.instance_reservation,'atomic_compare_exchange');
       assert.equal(first.startupManifest.emulator_build?.runtime_diagnostics,'module_lifecycle_counters_v1');
@@ -123,13 +128,17 @@ try {
         // Freeze the subscription synchronously, then drain its pending host
         // deliveries. The UI tail is retained separately; it is not the source
         // of complete guest/service evidence.
-        const captureEnd = await drainGuestLogWithin(page.evaluate(async () => {
-          const expectedSequence = window.labLogSequence;
-          const guest = structuredClone(window.labEvidence);
-          if (!window.__finishBrowserLabLog) throw new Error('Guest log capture was not installed');
-          const deliveredSequence = await window.__finishBrowserLabLog();
-          return {expectedSequence, deliveredSequence, guest};
-        })).catch(error=>({error:String(error)}));
+        const captureDeadline = Date.now() + 10000;
+        const remaining = () => Math.max(0,captureDeadline-Date.now());
+        let captureEnd = await drainGuestLogWithin(page.evaluate(async () => {
+          const {freezeGuestLogCapture} = await import('./log-stream.mjs');
+          return freezeGuestLogCapture(window);
+        }),remaining()).catch(error=>({error:String(error)}));
+        if (!captureEnd.error) {
+          const drain = await drainGuestLogWithin(page.evaluate(()=>window.__browserLabLogDrain),remaining())
+            .catch(error=>({error:String(error)}));
+          captureEnd = {...captureEnd,...drain};
+        }
         evidence.guest = captureEnd.guest ?? {error:captureEnd.error || 'Guest state unavailable at capture cutoff'};
         const captured = guestLog.snapshot(captureEnd.expectedSequence);
         evidence.logCapture = {...captured.metadata,

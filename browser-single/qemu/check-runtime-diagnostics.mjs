@@ -22,7 +22,7 @@ const wasmBytes = Uint8Array.from(Buffer.from(
 assert.ok(WebAssembly.validate(wasmBytes));
 const prefix = '[browser-qemu] ';
 
-function fixture(failure = '', loggerFails = false, thrown = new Error(failure)) {
+function fixture(failure = '', loggerFails = false, thrown = new Error(failure), liveLimit = 15000) {
   const wasmMemory = new WebAssembly.Memory({ initial: 1 });
   const heap = new Int8Array(wasmMemory.buffer);
   const view = new DataView(wasmMemory.buffer);
@@ -70,7 +70,7 @@ function fixture(failure = '', loggerFails = false, thrown = new Error(failure))
     },
   };
   const api = runInNewContext(`${extracted}\n({${names.join(',')}})`, context);
-  api.init_wasm32_js(0, 2, 64, 4, 8);
+  api.init_wasm32_js(0, 2, 64, 4, 8, liveLimit);
   assert.equal(registries, 1, 'Keep exactly the original registry');
   return { api, logs, removed, held, view, thrown, deliver: value => callback(value),
     state: context.Module.__wasm32_tb, diagnostics: context.Module.__wasm32_tb.diagnostics };
@@ -83,6 +83,7 @@ assert.equal(success.api.instantiate_wasm(), 1024);
 assert.equal(success.logs.length, 1);
 assert.deepEqual(success.logs[0], {
   event: 'registered', phase: 'add_function', core_id: 2, wasm_size: wasmBytes.length,
+  live_limit: 15000,
   attempted_total: 1024, module_created_total: 1024, instance_created_total: 1024,
   registered_total: 1024, detached_total: 0, gc_total: 0,
   encoded_bytes_total: 1024 * wasmBytes.length, encoded_bytes_max: wasmBytes.length,
@@ -92,6 +93,7 @@ assert.equal(success.api.instantiate_wasm(), 1025);
 assert.equal(success.logs.length, 1);
 assert.ok(Object.values(success.diagnostics).every(value => typeof value === 'number'));
 assert.equal(fixture().diagnostics.attempted_total, 0, 'Worker state is independent');
+assert.equal(fixture('', false, undefined, 8192).diagnostics.live_limit, 8192);
 console.log('PASS real small Wasm, numeric per-worker counts, and sparse err snapshots');
 
 success.view.setInt32(4, 2, true);

@@ -2,7 +2,7 @@
 
 Status of this review on 13 November 2026: **approved changes under validation;
 browser acceptance has not passed**. The latest completed browser gate below is
-commit `4ec7783a68b039b4452a1110e129f2630e99ba73`, run `43364708449`.
+commit `11e4bb0abfe1496b32d94fb0578a77b9f1aa9856`, run `43373341199`.
 The Browser preview run for the current PR head is the authority for later
 acceptance results. The initial proposal was prepared against PR #36 head
 `c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
@@ -11,22 +11,50 @@ published.
 
 ## Latest retained result and next correction
 
-[Run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449)
-passed all build/preparation steps, then both real browser checks timed out at
-1200000 ms. Neither recorded an acceptance pass; Pages deployment was skipped.
+[Run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199)
+passed all build/preparation steps, then failed real browser acceptance.
+Neither browser recorded a pass; Pages deployment was skipped.
 The evidence ZIP SHA-256 is
-`bfe38580b7659f98e3eb244a1c16490a0b65d0f06c03318b76614b9518393664`.
+`fb8258c051e671dd6caa84b8883671d7262831c8e8349c6b9ff089165bbfeeb6`.
 
 | Engine | Retained observation |
 | --- | --- |
-| Chromium 158.0.8127.18 | No `LAB|boot` marker. Last visible output was early Linux boot, ending with `Memory KASLR using RDTSC...`; the kernel's `loglevel=0` prevents that line from locating the actual stopping point. No emulator lifecycle snapshots were retained. |
-| Firefox 159.0 | `booted=true`, `ready=false`, zero checks, no page error. Its 120000-character UI tail had overwritten the earlier service output. Last per-worker cumulative snapshots record at least 1080320 completed registrations and 1067008 delivered GC callbacks. These are cumulative event lower bounds from different times, not simultaneous live-memory measurements. |
+| Chromium 158.0.8127.18 | The diagnostic transport overflowed its 4096 pending chunks. Of 10567 retained chunks, 10558 contained one character; one serial Playwright binding call per character could not drain the stream. This is a capture failure, not a demonstrated backend failure. |
+| Firefox 159.0 | Full capture: 18768 chunks, 79419 bytes, exact sequence cutoff. Linux booted with both CPUs available, then `new WebAssembly.Module` threw `out of memory` during PostgreSQL initialization. No readiness or acceptance. |
 
-The next correction saves every original log chunk on the test host, with
-sequence numbers and receipt timestamps, then drains delivery before closing
-the browser. The UI keeps its bounded tail. Lost chunks or capture overflow
-fail the gate instead of silently discarding evidence. Nothing in log capture
-creates or interprets authorization responses.
+The next correction sends original log chunks in bounded batches, preserving
+their source sequence and exact text. A compact JSONL record stores each batch's
+first sequence, receipt timestamp and original text array. The single pump
+avoids a Promise/binding round trip for every UART character. Both pending and
+host storage remain bounded; lost chunks, overflow and delivery failures still
+prohibit success. The synchronous cutoff captures guest state before draining,
+so an error during delivery cannot replace that state with an uninformative
+capture error. Nothing in log capture creates or interprets authorization
+responses. A real-browser character-burst replay is required in addition to
+unit checks; the preceding three-large-chunk test did not cover this failure.
+
+At Firefox's exact module throw, core 1 recorded 94911 registered, 93184 detached
+and 86016 finalized instances: 1727 retained and 7168 detached without delivered
+finalization. Early detachment and GC callbacks were active. Its 8895 registered
+instances without delivered finalization alone exceed 8192; a global cap of
+8192 would not admit that compilation under the same prior history. The latest
+other-core snapshot is asynchronous and is not added as an exact global total.
+Encoded module bytes are not native-memory measurements.
+
+The candidate therefore selects 8192 for Firefox and retains 15000 for
+Chromium. One exported C setter configures shared state in main-thread `preRun`;
+an atomic freeze at the first backend initialization rejects subsequent changes.
+Both admission and the existing budget-induced yield condition read that same
+limit. Retention stays 2048 per CPU; CAS reservation, actual callback accounting,
+TCI fallback and compilation/yield thresholds are preserved. Earlier Firefox
+8192 runs reached OpenFGA with the former four-cycle warmup, while the current
+one-cycle/cache combination remains unverified. Earlier Chromium evidence
+showed long lower-cap admission stalls, so its cap is unchanged. This is an
+instance-count candidate, not a guaranteed safe byte budget or a proven fix.
+
+The preceding [run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449)
+timed out in both browsers and retained only the UI tail. Firefox's early service
+logs had been overwritten; that run did not establish a specific service error.
 The launcher also replaces the existing kernel `loglevel=0` token in place with
 `loglevel=7`, before `--`, and records that level in VM provenance. This exposes
 ordinary boot messages that were suppressed after early parameter parsing.
@@ -45,11 +73,15 @@ timeouts to that defect or establish browser acceptance. Source context:
 [upstream PR 54](https://github.com/ktock/qemu-wasm/pull/54),
 [pinned emitter](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32/tcg-target.c.inc).
 
-The OpenFGA `.6` build and its request deadlines remain unchanged in this
-candidate. A separately tested one-shot TypeSystem transfer has not been
-included: the latest run provides no captured model-resolution deadline to
-justify it. The emulator's existing admission/retention policy also remains
-unchanged; the new trace does not demonstrate a missing GC or Module OOM.
+The actual corrected emulator passed the emitted-Wasm regression checks in CI
+but still encountered the Firefox OOM above. The OpenFGA `.6` build and request
+deadlines remain unchanged. A separately tested one-shot TypeSystem transfer
+has not been included: the latest run provides no captured model-resolution
+deadline to justify it. Ordinary CI and the native single-image checks passed;
+the separate native Delivery job failed readiness recovery after restarting its
+official OpenFGA container. No service logs were retained for that failure, so
+its cause is unproven. One unchanged failed-job rerun passed all Delivery steps;
+this establishes that the failure did not reproduce in that retry, not its cause.
 
 ## Diagnosis
 

@@ -3,7 +3,7 @@
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs i32-multiply.patch check-i32-multiply.mjs upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs check-instance-budget-bridge.mjs i32-multiply.patch check-i32-multiply.mjs upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
@@ -17,7 +17,7 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && git -C /qemu apply --whitespace=error-all /browser-qemu-input/i32-multiply.patch \
     && git -C /qemu diff --check HEAD -- \
     && test "$(git -C /qemu diff --name-only HEAD --)" = "$(printf 'tcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc')" \
-    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = ccbd0ab09ada98440cda78456cdb2966443ec05d \
+    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = e0b26bdc8d6d5b987061f9090ae0b62b76c34e16 \
     && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a \
     && grep -qx '#define MAX_INSTANCE_ALIVE 15000' /qemu/tcg/wasm32.c \
     && grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' /qemu/tcg/wasm32.c \
@@ -26,6 +26,8 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && cat /emulator-out/instance-budget-tests.log \
     && node /browser-qemu-input/check-runtime-diagnostics.mjs /qemu/tcg/wasm32.c > /emulator-out/runtime-diagnostics-tests.log \
     && cat /emulator-out/runtime-diagnostics-tests.log \
+    && node /browser-qemu-input/check-instance-budget-bridge.mjs /qemu/tcg/wasm32.c /emulator-out/instance-budget-bridge-proof > /emulator-out/instance-budget-bridge-tests.log \
+    && cat /emulator-out/instance-budget-bridge-tests.log \
     && node /browser-qemu-input/check-i32-multiply.mjs /qemu/tcg/wasm32/tcg-target.c.inc /emulator-out/i32-multiply-proof > /emulator-out/i32-multiply-tests.log \
     && cat /emulator-out/i32-multiply-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
@@ -63,14 +65,18 @@ metadata = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": digest("upstream.Dockerfile"),
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "ccbd0ab09ada98440cda78456cdb2966443ec05d",
+    "backend_postimage_blob": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
     "max_instance_alive_after": 15000,
     "max_instance_running_local": 2048,
+    "instance_budget_configuration": "shared_c_pre_run_setter",
+    "firefox_instance_limit": 8192,
+    "chromium_instance_limit": 15000,
     "instance_reservation": "atomic_compare_exchange",
     "instance_budget_tests": "passed",
+    "instance_budget_bridge_tests": "passed",
     "runtime_diagnostics": "module_lifecycle_counters_v1",
     "runtime_diagnostics_tests": "passed",
     "i32_multiply_fix": "normalize_operands_before_widening_product",
@@ -84,6 +90,8 @@ metadata = {
     "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
     "budget_test_sha256": digest("check-instance-budget.mjs"),
     "diagnostics_test_sha256": digest("check-runtime-diagnostics.mjs"),
+    "budget_bridge_test_sha256": digest("check-instance-budget-bridge.mjs"),
+    "budget_bridge_proof_sha256": digest("instance-budget-bridge-proof/summary.json"),
     "multiply_patch_sha256": digest("i32-multiply.patch"),
     "multiply_test_sha256": digest("check-i32-multiply.mjs"),
     "multiply_proof_sha256": digest("i32-multiply-proof/summary.json"),
@@ -97,11 +105,15 @@ metadata = {
     "Build dependencies and flags: included upstream.Dockerfile, container2wasm "
     "087c313479d51cdf255e4f28ded6ae7d8141297b.\n"
     "The included patch detaches half the retained instances at 2048 per CPU, "
-    "while an atomic reservation limits live instances globally to 15000. "
+    "while an atomic reservation bounds live instances globally. "
+    "The shared C qemu_wasm_set_instance_limit export accepts only 8192 or 15000; "
+    "the page calls it in preRun (Firefox 8192, Chromium 15000). Configuration "
+    "freezes atomically when the first vCPU initializes, before dispatch, and "
+    "stays frozen after all instances are collected. Default/maximum remains 15000. "
     "Detached instances remain counted until GC callbacks are processed. "
     "INSTANTIATE_NUM remains 1500 and MAX_EXEC_NUM remains 50000. "
     "Passive per-worker numeric module lifecycle counters use the [browser-qemu] "
-    "prefix, every 1024 completed registrations and on an exception. "
+    "prefix, including the frozen live_limit, every 1024 completed registrations and on an exception. "
     "The original exception is rethrown unchanged. No additional GC/yield or "
     "Wasm object retention is introduced. Encoded sizes are input bytes, not "
     "native memory. Stale per-worker live estimates are not a global bound. "
@@ -111,7 +123,11 @@ metadata = {
     "produce real Wasm for 96 candidate cases and the pinned upstream negative "
     "control. Raw C, emitted bytes, Wasm and results are in i32-multiply-proof/. "
     "This arithmetic defect is not established as the cause of browser failures. "
-    "Native accounting and extracted-JS tests passed; this is an unproven browser memory-budget "
+    "Native accounting, extracted-JS and compiled SDK 4.0.10 budget-bridge tests passed. "
+    "The bridge proof uses the extracted C with actual preRun/proxy-main/two-pthread "
+    "glue, a 64 MiB fixture heap and EXIT_RUNTIME=1; it does not run complete QEMU. "
+    "Raw bridge inputs, outputs and negative controls are in instance-budget-bridge-proof/. "
+    "This is an unproven browser memory-budget "
     "candidate; browser acceptance is required separately.\n"
     "Rebuild with browser-single/qemu/build.sh in qqrm/openfga-axum-lab.\n"
     "See COPYING, COPYING.LIB, LICENSE and upstream dependency sources/licenses.\n"

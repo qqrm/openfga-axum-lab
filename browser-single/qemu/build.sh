@@ -27,7 +27,8 @@ printf '%s  %s\n' "$converter_dockerfile_sha256" "$context_dir/upstream.Dockerfi
     | sha256sum --check -
 cp -- "$script_dir/build.sh" "$script_dir/Dockerfile.appendix" \
     "$script_dir/instance-budget.patch" "$script_dir/check-instance-budget.mjs" \
-    "$script_dir/check-runtime-diagnostics.mjs" "$script_dir/i32-multiply.patch" \
+    "$script_dir/check-runtime-diagnostics.mjs" "$script_dir/check-instance-budget-bridge.mjs" \
+    "$script_dir/i32-multiply.patch" \
     "$script_dir/check-i32-multiply.mjs" "$context_dir/"
 cat "$context_dir/upstream.Dockerfile" "$context_dir/Dockerfile.appendix" > "$context_dir/Dockerfile"
 
@@ -52,7 +53,7 @@ git -C "$source_dir" apply --unidiff-zero --whitespace=error-all "$context_dir/i
 git -C "$source_dir" apply --check --whitespace=error-all "$context_dir/i32-multiply.patch"
 git -C "$source_dir" apply --whitespace=error-all "$context_dir/i32-multiply.patch"
 test "$(git -C "$source_dir" diff --name-only HEAD --)" = $'tcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc'
-test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = ccbd0ab09ada98440cda78456cdb2966443ec05d
+test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = e0b26bdc8d6d5b987061f9090ae0b62b76c34e16
 test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a
 grep -qx '#define MAX_INSTANCE_ALIVE 15000' "$source_dir/tcg/wasm32.c"
 grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' "$source_dir/tcg/wasm32.c"
@@ -83,14 +84,18 @@ expected = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508",
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "ccbd0ab09ada98440cda78456cdb2966443ec05d",
+    "backend_postimage_blob": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
     "max_instance_alive_after": 15000,
     "max_instance_running_local": 2048,
+    "instance_budget_configuration": "shared_c_pre_run_setter",
+    "firefox_instance_limit": 8192,
+    "chromium_instance_limit": 15000,
     "instance_reservation": "atomic_compare_exchange",
     "instance_budget_tests": "passed",
+    "instance_budget_bridge_tests": "passed",
     "runtime_diagnostics": "module_lifecycle_counters_v1",
     "runtime_diagnostics_tests": "passed",
     "i32_multiply_fix": "normalize_operands_before_widening_product",
@@ -108,6 +113,7 @@ for key, name in [
     ("dockerfile_appendix_sha256", "Dockerfile.appendix"),
     ("budget_test_sha256", "check-instance-budget.mjs"),
     ("diagnostics_test_sha256", "check-runtime-diagnostics.mjs"),
+    ("budget_bridge_test_sha256", "check-instance-budget-bridge.mjs"),
     ("multiply_patch_sha256", "i32-multiply.patch"),
     ("multiply_test_sha256", "check-i32-multiply.mjs"),
 ]:
@@ -129,6 +135,21 @@ assert {item.name for item in proof_dir.iterdir()} == set(proof["files"]) | {"su
 for name, item in proof["files"].items():
     assert Path(name).name == name and name not in (".", "..", "summary.json")
     data = (proof_dir / name).read_bytes()
+    assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
+bridge_dir = output / "instance-budget-bridge-proof"
+bridge_bytes = (bridge_dir / "summary.json").read_bytes()
+assert hashlib.sha256(bridge_bytes).hexdigest() == metadata["budget_bridge_proof_sha256"]
+bridge = json.loads(bridge_bytes)
+assert bridge["kind"] == "compiled_emscripten_budget_bridge"
+assert bridge["emscripten_version"] == metadata["emscripten_version"]
+assert bridge["source_blob"] == metadata["backend_postimage_blob"]
+assert bridge["checker_sha256"] == metadata["budget_bridge_test_sha256"]
+assert bridge["candidate"] == {"total": 2, "passed": 2}
+assert bridge["negative_controls"] == {"total": 2, "rejected": 2}
+assert {item.name for item in bridge_dir.iterdir()} == set(bridge["files"]) | {"summary.json"}
+for name, item in bridge["files"].items():
+    assert Path(name).name == name and name not in (".", "..", "summary.json")
+    data = (bridge_dir / name).read_bytes()
     assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
 assert set(metadata["files"]) == {"out.js", "qemu-system-x86_64.wasm"}
 for name, expected_file in metadata["files"].items():

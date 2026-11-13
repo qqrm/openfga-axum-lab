@@ -2,6 +2,7 @@ import {consumeGuestLine, initialEvidence, requestVerification} from './acceptan
 import {loadStartupPayload} from './startup-payload.mjs';
 import {observeRuntimeErrors} from './runtime-errors.mjs';
 import {createTranscriptLog, guestLogEvent} from './log-stream.mjs';
+import {configureInstanceBudget} from './qemu-budget.mjs';
 
 const element = id => document.getElementById(id);
 let started = false;
@@ -133,7 +134,7 @@ async function start() {
     args[smp + 1] = '2,sockets=2,cores=1,threads=1';
     args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F')
       .map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag).join(' ');
-    window.labEvidence.vm = {cpus:2, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false, kernelLogLevel:7};
+    window.labEvidence.vm = {cpus:2, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false, kernelLogLevel:7, qemuLiveInstanceLimit:null};
     // Keep the explicit virtio NIC, attached only to an isolated guest hub.
     // Removing it makes this QEMU build enumerate default NICs and trap in
     // g_slist_sort_real. A hub has no host socket, proxy or external backend.
@@ -141,6 +142,9 @@ async function start() {
     if (network < 0) throw new Error('Missing reviewed virtual network argument');
     args[network + 1] = 'hubport,id=vmnic,hubid=0';
     module.preRun.push(mod => {
+      // The exported setter writes shared C state before main starts any CPU.
+      // Record the returned value, and stop if this binary refuses the policy.
+      window.labEvidence.vm.qemuLiveInstanceLimit = configureInstanceBudget(mod, navigator.userAgent);
       mod.FS.mkdir('/browser-host');
       for (const file of payload) {
         mod.FS.writeFile(`/browser-host/${file.name}`, file.bytes, {mode:0o555});

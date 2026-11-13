@@ -43,6 +43,7 @@ node browser-single/prepare-emulator.mjs "$output/runtime" artifacts/browser-emu
 node --check "$output/launcher.js"
 node --check "$output/runtime-errors.mjs"
 node --check "$output/log-stream.mjs"
+node --check "$output/qemu-budget.mjs"
 node --check "$output/runtime/out.js"
 node --check "$output/isolation-sw.js"
 bash -n "$output/guest.sh"
