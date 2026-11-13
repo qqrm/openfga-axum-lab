@@ -1,16 +1,16 @@
-name: Read completed coalesced Firefox evidence 43471167424
+name: Read completed VirtIO RNG Firefox evidence 43476279151
 on:
   push:
-    branches: [diag/read-coalesced-firefox-43471167424]
-    paths: [.github/workflows/read-coalesced-firefox-evidence.yml]
+    branches: [diag/read-virtio-rng-firefox-43476279151]
+    paths: [.github/workflows/read-virtio-rng-firefox-evidence.yml]
 permissions:
   actions: read
 concurrency:
-  group: read-coalesced-firefox-43471167424
+  group: read-virtio-rng-firefox-43476279151
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-coalesced-firefox-43471167424'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-virtio-rng-firefox-43476279151'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -24,32 +24,32 @@ jobs:
           from urllib.parse import urlsplit
           
           REPO = "qqrm/openfga-axum-lab"
-          RUN = 43471167424
-          HEAD = "b1df9be1d353768a456dde58666622f5cb71d61d"
+          RUN = 43476279151
+          HEAD = "0b7431bf861d2b96ef305620f10fc619832ab961"
           PREFIX = "source-candidate/artifacts/browser-wasm/"
           SPECS = [
               {
                   "engine": "firefox",
-                  "job": 132043135663,
-                  "artifact": 14062191581,
-                  "artifact_name": "browser-coalesced-firefox",
-                  "zip_bytes": 3684776,
-                  "zip_sha256": "7210fdd84b975384d97e43e773c03b339757b4311728616676beb136b4aa69e6",
+                  "job": 132060807180,
+                  "artifact": 14062779799,
+                  "artifact_name": "browser-virtio-rng-firefox",
+                  "zip_bytes": 3708575,
+                  "zip_sha256": "dd01fb8c07ad1634aa96c3e4c9b06796fb159fa42934b633f4e15364c9dd7e42",
                   "members": {
                       "console": [
                           "firefox-console.txt",
-                          361860,
-                          "23258eb31613a9ab7897ee5e4344e858636d1cc46ae33905297c7190647df73d"
+                          272613,
+                          "9c187ae97395987082095b5a089443141b65c10a937ef4f85a3c07a6193e2700"
                       ],
                       "stream": [
                           "firefox-stream.jsonl",
-                          565378,
-                          "b306270031155e40060304bf35ff03a7e55b0a30ceac5d900ef4b3dfc31a1c80"
+                          492158,
+                          "d6b93e1123e09557786d83f5c9719860094b9243938730dbfe6613b043e55000"
                       ],
                       "result": [
                           "firefox.json",
-                          19500,
-                          "3dfa49fdca8edbcd0f9e1e1174f6bd554a1d3cd86e38bea32d9f865417112c45"
+                          19835,
+                          "db44e780216d533156af1e384e9d39303023ff735f7d4e6b40ca4f23453488ad"
                       ]
                   }
               }
@@ -86,7 +86,7 @@ jobs:
                   "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "retained-coalesced-firefox-reader"})
+                  "User-Agent": "retained-virtio-rng-firefox-reader"})
           
           def api(suffix):
               try:
@@ -110,7 +110,7 @@ jobs:
               require(len(matches) == 1, "Pinned browser job is absent or ambiguous")
               job = matches[0]
               require(job["run_id"] == RUN and job["head_sha"] == HEAD and job["run_attempt"] == 1
-                      and job["name"] == ("Coalesced UI/capture browser gate (" + ENGINE + ")")
+                      and job["name"] == ("VirtIO RNG browser gate (" + ENGINE + ")")
                       and job["status"] == "completed" and job["conclusion"] == "failure",
                       "Pinned browser job is not the completed failed attempt")
               steps = {step["number"]: step for step in job["steps"]}
@@ -235,7 +235,8 @@ jobs:
               relevant = re.compile(r"LAB[|_]|browser-(?:guest|single|openfga)|initdb|postgres|Guest diagnostic|Guest process|MemTotal|MemAvailable|Swap|utime_ticks|stime_ticks|wchan|syscall|crng|random:|Name:|State:|Pid:|PPid:|VmRSS|Threads:|Listening|ERROR|FATAL|panic|Error:|failed|timed out", re.I)
               matched = [entry for entry in complete if relevant.search(entry["text"]) and "[browser-qemu]" not in entry["text"]]
               tail = [entry for entry in complete[-240:] if "[browser-qemu]" not in entry["text"]][-80:]
-              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail}
+              entropy = [entry for entry in complete if re.search(r"random:|crng|virtio_rng|hwrng", entry["text"], re.I)]
+              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail + entropy[:8] + entropy[-8:]}
               emit((ENGINE + ".selection"), {"complete_lines": len(complete), "relevant_lines": len(matched),
                                          "selected_lines": len(selected), "omitted_lines": len(complete) - len(selected),
                                          "partial_final_line": bool(lines[-1]),
@@ -268,8 +269,9 @@ jobs:
           try:
               run = api("/actions/runs/" + str(RUN))
               require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
-                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-coalesced-037a"
-                      and run["status"] == "completed" and run["conclusion"] == "failure",
+                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-virtio-rng-716b"
+                      and ((run["status"] == "in_progress" and run["conclusion"] is None)
+                           or (run["status"] == "completed" and run["conclusion"] == "failure")),
                       "Expected the exact source run with the completed failed Firefox job")
               jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
               results = [inspect_engine(spec, run, jobs) for spec in SPECS]
