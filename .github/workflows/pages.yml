@@ -144,6 +144,41 @@ jobs:
           path: artifacts/browser-kernel/
           if-no-files-found: error
           retention-days: 7
+      - name: Reuse the pinned runtime ZIP from retained browser evidence when available
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          inner_sha=fd7511caa98399d245adce39feb3398884f8dc56a82aa44c625e6fa46bf0acee
+          manifest_sha=$(jq -er '.archive_sha256' browser-single/pages/runtime-manifest.json)
+          if [[ "$manifest_sha" != "$inner_sha" ]]; then
+            echo 'The runtime manifest changed; use the existing archive resolver.'
+            exit 0
+          fi
+          retained_dir=$(mktemp -d "${RUNNER_TEMP:?}/browser-runtime-retained.XXXXXX")
+          verified_runtime=false
+          trap 'rm -f -- "$retained_dir/outer.zip"; if [[ "$verified_runtime" != true ]]; then rm -rf -- "$retained_dir"; fi' EXIT
+          # Exact evidence retained by Browser preview run 43402635950.
+          if ! timeout --kill-after=5s 360s \
+            gh api repos/qqrm/openfga-axum-lab/actions/artifacts/14029511154/zip \
+              >"$retained_dir/outer.zip"; then
+            echo 'Retained evidence is unavailable; use the existing artifact/Pages resolver.'
+            exit 0
+          fi
+          test "$(stat -c %s "$retained_dir/outer.zip")" = 260830150
+          printf '%s  %s\n' \
+            73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e \
+            "$retained_dir/outer.zip" | sha256sum --check --status
+          unzip -p "$retained_dir/outer.zip" browser-output/wasm/runtime-source.zip \
+            >"$retained_dir/runtime.zip.partial"
+          test "$(stat -c %s "$retained_dir/runtime.zip.partial")" = 226321852
+          printf '%s  %s\n' "$inner_sha" "$retained_dir/runtime.zip.partial" \
+            | sha256sum --check --status
+          mv -- "$retained_dir/runtime.zip.partial" "$retained_dir/runtime.zip"
+          printf 'BROWSER_RUNTIME_ARCHIVE=%s\n' "$retained_dir/runtime.zip" >>"$GITHUB_ENV"
+          verified_runtime=true
+          echo 'Verified the retained original runtime ZIP; normal preparation will verify it again.'
       - name: Restore and verify the pinned browser VM artifact
         env:
           GH_TOKEN: ${{ github.token }}
