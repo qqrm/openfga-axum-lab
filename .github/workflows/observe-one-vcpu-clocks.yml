@@ -1,0 +1,184 @@
+name: Observe retained browser clocks with one vCPU
+on:
+  push:
+    branches: [diag/clock-one-vcpu-379e]
+    paths:
+      - .github/workflows/observe-one-vcpu-clocks.yml
+      - diagnostics/prepare-one-vcpu-clocks.mjs
+      - diagnostics/check-one-vcpu-clocks.mjs
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: browser-clocks-one-vcpu-379e
+  cancel-in-progress: false
+jobs:
+  compare:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/clock-one-vcpu-379e'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        engine: [chromium, firefox]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 379e3280c2a1c789071292af141648eb2fc3ffbc
+          path: source-current
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /browser-single/pages/
+            /browser-single/entrypoint.sh
+            /browser-single/repack-runtime.mjs
+            /e2e/package.json
+            /e2e/package-lock.json
+            /fga/model.json
+      - name: Install locked Chromium and Firefox test runtimes
+        working-directory: source-current/e2e
+        timeout-minutes: 3
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium firefox
+      - name: Verify the retained runtime and kernel archives; extract fixed members
+        timeout-minutes: 2
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat, urllib.error, urllib.request, zipfile
+          from urllib.parse import urlsplit
+          M = 1024**2
+          REPO = "qqrm/openfga-axum-lab"
+          root = pathlib.Path("prepared")
+          root.mkdir(exist_ok=False)
+          specs = [
+            ("current", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", 14029511154, "pages-browser-vm-evidence", 260830150, "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e"),
+            ("kernel", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", 14026387821, "browser-ipc-kernel", 3360331, "b26572994ab8e2b2904c4f5b88fc039a58ed54b58b74c58f6cbaf39f60568812")
+          ]
+          def require(ok, message):
+              if not ok: raise SystemExit(message)
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs): return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def request(suffix):
+              return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
+                "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
+                "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "bounded-browser-clock-observer"})
+          def api(suffix):
+              with opener.open(request(suffix), timeout=20) as response: raw = response.read(M + 1)
+              require(len(raw) <= M, "Metadata response exceeded budget")
+              return json.loads(raw)
+          def check_members(package):
+              names = package.namelist()
+              require(len(names) <= 10000 and len(names) == len(set(names)), "Invalid ZIP member count/duplicates")
+              require(all(not n.startswith("/") and "\\" not in n and "\0" not in n
+                          and ".." not in n.split("/") for n in names), "Unsafe ZIP member name")
+          def extract(package, name, destination, limit):
+              info = package.getinfo(name)
+              mode = info.external_attr >> 16
+              require(not info.is_dir() and not stat.S_ISLNK(mode) and
+                      stat.S_IFMT(mode) in (0, stat.S_IFREG) and 0 < info.file_size <= limit,
+                      "Invalid selected ZIP member: " + name)
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              size, digest = 0, hashlib.sha256()
+              with package.open(info) as source, destination.open("xb") as output:
+                  while block := source.read(M):
+                      size += len(block)
+                      require(size <= info.file_size and size <= limit, "Member read exceeded budget")
+                      output.write(block); digest.update(block)
+              require(size == info.file_size, "Truncated selected ZIP member")
+              return {"bytes": size, "sha256": digest.hexdigest()}
+          for label, run_id, head, aid, name, size, sha in specs:
+              dest = root / label
+              dest.mkdir()
+              run, artifact = api("/actions/runs/" + str(run_id)), api("/actions/artifacts/" + str(aid))
+              require(run["status"] == "completed" and run["conclusion"] == "failure" and
+                      run["head_sha"] == head and run["run_attempt"] == 1 and run["event"] == "pull_request",
+                      "Pinned source run identity mismatch")
+              require(artifact["id"] == aid and artifact["name"] == name and not artifact["expired"] and
+                      artifact["workflow_run"]["id"] == run_id and artifact["workflow_run"]["head_sha"] == head and
+                      artifact["size_in_bytes"] == size and artifact["digest"] == "sha256:" + sha,
+                      "Pinned artifact identity mismatch")
+              try:
+                  opener.open(request("/actions/artifacts/" + str(aid) + "/zip"), timeout=20)
+                  raise SystemExit("Expected artifact redirect")
+              except urllib.error.HTTPError as error:
+                  require(error.code == 302, "Artifact redirect was not HTTP 302")
+                  location = error.headers.get("Location", "")
+                  error.close()
+              target = urlsplit(location); host = target.hostname or ""
+              require(target.scheme == "https" and target.port in (None, 443) and
+                      target.username is None and target.password is None and
+                      (host.endswith(".blob.core.windows.net") or host.endswith(".actions.githubusercontent.com")),
+                      "Unexpected artifact storage host")
+              archive_path = dest / "source-artifact.zip"
+              count, digest = 0, hashlib.sha256()
+              try:
+                  # Never forward the GitHub token to the signed storage URL.
+                  with opener.open(urllib.request.Request(location), timeout=30) as response, archive_path.open("xb") as output:
+                      while block := response.read(M):
+                          count += len(block); require(count <= size, "Archive exceeded pinned size")
+                          digest.update(block); output.write(block)
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit("Artifact storage network failure") from None
+              require(count == size and digest.hexdigest() == sha, "Archive byte SHA/size mismatch")
+              members = {}
+              with zipfile.ZipFile(archive_path) as package:
+                  check_members(package)
+                  selected = [
+                    ("bzImage", "bzImage", 32*M), ("linux.config", "linux.config", 2*M)
+                  ] if label == "kernel" else [
+                    ("browser-output/wasm/runtime-source.zip", "runtime-source.zip", 384*M),
+                    ("browser-output/wasm/runtime/derived-runtime.json", "retained/derived-runtime.json", 4*M),
+                    ("browser-output/wasm/runtime/startup-manifest.json", "retained/startup-manifest.json", 4*M),
+                    ("artifacts/browser-openfga/openfga", "openfga/openfga", 128*M),
+                    ("artifacts/browser-openfga/build.json", "openfga/build.json", 4*M),
+                    ("artifacts/browser-emulator/out.js", "emulator/out.js", 2*M),
+                    ("artifacts/browser-emulator/qemu-system-x86_64.wasm", "emulator/qemu-system-x86_64.wasm", 128*M),
+                    ("artifacts/browser-emulator/build.json", "emulator/build.json", 4*M)
+                  ]
+                  for source, relative, limit in selected:
+                      members[source] = extract(package, source, dest / relative, limit)
+              if label != "kernel":
+                  manifest = json.loads(pathlib.Path("source-" + label, "browser-single/pages/runtime-manifest.json").read_text())
+                  nested = dest / "runtime-source.zip"
+                  require(members["browser-output/wasm/runtime-source.zip"]["sha256"] == manifest["archive_sha256"],
+                          "Original converter archive changed")
+                  with zipfile.ZipFile(nested) as package:
+                      check_members(package)
+                      require(set(package.namelist()) == set(manifest["files"]), "Unexpected converter ZIP members")
+                      for member, expected in manifest["files"].items():
+                          require(member in ["out.js", "load.js", "arg-module.js", "qemu-system-x86_64.wasm", "qemu-system-x86_64.data"],
+                                  "Unexpected converter runtime member")
+                          actual = extract(package, member, dest / "browser-output/wasm/runtime" / member, expected["bytes"])
+                          require(actual == expected, "Original converter runtime SHA/size mismatch: " + member)
+              provenance = {"label": label, "run": run_id, "head": head, "artifact": aid, "artifact_name": name,
+                            "archive": {"bytes": count, "sha256": sha}, "members": members}
+              (dest / "archive-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
+              archive_path.unlink()
+              print(json.dumps({"verified_archive": label, "artifact": aid, "bytes": count, "sha256": sha}), flush=True)
+          PY
+      - name: Reconstruct the retained runtime and verify diagnostic-only overlays
+        timeout-minutes: 1
+        run: node diagnostics/prepare-one-vcpu-clocks.mjs
+      - name: One bounded real VM; observe clocks and real protocol only
+        timeout-minutes: 22
+        env:
+          BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
+        run: node diagnostics/check-one-vcpu-clocks.mjs
+      - name: Retain full clock/protocol evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-clocks-one-vcpu-379e-${{ matrix.engine }}
+          path: artifacts/browser-clocks-one-vcpu/
+          if-no-files-found: warn
+          retention-days: 7
