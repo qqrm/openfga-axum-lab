@@ -22,9 +22,11 @@ git apply --unidiff-zero --whitespace=error-all "$patch_dir/startup-dial.patch"
 cp "$patch_dir/browser_http_dial.go" "$patch_dir/browser_http_dial_test.go" \
     "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_http_warmup_test.go" cmd/run/
 cp "$patch_dir/browser_model_validation.go" "$patch_dir/browser_model_validation_test.go" pkg/typesystem/
+cp "$patch_dir/browser_write_typesystem_test.go" pkg/server/commands/
 test -z "$(gofmt -l cmd/run/browser_http_dial.go cmd/run/browser_http_dial_test.go \
     cmd/run/browser_http_warmup.go cmd/run/browser_http_warmup_test.go \
-    pkg/typesystem/browser_model_validation.go pkg/typesystem/browser_model_validation_test.go)"
+    pkg/typesystem/browser_model_validation.go pkg/typesystem/browser_model_validation_test.go \
+    pkg/server/commands/write.go pkg/server/write.go pkg/server/commands/browser_write_typesystem_test.go)"
 
 # Resolve only the pinned upstream dependency graph and verify its checksums.
 go mod download
@@ -34,12 +36,17 @@ go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTP
     2>&1 | tee "$output_dir/dial-tests.log"
 go test -mod=readonly -count=1 -timeout=120s -v ./pkg/typesystem -run '^TestBrowserModel' \
     2>&1 | tee "$output_dir/model-validation-tests.log"
+go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server/commands \
+    2>&1 | tee "$output_dir/write-typesystem-tests.log"
+go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server \
+    -run '^(TestWrite|TestCheckWriteAuthz|TestAuthorizationModelInvalidSchemaVersion)$' \
+    2>&1 | tee -a "$output_dir/write-typesystem-tests.log"
 git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.4 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.5 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -61,6 +68,7 @@ cat >"$output_dir/build.json" <<EOF
   "unary_raw_logging": "disabled_browser_only",
   "startup_model_warmup": "in_process_codec_validation_with_exact_schema_cache",
   "model_validation_cache": "conditionless_exact_protobuf_body_except_id",
+  "tuple_write_typesystem_reuse": "same_request_store_and_model",
   "warmup_model_sha256": "$model_sha256",
   "warmup_model_bytes": 52709,
   "warmup_timeout_seconds": 60,
@@ -73,21 +81,24 @@ cat >"$output_dir/build.json" <<EOF
   "warmup_tests_sha256": "$(sha256_of "$patch_dir/browser_http_warmup_test.go")",
   "model_validation_helper_sha256": "$(sha256_of "$patch_dir/browser_model_validation.go")",
   "model_validation_tests_sha256": "$(sha256_of "$patch_dir/browser_model_validation_test.go")",
+  "write_typesystem_tests_sha256": "$(sha256_of "$patch_dir/browser_write_typesystem_test.go")",
   "go_sum_sha256": "$(sha256_of go.sum)",
   "binary_sha256": "$(sha256_of "$output_dir/openfga")",
   "startup_dial_tests": "passed",
   "transport_diagnostics_tests": "passed",
   "warmup_tests": "passed",
-  "model_validation_tests": "passed"
+  "model_validation_tests": "passed",
+  "write_typesystem_tests": "passed"
 }
 EOF
 cp LICENSE "$output_dir/LICENSE"
 cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
-    "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_model_validation.go" "$output_dir/"
+    "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_model_validation.go" \
+    "$patch_dir/browser_write_typesystem_test.go" "$output_dir/"
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.4 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.5 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -106,6 +117,15 @@ Real resolver loads construct a fresh TypeSystem with the real ID; no TypeSystem
 graph, tuple, datastore existence or Check decision is shared by this cache.
 All mismatching models use the original full validator. Failure or cancellation
 prevents cache publication and readiness. Stage timings remain diagnostic only.
+After resolving the actual store/model and checking write authorization, the
+server passes that same TypeSystem to its WriteCommand. Only an exact nonempty
+store/model binding can reuse it; nil or mismatching bindings keep the original
+model read and construction. Supported schema, tuple/condition validation,
+duplicate/size/deletion checks, context and actual datastore.Write are preserved.
+This removes the second construction within one Write request; it adds no
+global TypeSystem cache and does not cache any tuple or authorization result.
+Full command tests and server Write/authorization/schema tests passed; their
+combined log and new test source are included in this output.
 The startup caller is bounded and observes parent cancellation; a synchronous
 worker may finish later, but cannot publish readiness and the CLI exits on error.
 The blocking connection, TLS, request timeouts and authorization engine remain.

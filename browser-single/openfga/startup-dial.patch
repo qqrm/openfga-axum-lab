@@ -33,3 +33,61 @@
 @@ -1118 +1118 @@
 -func NewAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
 +func newAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
+diff --git a/pkg/server/commands/write.go b/pkg/server/commands/write.go
+index 14e7e45..d797be6 100644
+--- a/pkg/server/commands/write.go
++++ b/pkg/server/commands/write.go
+@@ -27,0 +28,2 @@ type WriteCommand struct {
++	resolvedStoreID           string
++	resolvedTypesystem        *typesystem.TypeSystem
+@@ -37,0 +40,10 @@ func WithWriteCmdLogger(l logger.Logger) WriteCommandOption {
++// WithWriteCmdResolvedTypesystem reuses the model already resolved and authorized
++// by the server for this store. It never caches tuples or authorization results.
++// Other store/model requests retain the original datastore read and construction.
++func WithWriteCmdResolvedTypesystem(storeID string, typesys *typesystem.TypeSystem) WriteCommandOption {
++	return func(wc *WriteCommand) {
++		wc.resolvedStoreID = storeID
++		wc.resolvedTypesystem = typesys
++	}
++}
++
+@@ -131,4 +143,9 @@ func (c *WriteCommand) validateWriteRequest(ctx context.Context, req *openfgav1.
+-		authModel, err := c.datastore.ReadAuthorizationModel(ctx, store, modelID)
+-		if err != nil {
+-			if errors.Is(err, storage.ErrNotFound) {
+-				return serverErrors.AuthorizationModelNotFound(modelID)
++		typesys := c.resolvedTypesystem
++		if typesys == nil || store == "" || modelID == "" ||
++			store != c.resolvedStoreID || modelID != typesys.GetAuthorizationModelID() {
++			authModel, err := c.datastore.ReadAuthorizationModel(ctx, store, modelID)
++			if err != nil {
++				if errors.Is(err, storage.ErrNotFound) {
++					return serverErrors.AuthorizationModelNotFound(modelID)
++				}
++				return serverErrors.HandleError("", err)
+@@ -136,2 +152,0 @@ func (c *WriteCommand) validateWriteRequest(ctx context.Context, req *openfgav1.
+-			return serverErrors.HandleError("", err)
+-		}
+@@ -139,3 +154,3 @@ func (c *WriteCommand) validateWriteRequest(ctx context.Context, req *openfgav1.
+-		if !typesystem.IsSchemaVersionSupported(authModel.GetSchemaVersion()) {
+-			return serverErrors.ValidationError(typesystem.ErrInvalidSchemaVersion)
+-		}
++			if !typesystem.IsSchemaVersionSupported(authModel.GetSchemaVersion()) {
++				return serverErrors.ValidationError(typesystem.ErrInvalidSchemaVersion)
++			}
+@@ -143,3 +158,6 @@ func (c *WriteCommand) validateWriteRequest(ctx context.Context, req *openfgav1.
+-		typesys, err := typesystem.New(authModel)
+-		if err != nil {
+-			return err
++			typesys, err = typesystem.New(authModel)
++			if err != nil {
++				return err
++			}
++		} else if !typesystem.IsSchemaVersionSupported(typesys.GetSchemaVersion()) {
++			return serverErrors.ValidationError(typesystem.ErrInvalidSchemaVersion)
+diff --git a/pkg/server/write.go b/pkg/server/write.go
+index 602a42a..0a33145 100644
+--- a/pkg/server/write.go
++++ b/pkg/server/write.go
+@@ -55,0 +56 @@ func (s *Server) Write(ctx context.Context, req *openfgav1.WriteRequest) (*openf
++		commands.WithWriteCmdResolvedTypesystem(storeID, typesys),

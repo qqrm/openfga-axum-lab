@@ -112,6 +112,50 @@ this revision removes that repetition without changing request deadlines.
 The remaining graph construction and browser JIT/GC costs still require actual
 browser verification.
 
+## Reuse within a real tuple Write
+
+[Run 43353568819, commit c6eb256f](https://github.com/qqrm/openfga-axum-lab/actions/runs/43353568819)
+used the one-cycle schema cache and the QEMU 15000/2048 candidate. Chromium
+completed warmup in 9.77 seconds and self-dial in 350 ms. The actual model write
+succeeded: its RPC took 1.22 seconds and its HTTP request 3.36 seconds. Bootstrap
+then verified and persisted the real store/model binding. The application
+started but failed before its listener during the first tuple Write of SQL
+authorization migration: RPC 4.74 seconds, HTTP 4.91 seconds, OpenFGA code 4004
+(`deadline_exceeded`). Firefox separately failed with a browser WebAssembly
+out-of-memory error. Neither browser completed an acceptance pass.
+
+The pinned `server.Write` first resolves a TypeSystem and checks write
+authorization. Its `WriteCommand.validateWriteRequest` then reads the same model
+and constructs another TypeSystem, including both graphs. The schema-validation
+cache alone does not remove this second construction. The transport trace does
+not measure the two constructions separately, so it cannot attribute the whole
+4.74-second interval to them.
+
+The browser patch now passes the already-resolved TypeSystem to that request's
+WriteCommand with its store ID. Reuse requires the same nonempty store and model
+ID and a supported schema version. Nil, mismatched or unspecified bindings take
+the original read-and-construct path. The server still resolves the actual model
+and checks authorization before providing the option. Every tuple/condition,
+implicit-relation, duplicate, size and deletion check remains, followed by the
+actual datastore write with the original request context and error handling.
+
+This does not add a global TypeSystem cache. Upstream already caches models by
+store/model because model bodies are immutable: the API creates a new ID and
+PostgreSQL inserts the model. The second model read was already allowed to hit
+that cache without SQL. Reusing the TypeSystem from the same resolved request
+does not replace any Check or return a successful write without its datastore
+operation. Full command tests, including the original validation cases, and
+the existing server Write/authorization/schema tests guard this path.
+
+The optimization has no demonstrated browser performance result yet. A cold
+resolver still builds one TypeSystem, and subsequent real migration Checks,
+readiness and acceptance remain required. The same Chromium trace contains
+full-model HTTP reads of 2.79, 2.61 and 2.17 seconds; the application's HTTP
+readiness adapter retains its two-second request deadline. This is a possible
+later bottleneck, not the failed operation in that run. Firefox memory pressure
+also remains unresolved. No startup, OpenFGA request, application authorization
+or CLI deadline is increased by this reuse.
+
 ## Build and check
 
 Run after approval for any paid CI use, from the repository root:
@@ -151,6 +195,14 @@ Tests invoke the same helper called by the patched server:
 - Exact-schema cache tests cover generated IDs, nested/unknown-field mismatches,
   invalid-model fallback, independent inputs/TypeSystems and cancellation. The
   cache contains validation evidence only and never substitutes a Check result.
+- Write-command tests cover exact store/model reuse, mismatched/nil/latest-model
+  fallback, unsupported schema, original tuple/condition errors, real in-memory
+  writes/deletes and duplicate-write failure, datastore failure and concurrency.
+  Cancellation tests preserve the original request context and use a
+  context-aware adapter over the real memory datastore, whose own Write does
+  not check cancellation. These native tests do not prove PostgreSQL behavior.
+- The full command suite and existing server Write, write-authorization and
+  invalid-schema tests run with the final combined patch.
 
 The tests include a deliberate 60-second wait to verify the production bound.
 They do not substitute for the real PostgreSQL/OpenFGA/Axum browser acceptance.
@@ -158,14 +210,16 @@ Both Chromium and Firefox must still pass the actual sequence twice, in order:
 `403 → 204 → 200 → 204 → 403`.
 
 Output contains `openfga`, `build.json`, `dial-tests.log`,
-`model-validation-tests.log`, `LICENSE`, `SOURCE.txt`, the exact source patch and
-all three helpers. `build.json` is created only after passing
+`model-validation-tests.log`, `write-typesystem-tests.log`, `LICENSE`, `SOURCE.txt`,
+the exact source patch, all three helpers and the new Write-command test source.
+`build.json` is created only after passing
 tests and records the source commit, compiler version, canonical UTC commit
 date, patch/helper/test digests, metadata-only diagnostics, omitted unary logging,
-the pinned warmup model identity and budget, native warmup proof, dependency
-checksum and executable SHA-256. This proof means the native APIs/tests passed;
-it is not browser acceptance. The build identifies itself as
-`v1.10.3-browser-startup.4`, rather than claiming to be an untouched release.
+the pinned warmup model identity and budget, native warmup proof, same-request
+store/model TypeSystem reuse, native write-test proof, dependency checksum and
+executable SHA-256. This proof means the native APIs/tests passed; it is not
+browser acceptance. The adapted build identifies itself as
+`v1.10.3-browser-startup.5`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

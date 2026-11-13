@@ -75,9 +75,23 @@ only after entries have been detached.
 Both thresholds are heuristics. The strict count is not a byte budget or a
 guarantee against browser OOM, and browser GC still has no scheduling guarantee.
 Early eviction may cause recompilation; a full live budget still falls back to
-TCI. This revised candidate needs a fresh real build and acceptance in both
-browsers. No browser flags, forced GC or synthetic authorization results are
-part of the candidate.
+TCI. The actual 15000/2048 build passed its source/accounting checks, but
+[run 43353568819](https://github.com/qqrm/openfga-axum-lab/actions/runs/43353568819)
+still failed both browsers. Chromium wrote the real model and started Axum,
+then hit the unchanged OpenFGA deadline on its first tuple Write during SQL
+authorization migration. Firefox failed with `out of memory` in
+`new WebAssembly.Module` during PostgreSQL initialization, after 113.537 seconds.
+Neither completed an acceptance pass. Firefox's stack includes earlier
+Asyncify sleep/resume frames; it does not support claiming that the worker never
+yielded. That CI trace has no instance/GC counters, so their state at OOM is
+unknown. The final evidence ZIP SHA-256 is
+`caa925fa4dfe8e1d130e25213ec228749d121b6c27dfeb7762538ccbff915780`.
+
+The next candidate keeps this emulator implementation and pins the service/client
+tree to guest CPU 0. It tests whether avoiding duplicated compilation between
+workers helps; the single retained cache and reduced parallelism may also hurt.
+That configuration is unproven. No browser flags, forced GC or synthetic
+authorization results are part of either candidate.
 
 ## Build and provenance
 

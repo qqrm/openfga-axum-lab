@@ -61,6 +61,8 @@ try {
       assert.equal(first.startupManifest.openfga_build.warmup_cycles,1);
       assert.equal(first.startupManifest.openfga_build.model_validation_cache,'conditionless_exact_protobuf_body_except_id');
       assert.equal(first.startupManifest.openfga_build.model_validation_tests,'passed');
+      assert.equal(first.startupManifest.openfga_build.tuple_write_typesystem_reuse,'same_request_store_and_model');
+      assert.equal(first.startupManifest.openfga_build.write_typesystem_tests,'passed');
       assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,15000);
       assert.equal(first.startupManifest.emulator_build?.max_instance_running_local,2048);
       assert.equal(first.startupManifest.emulator_build?.instance_reservation,'atomic_compare_exchange');

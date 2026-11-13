@@ -110,6 +110,13 @@ The launcher requests two sockets with one CPU each. With this kernel's ACPI
 disabled, SeaBIOS's legacy MP table otherwise exposes only one CPU from a
 two-CPU single socket. The guest verifies `online=0-1` before starting services;
 requested QEMU arguments alone do not prove that Linux discovered both CPUs.
+The next scheduling candidate pins the guest wrapper and its service/client
+descendants to CPU 0 with the retained image's `taskset`, then checks the actual
+`Cpus_allowed_list` before starting any service. Failure aborts startup. Both
+Linux CPUs stay online. This may reduce duplicated service code in the workers'
+separate JIT caches; it also concentrates the working set in one 2048-entry
+retained cache and limits service parallelism. Its benefit is unproven and must
+be measured by the unchanged real browser gate.
 
 The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
 self-dial from three seconds to a bounded 60 seconds. A separate bounded
@@ -123,6 +130,12 @@ with their real ID; graphs and mutable state are not shared by this cache.
 Every other model uses the original complete validator. The original bootstrap,
 datastore reads/writes, tuple operations and Check decisions still run. This
 optimization remains a candidate until real browser acceptance passes.
+Tuple Write now passes the TypeSystem already resolved and authorized for that
+request into the write command. It reuses it only for the exact nonempty
+store/model binding, preserving the schema-version guard and every tuple
+validation and datastore write. Other bindings take the original read/build
+path. This removes a second graph construction within the same request; it does
+not cache Check results or raise request deadlines.
 
 Compact HTTP and gRPC transport traces record request boundaries and timing
 without reading request bodies or changing the handler's context, writer,

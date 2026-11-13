@@ -17,6 +17,7 @@ cp "$openfga_build/build.json" "$openfga_build/LICENSE" "$openfga_build/SOURCE.t
     "$openfga_build/startup-dial.patch" "$openfga_build/browser_http_dial.go" \
     "$openfga_build/browser_http_warmup.go" "$openfga_build/browser_model_validation.go" \
     "$openfga_build/dial-tests.log" "$openfga_build/model-validation-tests.log" \
+    "$openfga_build/write-typesystem-tests.log" "$openfga_build/browser_write_typesystem_test.go" \
     "$output/runtime/openfga-build/"
 temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT
@@ -62,6 +63,8 @@ assert.equal(build.warmup_timeout_seconds,60);
 assert.equal(build.warmup_cycles,1);
 assert.equal(build.warmup_tests,'passed');
 assert.equal(build.model_validation_tests,'passed');
+assert.equal(build.tuple_write_typesystem_reuse,'same_request_store_and_model');
+assert.equal(build.write_typesystem_tests,'passed');
 assert.equal(build.warmup_model_sha256,digest('fga/model.json'));
 assert.equal(build.warmup_model_bytes,readFileSync('fga/model.json').length);
 assert.equal(build.unary_raw_logging,'disabled_browser_only');
@@ -72,6 +75,7 @@ assert.equal(build.warmup_helper_sha256,digest('browser-single/openfga/browser_h
 assert.equal(build.warmup_tests_sha256,digest('browser-single/openfga/browser_http_warmup_test.go'));
 assert.equal(build.model_validation_helper_sha256,digest('browser-single/openfga/browser_model_validation.go'));
 assert.equal(build.model_validation_tests_sha256,digest('browser-single/openfga/browser_model_validation_test.go'));
+assert.equal(build.write_typesystem_tests_sha256,digest('browser-single/openfga/browser_write_typesystem_test.go'));
 assert.equal(build.binary_sha256,digest('browser-output/wasm/runtime/openfga'));
 const original = JSON.parse(readFileSync('browser-single/pages/runtime-manifest.json','utf8'));
 const files = {};
