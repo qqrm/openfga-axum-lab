@@ -59,7 +59,9 @@ try {
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.ok(first.startupManifest,'Missing verified startup provenance');
       assert.equal(first.startupManifest.openfga_build.warmup_cycles,4);
-      assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,4096);
+      assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,8192);
+      assert.equal(first.startupManifest.emulator_build?.max_instance_running_local,2048);
+      assert.equal(first.startupManifest.emulator_build?.instance_reservation,'atomic_compare_exchange');
       assert.equal(first.ready,true);
       assert.equal(first.accepted,true);
       assert.deepEqual(first.statuses,expectedStatuses);

@@ -94,7 +94,12 @@ launcher checks every payload's size and SHA-256 before starting QEMU;
 `runtime/startup-manifest.json` identifies the source, patch, tests and binary.
 
 The [QEMU adaptation](qemu/README.md) rebuilds only the emulator JS/WASM pair
-with an earlier compiled-module eviction budget. The original data, loader,
+with separate early eviction and total live-instance limits. It releases half
+of a CPU's retained compiled instances at 2048, while an atomic reservation
+limits live instances, including those awaiting browser GC, to 8192 globally.
+This leaves room for compilation after detachment; the previous single 4096
+limit caused long waits for GC callbacks in real Chromium diagnostics.
+The original data, loader,
 arguments and reviewed SYSVIPC kernel are checked before and after that overlay.
 The derived manifest records this separate emulator build; it does not rewrite
 the identity of the original source ZIP. This memory-budget candidate still

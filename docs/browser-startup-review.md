@@ -208,12 +208,13 @@ counters, not measurements of native-code bytes or RSS. The production error
 propagation/checker changes correctly retained `accepted=false`, recorded the
 runtime error and ended this diagnostic without waiting 20 minutes.
 
-The next [emulator candidate](../browser-single/qemu/README.md) changes only
+The first [emulator candidate](../browser-single/qemu/README.md) changed only
 `MAX_INSTANCE_ALIVE` from 15000 to 4096. It uses the existing eviction, GC and
 TCI fallback; the compilation threshold remains 1500. `tb-size` is a different
 buffer and its flush does not release those compiled-module references.
 4096 is a measured-motivation candidate, not a proven safe byte budget or a
-performance result. Its first actual build and browser gate remain necessary.
+performance result. Its subsequent actual build passed, but its browser gate
+failed as recorded below.
 
 The OpenFGA candidate repeats fresh codec/validation work four times under the
 same total 60-second startup budget. No TypeSystem or validation result is cached.
@@ -230,7 +231,61 @@ All 13 protocol/payload/runtime-error JavaScript tests passed, as did shell
 syntax, ShellCheck 0.10.0/0.11.0 and whitespace checks. File-integrity fixtures
 verified a paired emulator overlay and rejected corrupted JS or an altered
 upstream build recipe before replacement. These checks are not an emulator
-build or browser acceptance; those remain the next required CI evidence.
+build or browser acceptance. The actual run below supersedes the pending status.
+
+## Actual 4096-instance candidate and deferred GC
+
+[Browser preview 43330935595](https://github.com/qqrm/openfga-axum-lab/actions/runs/43330935595)
+tested commit `6e6a539c` and failed with **zero passes in both browsers**.
+Both executable builds, runtime integrity checks and the unchanged Lakekeeper
+demo passed. Pages upload and deployment were skipped.
+
+| Browser | Last confirmed phase and result |
+| --- | --- |
+| Chromium 158.0.8127.18 | Linux and both CPUs started. The last guest marker was PostgreSQL initialization. The host's 20-minute wait expired; no OpenFGA phase was recorded. |
+| Firefox 159.0 | PostgreSQL became ready and OpenFGA migration completed. Warmup cycle 1 completed in 38750 ms; the shared 60-second budget expired in cycle 2 TypeSystem validation, before listeners or self-dial. No page error/OOM was recorded. |
+
+The Firefox cycle 1 stages were JSON 7380 ms, protobuf 2450 ms, generated
+validation 610 ms, TypeSystem 18690 ms and response codec 9620 ms. Cycle 2
+recorded 8830, 1710 and 630 ms in its first three stages, then 9780 ms elapsed
+in unfinished TypeSystem validation. Cycles 3 and 4 did not start. Failure-tail
+replays in the console are not additional warmup cycles.
+
+[Evidence artifact 13998636550](https://github.com/qqrm/openfga-axum-lab/actions/runs/43330935595/artifacts/13998636550)
+has ZIP SHA-256 `e1cc8a97f5f46e16c78a17e8b5688e6e91f46f132754199552e4102d03692dae`.
+The actual 4096 emulator WASM hash is
+`68c60a823df0c90a5dc054c45c140da5d63ce48381e0b9c769084aafcc6dce11`.
+
+Two local Chromium 157 diagnostics preserved that WASM, the guest and deadlines,
+adding numeric JS counters only. At 4096 registered instances, about half had
+been detached, but no GC callbacks had arrived and new compilations stopped.
+Callbacks later resumed compilation. In the first probe, observed waits were
+about 66 and 105 seconds. The second probe also counted the actual Asyncify
+`emscripten_sleep(0)` callback: hundreds occurred before the first observed GC
+callback, about 30 seconds after detachment. Samples were five seconds apart;
+instrumentation may affect timing. This is evidence of delayed collection with
+frequent yielding, not a permanent deadlock or a production performance result.
+The second probe console SHA-256 is
+`4750f95eda155b6b30a57fade01d98fc71549adece40fc247e7541b2c1b5b23c`.
+
+The revised QEMU patch separates early FIFO detachment at 2048 retained
+instances per CPU from a strict global 8192 live-instance limit. It reserves
+slots with atomic compare/exchange and keeps detached instances counted until
+GC callbacks are processed. Repeated eviction is allowed with pending GC only
+after the retained threshold has been reached again; it cannot repeatedly
+halve a below-threshold cache while blocked. `INSTANTIATE_NUM=1500`, the yield
+counter and real application deadlines remain unchanged. The thresholds still
+need real browser validation; 8192 instances is not a guaranteed safe byte
+budget. This candidate is not evidence of successful acceptance.
+
+Before publishing the revision, native tests of the extracted accounting and
+eviction functions passed all five scenarios, including a deterministic
+two-thread race for the last slot. Both negative controls rejected the old
+pending-GC guard and non-atomic admission. The exact C postimage is Git blob
+`207a59b01ee8655fb542173fd944549653c3d29c`. Patch application/reversal, both
+ShellCheck versions, Python/JavaScript syntax and the 13 existing browser
+protocol/payload/error tests passed. Native adapters do not test browser GC,
+pointer-width-dependent TB lookup or actual WASM execution; CI must do that.
 
 ## Allocator-debug performance candidate
 

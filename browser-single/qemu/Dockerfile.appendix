@@ -1,9 +1,9 @@
 # Appended to the checksum-verified container2wasm Dockerfile by build.sh.
-# 4096 is a heuristic instance budget, pending real browser acceptance.
+# Separate early detachment and live-instance limits; browser acceptance required.
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.py upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
@@ -13,9 +13,12 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && git -C /qemu apply --unidiff-zero --whitespace=error-all /browser-qemu-input/instance-budget.patch \
     && git -C /qemu diff --check HEAD -- \
     && test "$(git -C /qemu diff --name-only HEAD --)" = tcg/wasm32.c \
-    && test "$(git -C /qemu diff --numstat HEAD --)" = "$(printf '1\t1\ttcg/wasm32.c')" \
-    && grep -qx '#define MAX_INSTANCE_ALIVE 4096' /qemu/tcg/wasm32.c \
+    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = 207a59b01ee8655fb542173fd944549653c3d29c \
+    && grep -qx '#define MAX_INSTANCE_ALIVE 8192' /qemu/tcg/wasm32.c \
+    && grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' /qemu/tcg/wasm32.c \
     && mkdir /emulator-out \
+    && python3 /browser-qemu-input/check-instance-budget.py /qemu/tcg/wasm32.c > /emulator-out/instance-budget-tests.log \
+    && cat /emulator-out/instance-budget-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
 
 # Same configure/compiler/linker flags as pinned converter lines 866-870.
@@ -51,15 +54,20 @@ metadata = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": digest("upstream.Dockerfile"),
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
+    "backend_postimage_blob": "207a59b01ee8655fb542173fd944549653c3d29c",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
-    "max_instance_alive_after": 4096,
+    "max_instance_alive_after": 8192,
+    "max_instance_running_local": 2048,
+    "instance_reservation": "atomic_compare_exchange",
+    "instance_budget_tests": "passed",
     "instantiate_num": 1500,
-    "change_kind": "heuristic_compiled_instance_budget_candidate",
+    "change_kind": "separate_retention_and_live_instance_budget_candidate",
     "patch_sha256": digest("instance-budget.patch"),
     "builder_sha256": digest("build.sh"),
     "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
+    "budget_test_sha256": digest("check-instance-budget.py"),
     "files": files,
     "browser_acceptance": "not_run",
 }
@@ -69,8 +77,11 @@ metadata = {
     "8604ed49a3cde392890b014a8d5a959c8a2fe72a\n"
     "Build dependencies and flags: included upstream.Dockerfile, container2wasm "
     "087c313479d51cdf255e4f28ded6ae7d8141297b.\n"
-    "The included one-line patch lowers MAX_INSTANCE_ALIVE from 15000 to 4096. "
-    "INSTANTIATE_NUM remains 1500. This is an unproven browser memory-budget "
+    "The included patch detaches half the retained instances at 2048 per CPU, "
+    "while an atomic reservation limits live instances globally to 8192. "
+    "Detached instances remain counted until GC callbacks are processed. "
+    "INSTANTIATE_NUM remains 1500 and MAX_EXEC_NUM remains 50000. "
+    "Native accounting tests passed; this is an unproven browser memory-budget "
     "candidate; browser acceptance is required separately.\n"
     "Rebuild with browser-single/qemu/build.sh in qqrm/openfga-axum-lab.\n"
     "See COPYING, COPYING.LIB, LICENSE and upstream dependency sources/licenses.\n"

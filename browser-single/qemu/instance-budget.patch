@@ -1,6 +1,36 @@
 diff --git a/tcg/wasm32.c b/tcg/wasm32.c
 --- a/tcg/wasm32.c
 +++ b/tcg/wasm32.c
-@@ -107 +107 @@
+@@ -107 +107,2 @@
 -#define MAX_INSTANCE_ALIVE 15000
-+#define MAX_INSTANCE_ALIVE 4096
++#define MAX_INSTANCE_ALIVE 8192
++#define MAX_INSTANCE_RUNNING_LOCAL 2048
+@@ -146,0 +148,15 @@
++/* Reserve before compilation; detached instances still count until GC. */
++static bool try_reserve_instance()
++{
++    check_instance_garbage_collected();
++    int alive = qatomic_read(&instance_alive_global);
++    while (alive < MAX_INSTANCE_ALIVE) {
++        int observed = qatomic_cmpxchg(&instance_alive_global, alive, alive + 1);
++        if (observed == alive) {
++            return true;
++        }
++        alive = observed;
++    }
++    return false;
++}
++
+@@ -149 +165,2 @@
+-    if (instance_pending_gc_local() > 0) {
++    /* Detach early, leaving room for new compilations while GC is pending. */
++    if (instance_running_local < MAX_INSTANCE_RUNNING_LOCAL) {
+@@ -174 +190,0 @@
+-    qatomic_inc(&instance_alive_global);
+@@ -1336 +1352 @@
+-        } else if (!can_add_instance()) {
++        } else if (!try_reserve_instance()) {
+@@ -1338 +1353,0 @@
+-            check_instance_garbage_collected();
+@@ -1340,0 +1356 @@
++            remove_instance_running_local();
