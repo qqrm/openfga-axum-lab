@@ -305,14 +305,10 @@ jobs:
             'fcb7a8aa0db087f6489c691d982dd1fb205244e4e99965654fcc3a41e6093e1c');
           assert.equal(old.rustSource,'53ff85cfdd3d84c26ae432189790e1e0f72d61db');
           assert.equal(old.packagingSource,'d7f7ead003c774e30584798adfde38afb854528d');
-          const listed = directory => execFileSync('git',['ls-files','-z'],{cwd:directory,encoding:'utf8'}).split('\0').filter(Boolean).sort();
-          const currentFiles = listed('producer');
-          assert.deepEqual(currentFiles,listed('retained-source'),'The retained source file inventory changed');
-          for (const path of currentFiles) {
-            if (path === 'browser-single/bootstrap/build.sh') continue;
-            assert(readFileSync('producer/'+path).equals(readFileSync('retained-source/'+path)),
-              'A source outside the reviewed producer-only fix changed: '+path);
-          }
+          // Compare tracked identities and modes, including gitlinks. Clean working trees were checked above.
+          const listed = directory => execFileSync('git',['ls-files','--stage','-z'],{cwd:directory,encoding:'utf8'})
+            .split('\0').filter(Boolean).filter(row=>!row.endsWith('\tbrowser-single/bootstrap/build.sh')).sort();
+          assert.deepEqual(listed('producer'),listed('retained-source'),'Unchanged tracked source, modes or gitlinks differ');
           assert.deepEqual(Object.keys(old.sourceSha256).sort(),[
             'browser-single/OpenFGA.Dockerfile','browser-single/openfga/build.sh',
             'browser-single/bootstrap/build.sh','browser-single/bootstrap/native-proof.mjs'
