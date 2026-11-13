@@ -1,5 +1,284 @@
 # Browser OpenFGA startup review
 
+## Latest VirtIO RNG browser result — 2026-11-13
+
+[Run 43476279151](https://github.com/qqrm/openfga-axum-lab/actions/runs/43476279151),
+workflow `0b7431bf861d2b96ef305620f10fc619832ab961`, runtime
+`716b77356dd4aab2747d4e37c5da723f3b7a764f`, attempt 1, completed with
+**zero of two required acceptance passes in each browser**. Every pinned input,
+native/OpenFGA proof, lightweight transport proof, kernel configuration and
+runtime segment check passed before the VMs started. The unchanged checker
+launched one VM per engine and retained complete captures with no page errors.
+
+| Engine | Current observed boundary |
+| --- | --- |
+| Chromium 158.0.8127.18 | CRNG is ready at guest 62.293280 s before bootstrap. OpenFGA warmup (17808 ms), self-dial (387 ms) and the real bootstrap deny Check (2095 ms) succeed. A real migration tuple Write succeeds (2606 ms RPC / 2877 ms HTTP). The first migration Check fails with Code 4004/deadline at 3651 ms, HTTP 500 after 4057 ms. Readiness and acceptance remain false. |
+| Firefox 159.0 | CRNG is ready before guest bootstrap. PostgreSQL and OpenFGA start, and actual model POST/GET plus empty tuple Read succeed. The first bootstrap ownership Check fails at 3101 ms with Code 4004/deadline, HTTP 500 after 3393 ms. Axum does not start. |
+
+The [Firefox reader 43479027853](https://github.com/qqrm/openfga-axum-lab/actions/runs/43479027853)
+reconstructed every JSONL chunk and verified counts, cutoff and absence of a
+capture error. Two independent decodings of its 73 base64 parts reproduced
+all 272613 console bytes, SHA256
+`9c187ae97395987082095b5a089443141b65c10a937ef4f85a3c07a6193e2700`.
+
+The fresh Firefox console records `[109.388208] random: crng init done`,
+received at 17:50:27.524 UTC. `LAB|boot` follows at 17:50:48.175 UTC.
+PostgreSQL reports readiness in its own journal at 17:55:08.545 UTC.
+OpenFGA warmup succeeds in 18460 ms and the internal gRPC self-dial in 1218 ms.
+
+Before the first `Guest diagnostic:` header, there are seven completed RPCs:
+Health (750 ms), CreateStore (489), WriteAuthorizationModel (2652), GetStore
+(202), ReadAuthorizationModel (1728), Read (1366), and the failing Check (3101).
+The 217-byte Check is the real empty-store bootstrap deny probe, with the
+prepared TypeSystem claimed. There is no tuple Write or Axum startup in that
+fresh prefix. The later startup-log tail repeats these records; it is not a
+retry. PostgreSQL subsequently receives normal fast shutdown after the bootstrap
+error. This run establishes that the earlier entropy wait no longer blocks
+PostgreSQL, while genuine authorization still exceeds its original deadline.
+
+The [Chromium reader 43479582636](https://github.com/qqrm/openfga-axum-lab/actions/runs/43479582636)
+also passed full reconstruction and cutoff checks. Two independent decodings
+of 29 base64 parts matched 107164 bytes, SHA256
+`1f6b55b7151d8ee4480393fd740b361d819527daac54ede333ccbed0306297ad`.
+The fresh prefix contains exactly two OpenFGA Check pairs: successful bootstrap
+and failed first migration Check. The later diagnostic tail adds no requests.
+Chromium already reached CRNG readiness in previous runs; this observation is
+not evidence of an earlier Chromium entropy blockage or a controlled speedup.
+
+The new package was independently reconstructed before materialization; every
+non-kernel segment, including the original 546670592-byte rootfs, stayed exact.
+The resulting data is 550773312 bytes, SHA256
+`7863b9794e6cc69f7661056ecdbc42439b1143febba5294812ca203491df5a2f`;
+the 7521-byte loader has SHA256
+`17d523c59fb6f7efd8b42ea03877c21bb0e3fa76dbef3486568d37dec677a078`.
+
+### Next bounded adaptation and production compatibility
+
+The [structural-path .9 source](https://github.com/qqrm/openfga-axum-lab/commit/b04bad4ac109a5fdab185a9025b1ae3982953629)
+is undergoing [fresh native verification 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
+at workflow `16266f3990af32a375039ce945322c26fa44b58c`. It can privately
+precompute at most 512 original schema predicates (316 for this pinned model)
+inside the existing 60-second startup phase. Only plain-user structural paths
+are reused; real model existence, tuple reads, rewrites and decisions remain.
+Cancellation or an error prevents partial publication. Other subject types,
+usersets and unknown target keys retain the original method and errors.
+Fresh Go build, the ordinary regressions and focused race checks have passed,
+including all four new structural-path tests. The real native stack proof is
+still running; any browser performance benefit remains pending.
+
+The separate [production compatibility source d5638bcd](https://github.com/qqrm/openfga-axum-lab/commit/d5638bcdc9ef51fded0b711bcd979ff306eaa938)
+removes exactly the three temporary syscall diagnostic lines, restoring the
+6271-byte guest fixture and all six strict native host-file comparisons.
+The other change is a bounded Pages-workflow step that can retrieve the same
+original runtime ZIP from retained evidence. It verifies the fixed outer ZIP,
+extracts only the fixed inner member, verifies that ZIP against the existing
+manifest, and supplies the existing `BROWSER_RUNTIME_ARCHIVE` input. An unavailable
+archive leaves the ordinary resolver intact; a successful download with an
+integrity mismatch fails. Authorization and deployment gates are unchanged.
+These sources are not yet the PR head, and nothing has been merged or deployed.
+
+## Previous coalesced browser result and identified entropy wait
+
+[Run 43471167424](https://github.com/qqrm/openfga-axum-lab/actions/runs/43471167424)
+tested source `037a3c22a5fab45a735a6bfea9792c68049a4b62` with the checked
+log coalescing and failure-only syscall snapshot. Both engines completed with
+**zero of two required acceptance passes**, complete captures and no page errors.
+
+Chromium started PostgreSQL and OpenFGA. Its real initial deny Check succeeded
+in 1827 ms and claimed the prepared TypeSystem. The original migration Write
+succeeded in 2014 ms; the first migration Check succeeded in 2720 ms; the second
+exceeded the unchanged three-second server deadline (3216 ms, Code 4004; HTTP 500
+after 3696 ms). Startup warmup was 12788 ms; the internal gRPC dial was 366 ms.
+The full pre-diagnostic console establishes this count independently of later
+log-tail replays. Coalescing delivered 61340 original chunks in 482 bindings,
+but this result does not establish an authorization speedup.
+
+Firefox stopped in initdb at selecting default max_connections. Its final process
+snapshot identified postgres PID 26 sleeping in x86_64 syscall 318,
+`getrandom(buf,48,0)`. Initdb PID 18 was waiting for its child with `wait4`.
+There was no CRNG-ready message in the full console. Guest uptime was 981.93 s
+and available memory 404084 kB. This is a concrete observation of a blocking
+randomness request at failure, not proof that the same call occupied every prior
+second. The capture contains 25900 original chunks in 1247 bindings.
+
+The [Chromium reader 43473392717](https://github.com/qqrm/openfga-axum-lab/actions/runs/43473392717)
+and [Firefox reader 43474557036](https://github.com/qqrm/openfga-axum-lab/actions/runs/43474557036)
+verified ZIP/member hashes and contiguous JSONL reconstruction. Independent
+base64 decoding reproduced the complete console bytes:
+
+| Engine | Bytes | SHA256 |
+| --- | ---: | --- |
+| Chromium | 118872 | `9a1116365f3fe1217ddb5d00fc7b8e121b5cc41680eb9d34c7da56fbe4ce89a5` |
+| Firefox | 361860 | `23258eb31613a9ab7897ee5e4344e858636d1cc46ae33905297c7190647df73d` |
+
+PostgreSQL 17.11 calls `InitProcessGlobals` and its strong-random seed path during
+`postgres --check`, before shared-memory and semaphore initialization.
+The OpenSSL path can block in Linux `getrandom(...,0)` until CRNG readiness.
+See the pinned PostgreSQL
+[postmaster initialization](https://github.com/postgres/postgres/blob/REL_17_11/src/backend/postmaster/postmaster.c),
+[standalone initialization](https://github.com/postgres/postgres/blob/REL_17_11/src/backend/utils/init/miscinit.c)
+and [strong-random implementation](https://github.com/postgres/postgres/blob/REL_17_11/src/port/pg_strong_random.c).
+
+### Prepared VirtIO entropy configuration
+
+[Kernel reader 43471802815](https://github.com/qqrm/openfga-axum-lab/actions/runs/43471802815)
+verified the actual old 75338-byte config, SHA256
+`fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8`:
+`HW_RANDOM=y` and `VIRTIO_PCI=y`, but `HW_RANDOM_VIRTIO=n`.
+
+Source [716b7735](https://github.com/qqrm/openfga-axum-lab/commit/716b77356dd4aab2747d4e37c5da723f3b7a764f)
+enables that driver and appends an explicit QEMU `rng-random` backend reading
+Emscripten's Web-Crypto-backed `/dev/urandom`, attached to `virtio-rng-pci`.
+The launcher requires Web Crypto and rejects deterministic or conflicting RNG
+arguments. Linux still performs its ordinary entropy-credit and getrandom
+readiness checks; no weak seed, cryptographic bypass or authorization setting
+is introduced. The pinned
+[VirtIO driver](https://github.com/torvalds/linux/blob/830b3c68c1fb1e9176028d02ef86f3cf76aa2476/drivers/char/hw_random/virtio-rng.c)
+uses the normal hardware-RNG interface and quality accounting.
+
+[Kernel-only build 43473084506](https://github.com/qqrm/openfga-axum-lab/actions/runs/43473084506)
+passed source, syntax and ShellCheck validation. It checked that the generated
+config is byte-for-byte the old checked config after replacing exactly one
+`HW_RANDOM_VIRTIO` line. IPC, ACPI, HPET, SMP, APIC and timer settings remain
+unchanged. Artifact 14061334425 is 3689588 ZIP bytes, SHA256
+`c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad`.
+The new kernel is 3629632 bytes, SHA256
+`17abd1165f3b228457d809adf5f4eb9163c282b6ab5b4828e1c9803a257e5421`.
+The new config is 75327 bytes, SHA256
+`4ba9caa843f2e00738b1892a3d5cb5ce8e976debdaa3629ce584614bd8f9345d`.
+
+The kernel build alone does not establish browser behavior. The subsequent full
+gate above kept OpenFGA `.8` unchanged and directly observed Firefox CRNG
+readiness and PostgreSQL startup, but still failed real authorization deadlines.
+No successful acceptance or Pages publication is claimed.
+
+## Earlier default-ACPI result and native proof
+
+**Browser acceptance has not passed.** The required result remains two consecutive
+genuine `403 → 204 → 200 → 204 → 403` sequences in **each** Chromium and Firefox.
+The PR is open; neither a successful native test nor a diagnostic reader
+authorizes merging or Pages publication.
+
+The earlier default-ACPI browser gate,
+[43464079526](https://github.com/qqrm/openfga-axum-lab/actions/runs/43464079526),
+used exact runtime source
+[`e381339f`](https://github.com/qqrm/openfga-axum-lab/commit/e381339f80dd76777ef526b0073dc5eb34739f26),
+the original ACPI launcher, unchanged emulator and retained application image,
+OpenFGA `.8`, and the native-tested bootstrap deny probe. Both engines completed
+**zero of two** acceptance passes. Captures were complete and page-error lists empty.
+
+| Browser | Actual result |
+| --- | --- |
+| Chromium 158.0.8127.18 | PostgreSQL and OpenFGA started. Startup warmup took 10829 ms and the internal gRPC dial 160 ms. The real empty-store bootstrap Check succeeded in 1423 ms; the first original migration tuple Write succeeded in 1583 ms. Nine migration Checks succeeded. The tenth failed with Code 4004 after 3528 ms RPC / 4444 ms HTTP, before Axum readiness. |
+| Firefox 159.0 | Linux booted with default ACPI IRQ routing and HPET. Initdb stopped at selecting default max_connections. The final snapshot showed initdb and postgres sleeping with unknown wait targets, guest uptime 983.90 s and 404324 kB available memory. No OpenFGA/probe execution was observed before `LAB\|boot-failed`. |
+
+The Chromium identity is established without logging request bodies. The unchanged
+migration iterates sorted users, sorted objects and its fixed action list. Its
+first ten observed request lengths match that order exactly. The tenth request is
+`user:alice / can_read_assignments / lakekeeper_table:analytics/errors`, with
+`HIGHER_CONSISTENCY`. This rule is an eight-branch union in the original policy.
+The durations alone do not identify which resolver, datastore or emulation work
+caused the timeout.
+
+[Data reader 43466577922](https://github.com/qqrm/openfga-axum-lab/actions/runs/43466577922)
+verified the complete Chromium ZIP and selected members, reconstructed the console
+from contiguous original JSONL chunks, and exported its exact bytes. Independent
+decoding matched 116249 bytes / SHA256
+`e4eb761c6c3e9ae4d54f0753004857cefa44b7c01f79fe4cde92e5f125b7b2ab`.
+The nine-success/one-failure count excludes all later diagnostic-tail replays.
+Those successful RPCs are startup migration work, not acceptance executions.
+The [Firefox reader 43467449814](https://github.com/qqrm/openfga-axum-lab/actions/runs/43467449814)
+also verified exact console reconstruction. Independent decoding matched 353622 bytes /
+SHA256 `0b901d355157c354c559954b7b85fa56ea5c927cafc69b3b9de5d5f19fee0aff`.
+Guest uptime and QEMU registration/GC advanced through diagnostics; these facts
+neither identify the process wait nor prove a general clock or GC guarantee.
+
+## Native-tested initial deny probe
+
+The browser bootstrap opts into `BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes`.
+Absence preserves the ordinary behavior; any other explicit value is rejected
+before network activity. Only a freshly created binding takes this path, after
+the actual pinned-model readback and empty higher-consistency tuple Read.
+
+The probe makes one actual Check for `user:browser-bootstrap-probe`, relation
+`ownership`, object `lakekeeper_table:browser-bootstrap-probe`, using the real
+store and model IDs and `HIGHER_CONSISTENCY`. HTTP 200 and the required Boolean
+`allowed:false` are mandatory. It writes no tuple, retries no operation and
+publishes no configuration on failure, timeout or malformed/allowing response.
+The original five-second client/body deadline and three-second OpenFGA deadline
+apply. This exercises real model resolution and a direct deny path before Axum
+migration; it does not cache an authorization result or remove any migration check.
+
+[Native verification 43456493622](https://github.com/qqrm/openfga-axum-lab/actions/runs/43456493622)
+passed on exact integration source `e381339f80dd76777ef526b0073dc5eb34739f26`:
+eight Node tests, 25 Rust tests, script/source checks and two original native
+acceptance sequences. A real Check response delayed for six seconds failed after
+5086 ms with exit 1 and no configuration publication. The positive native probe
+used the actual bound IDs and returned a genuine deny. Native performance does
+not establish browser performance.
+
+| Producer input or output | Identity |
+| --- | --- |
+| Bootstrap Rust source | `207d15fab685d3adb9c5d51a048982c2236ae75c` |
+| Packaging fixture | `4b7a1e1933083232fb8305a60a47bdd3c32e6689` |
+| Bootstrap executable | 7444640 bytes / SHA256 `e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275` |
+| OpenFGA executable | 63066296 bytes / SHA256 `5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f` |
+
+The producer's schema-2 retained provenance binds the exact 17 OpenFGA build/test
+inputs. It does not claim that every repository file is unchanged. Current build
+commands and the required nested bootstrap source checkout are in
+[browser-single/README.md](../browser-single/README.md).
+
+## Limits of the tested startup changes
+
+The hardcoded upstream gRPC self-dial is a startup connection, separate from
+authorization RPC deadlines. The browser build bounds it at 60 seconds with parent
+cancellation and fatal failure intact; upstream request-timeout configuration
+does not control this call. Successful dial/model bootstrap now occurs in real
+Chromium, but a later authorization timeout still prevents readiness.
+
+The separate `acpi=noirq` candidate in
+[43458558432](https://github.com/qqrm/openfga-axum-lab/actions/runs/43458558432)
+also produced zero acceptance passes in both engines, stopping before OpenFGA.
+The full Firefox console ended initdb at selecting default max_connections;
+a final process snapshot showed initdb and postgres sleeping with unknown wait
+targets. Chromium stopped producing output and reached the host wait deadline.
+These facts do not establish a clock, IRQ or GC cause. The original ACPI routing
+is retained.
+
+The original Axum startup computes five independently salted Argon2 password
+hashes before authorization migration, and a separate dummy hash before serving.
+The retained CLI has no precomputed-hash/seed option. Every acceptance execution
+still performs two actual password verifications at `/session`. Neither hash
+parameters nor these real checks have been relaxed. No per-hash browser profile
+has established that this stage should be changed.
+
+## Checked frontend log coalescing
+
+Source [037a3c22](https://github.com/qqrm/openfga-axum-lab/commit/037a3c22a5fab45a735a6bfea9792c68049a4b62)
+changes four files relative to the native-tested e381 source: transcript rendering,
+log delivery, regression tests, and three failure-only lines reading process syscall
+state within the existing bounded guest diagnostics. Original chunk emission,
+sequence/protocol handling, host collector, capture limits and acceptance checker
+are preserved. Pending rendering is synchronously flushed before the cutoff;
+a render failure remains disqualifying even if every chunk was delivered.
+
+[Transport proof 43470193142](https://github.com/qqrm/openfga-axum-lab/actions/runs/43470193142)
+passed 31 Node tests and seven scenarios in each real Chromium 158.0.8127.18 and
+Firefox 159.0. Exact chunks, UTF-16 boundaries, JSONL reconstruction, visible tail,
+one in-flight delivery, forced partial drain and failure paths were verified.
+The synchronous 32256-chunk scenario used 32 host bindings in each engine.
+These are transport metrics: the proof starts no VM, downloads no runtime image
+and performs no authorization acceptance. It does not establish backend speedup.
+
+Artifact 14060071538 is 46909 ZIP bytes / SHA256
+`2845492a3a08a09f4fc957b7907b920362cf521d96545e5569afc9918182cb34`.
+Workflow head is 0a8d7dc4ba611fe7071b34005410f4dc832d7b71, attempt 1.
+Source hashes and the harness independently matched the reviewed files.
+
+<details>
+<summary>Earlier investigation and retained source/build evidence</summary>
+
 Status on 13 November 2026: **the OpenFGA `.8` native proof and versioned
 bootstrap producer have passed; browser acceptance remains a separate
 required gate**. The completed
@@ -820,3 +1099,5 @@ the same pinned source commit; a new build must be recorded with its own hashes,
 not treated as byte-identical to the expired artifact. Merging and publishing
 Pages still require confirmed successful browser acceptance and separate user
 permission. This document does not authorize automatic merge or publication.
+
+</details>

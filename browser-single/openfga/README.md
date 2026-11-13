@@ -318,6 +318,33 @@ Native success does not establish browser acceptance. The current PR's
 **Browser preview** checks remain authoritative for the required two genuine
 sequences in each Chromium and Firefox.
 
+## Real bootstrap deny probe before application migration
+
+The separately pinned bootstrap overlay now offers one opt-in real Check
+after it has provisioned and read back the original model and confirmed that
+the new store is empty. It requests the original direct `ownership` relation
+for a probe user/object at `HIGHER_CONSISTENCY`, with actual store/model IDs.
+It requires HTTP 200 and `allowed:false` before atomically publishing the
+binding. It creates no tuple, retries no uncertain operation, and uses the
+ordinary five-second client/body deadline and this server's three-second
+request deadline. Existing bindings and the ordinary CLI retain their previous
+behavior.
+
+For this fresh browser store, the probe is expected to make the first real
+resolver call and claim the prepared TypeSystem described above, filling the
+existing store/model cache before the first migration Write. The Check handler,
+gateway and direct datastore read really execute. This does not warm every
+union or tuple-to-userset path and does not replace any subsequent Check.
+
+[Native verification 43456493622](https://github.com/qqrm/openfga-axum-lab/actions/runs/43456493622)
+passed with the unchanged `.8` OpenFGA binary: eight payload tests, 25 Rust
+bootstrap tests, real HTTP 200 / `allowed:false`, zero PostgreSQL tuples before
+app startup and two original native acceptance sequences. With the genuine
+Check response withheld for six seconds, the bootstrap exited 1 after 5086 ms
+without publishing configuration. This demonstrates the preserved operation
+deadline, not browser latency. The [current browser review](../../docs/browser-startup-review.md)
+records actual engine outcomes and all source/binary bindings.
+
 ## Build and check
 
 Run after approval for any paid CI use, from the repository root:

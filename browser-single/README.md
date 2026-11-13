@@ -11,6 +11,25 @@ It does **not** contain Docker, a fake authorization engine, JavaScript
 reimplementations, or an alternative FGA model. The pinned, unchanged Lakekeeper
 model remains the default. It does not modify the normal Compose/Pages deployment.
 
+## Current browser result
+
+[Run 43476279151](https://github.com/qqrm/openfga-axum-lab/actions/runs/43476279151)
+completed with **zero of two acceptance passes in both engines**. The new
+VirtIO RNG configuration passed all source, kernel and runtime preparation
+checks. Firefox's complete console records CRNG readiness before the guest
+startup script; initdb and PostgreSQL subsequently complete. Its first real
+bootstrap deny Check still exceeds OpenFGA's unchanged three-second deadline.
+Chromium reaches the original application's migration, where a real Check
+also exceeds that deadline.
+
+[Fresh native verification of the structural-path candidate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
+has passed its Go/race stages and is running the real native backend proof.
+That candidate preserves real tuple reads and authorization
+decisions; browser performance and acceptance remain unverified. The exact
+sources, hashes, evidence and limitations are in
+[the startup review](../docs/browser-startup-review.md). Pages remains gated on
+two original acceptance sequences in each real browser.
+
 ## Native proof before emulation
 
 Run these commands at the repository root on an x86_64 Docker host:
@@ -92,9 +111,10 @@ Lakekeeper model. Changing this directory's Dockerfile alone cannot update that
 artifact. `prepare-pages.sh` supplies exactly four verified startup files through
 the converter's read-only host mount: the guest wrapper, current entrypoint,
 adapted OpenFGA executable, and a separately built bootstrap executable.
-The last executable runs only initial model provisioning. Probe and both
-acceptance executions continue to use the original absolute
-`/usr/local/bin/lab-tool` from the retained rootfs.
+The last executable performs initial model provisioning and the opt-in, real
+empty-store deny probe described below. Probe and both acceptance executions
+continue to use the original absolute `/usr/local/bin/lab-tool` from the
+retained rootfs.
 
 Before starting QEMU, the launcher checks all four payload sizes and SHA-256
 digests and requires the reviewed bootstrap source, native-test result and
@@ -127,6 +147,12 @@ difference, including dependencies selected by ACPI. The launcher removes the
 exact Linux `acpi=off` token before the init-argument separator so Linux can
 discover the advertised ACPI timers. It retains two sockets with one CPU each,
 512 MiB and the existing MTTCG configuration. No clocksource is forced.
+
+A separate `acpi=noirq` experiment booted Linux but did not establish backend
+readiness: [43458558432](https://github.com/qqrm/openfga-axum-lab/actions/runs/43458558432)
+recorded zero acceptance passes in both engines, with their last confirmed
+service stage at PostgreSQL initialization. That option is not included in
+this source. See [the evidence and its limits](../docs/browser-startup-review.md).
 
 The guest verifies `online=0-1` before starting services; requested QEMU arguments
 alone do not prove that Linux discovered both CPUs.
@@ -216,6 +242,27 @@ responses, the pinned model and matching readback, and a confirmed empty new
 store before publishing its configuration. An uncertain write is not retried.
 A failed verification neither resets an existing binding nor publishes an
 unverified one; atomic configuration publication remains unchanged.
+
+The separate browser bootstrap also opts into
+`BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes`. The only accepted explicit value is
+`yes`; absence preserves the previous behavior and any other value fails
+before network activity. On a newly provisioned binding only, after the actual
+model readback and empty higher-consistency tuple Read, it makes one genuine
+`HIGHER_CONSISTENCY` Check for `user:browser-bootstrap-probe`, relation
+`ownership`, object `lakekeeper_table:browser-bootstrap-probe`, using the real
+store and model IDs. HTTP 200 with a required Boolean `allowed:false` is the
+only acceptable result. Failure, malformed data, `allowed:true` or timeout
+prevents configuration publication. No tuple is written or response supplied
+by the bootstrap; there is no retry. Existing bindings keep their previous
+verification path.
+
+This executes the real first model resolution and direct Check path before
+Axum migration. It can populate OpenFGA's existing store/model resolver cache;
+it does not cache an authorization answer or remove any migration or acceptance
+check. Its client and outer body deadline stay at five seconds and the OpenFGA
+server deadline stays at three. The ordinary repository CLI sources and the
+archived probe/acceptance executable remain unchanged. Native success proves
+these semantics, while its effect on browser startup requires the browser gate.
 
 The guest's 900-second startup budget includes payload staging. On failure,
 a bounded diagnostic snapshot records logs, memory and PostgreSQL process state
@@ -348,12 +395,16 @@ Prepare and check locally from this source revision on an x86_64 Docker/Buildx
 host with the pinned Rust toolchain, Git, Node, ShellCheck and Playwright.
 Use fresh worktree paths and build-output directories: the producer refuses
 existing proof/output directories and existing containers with its reserved names.
-The fixed source and packaging fixture must remain unmodified.
+The fixed source and packaging fixture must remain unmodified. Keep the nested
+`browser-bootstrap-source` checkout until `prepare-pages.sh` finishes: the
+materializer verifies the new overlay against those exact source/test bytes,
+while separately requiring the ordinary repository CLI sources to remain at
+their reviewed pre-probe identities.
 
 ```sh
-git fetch origin 53ff85cfdd3d84c26ae432189790e1e0f72d61db d7f7ead003c774e30584798adfde38afb854528d
-git worktree add --detach ../openfga-bootstrap-core 53ff85cfdd3d84c26ae432189790e1e0f72d61db
-git worktree add --detach ../openfga-bootstrap-fixture d7f7ead003c774e30584798adfde38afb854528d
+git fetch origin 207d15fab685d3adb9c5d51a048982c2236ae75c 4b7a1e1933083232fb8305a60a47bdd3c32e6689
+git worktree add --detach browser-bootstrap-source 207d15fab685d3adb9c5d51a048982c2236ae75c
+git worktree add --detach ../openfga-bootstrap-fixture 4b7a1e1933083232fb8305a60a47bdd3c32e6689
 ```
 
 Run the producer after OpenFGA and before runtime preparation:
@@ -362,7 +413,7 @@ Run the producer after OpenFGA and before runtime preparation:
 bash scripts/build-browser-demo.sh
 docker buildx build -f browser-single/OpenFGA.Dockerfile \
   --output type=local,dest=artifacts/browser-openfga .
-bash browser-single/bootstrap/build.sh ../openfga-bootstrap-core ../openfga-bootstrap-fixture
+bash browser-single/bootstrap/build.sh browser-bootstrap-source ../openfga-bootstrap-fixture
 bash browser-single/qemu/build.sh
 bash browser-single/prepare-kernel.sh
 # Optional: set BROWSER_RUNTIME_ARCHIVE to a retained original ZIP.
