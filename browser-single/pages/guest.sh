@@ -104,6 +104,9 @@ for proc in /proc/[0-9]*; do
     printf 'wchan: '
     cat "$proc/wchan" 2>/dev/null || true
     printf '\n'
+    printf 'syscall: '
+    cat "$proc/syscall" 2>/dev/null || true
+    printf '\n'
     if IFS= read -r stat 2>/dev/null <"$proc/stat"; then
         # Fields 14/15 follow the pid and parenthesized comm: cumulative ticks.
         read -r -a fields <<<"${stat##*) }"
