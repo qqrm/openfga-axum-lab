@@ -60,7 +60,7 @@ try {
   await fs.writeFile(path.join(runtime, 'derived-runtime.json'), JSON.stringify({
     source:'99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58',
     linux_source:'830b3c68c1fb1e9176028d02ef86f3cf76aa2476',
-    changes:['Linux kernel configuration: SYSVIPC and IPC_NS', 'remove unused 128 MiB migration snapshot'],
+    changes:['Linux kernel configuration: SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI and X86_PM_TIMER', 'remove unused 128 MiB migration snapshot'],
     rootfs_changed:false,
     data:{bytes:position,sha256:hash.digest('hex')},
     loader_sha256:createHash('sha256').update(loader).digest('hex'),

@@ -1,9 +1,9 @@
-# Rebuild only the converter's Linux 6.1 kernel with PostgreSQL's required IPC.
+# Rebuild Linux 6.1 with the required IPC and normal ACPI timer discovery.
 # Emulator and application/rootfs bytes are kept from the verified artifact.
 FROM ubuntu:22.04 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc-x86-64-linux-gnu libc6-dev make git curl ca-certificates \
-    gperf flex bison bc libelf-dev libssl-dev \
+    gperf flex bison bc libelf-dev libssl-dev python3 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /kernel
 RUN git init && git remote add origin https://github.com/torvalds/linux.git \
@@ -20,16 +20,30 @@ ENV KBUILD_BUILD_USER=authzlab KBUILD_BUILD_HOST=browser \
 RUN scripts/config --enable SYSVIPC --enable SYSVIPC_SYSCTL --enable IPC_NS \
       --set-str LOCALVERSION '-authz-ipc' --disable LOCALVERSION_AUTO \
     && make ARCH=x86 CROSS_COMPILE=x86_64-linux-gnu- olddefconfig \
-    && grep -qx 'CONFIG_SYSVIPC=y' .config \
-    && grep -qx 'CONFIG_IPC_NS=y' .config \
+    && cp .config /tmp/ipc-baseline.config \
+    && scripts/config --enable ACPI --enable X86_PM_TIMER \
+    && make ARCH=x86 CROSS_COMPILE=x86_64-linux-gnu- olddefconfig \
+    && scripts/diffconfig /tmp/ipc-baseline.config .config > /tmp/acpi.config.diff \
+    && for option in \
+         CONFIG_SYSVIPC=y CONFIG_SYSVIPC_SYSCTL=y CONFIG_IPC_NS=y \
+         CONFIG_ACPI=y CONFIG_X86_PM_TIMER=y CONFIG_HPET_TIMER=y \
+         CONFIG_X86_64=y CONFIG_SMP=y CONFIG_X86_MPPARSE=y \
+         CONFIG_X86_LOCAL_APIC=y CONFIG_X86_IO_APIC=y \
+         CONFIG_HZ_PERIODIC=y CONFIG_HZ_100=y CONFIG_HZ=100 \
+         '# CONFIG_HIGH_RES_TIMERS is not set' \
+         '# CONFIG_NO_HZ_IDLE is not set' '# CONFIG_NO_HZ_FULL is not set'; do \
+         grep -qx "$option" .config || exit 1; \
+       done \
     && make ARCH=x86 CROSS_COMPILE=x86_64-linux-gnu- -j2 bzImage \
     && mkdir /out \
     && cp arch/x86/boot/bzImage /out/bzImage \
     && cp .config /out/linux.config \
     && cp /tmp/upstream.config /out/upstream.config \
+    && cp /tmp/ipc-baseline.config /out/ipc-baseline.config \
+    && cp /tmp/acpi.config.diff /out/acpi.config.diff \
     && cp COPYING /out/COPYING \
     && cp LICENSES/preferred/GPL-2.0 /out/GPL-2.0 \
-    && printf '%s\n' 'Linux 6.1, source commit 830b3c68c1fb1e9176028d02ef86f3cf76aa2476; unmodified source, configuration enables SYSVIPC and IPC_NS. Rebuild with browser-single/Kernel.Dockerfile.' > /out/SOURCE.txt \
-    && sha256sum /out/bzImage /out/linux.config > /out/build.sha256
+    && printf '%s\n' 'Linux 6.1, source commit 830b3c68c1fb1e9176028d02ef86f3cf76aa2476; unmodified source, configuration enables SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI and X86_PM_TIMER; HPET, SMP and HZ=100 are retained. See ipc-baseline.config and acpi.config.diff for resolved changes. Rebuild with browser-single/Kernel.Dockerfile.' > /out/SOURCE.txt \
+    && sha256sum /out/bzImage /out/linux.config /out/ipc-baseline.config /out/acpi.config.diff > /out/build.sha256
 FROM scratch
 COPY --from=build /out/ /

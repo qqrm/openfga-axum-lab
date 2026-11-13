@@ -124,8 +124,7 @@ async function start() {
     // with 512 MiB instead of restoring an incompatible memory snapshot.
     args.splice(snapshot, 2);
     args[args.indexOf('-m') + 1] = '512M';
-    // ACPI is disabled in this kernel. SeaBIOS's legacy MP table lists only
-    // the first CPU per socket, so each requested CPU needs its own socket.
+    // Keep the reviewed two-socket topology while enabling ACPI discovery.
     // guest.sh independently requires both CPUs online before starting services.
     const smp = args.indexOf('-smp');
     const commandLine = args.indexOf('-append');
@@ -137,8 +136,15 @@ async function start() {
         initSeparator < 0 || kernelFlags.indexOf('loglevel=0') >= initSeparator) {
       throw new Error('Unexpected reviewed kernel log-level option');
     }
+    if (kernelFlags.filter(flag => flag === 'acpi=off').length !== 1 ||
+        kernelFlags.indexOf('acpi=off') >= initSeparator) {
+      throw new Error('Unexpected reviewed kernel ACPI option');
+    }
+    if (args.includes('-no-acpi') || args.includes('-no-hpet')) {
+      throw new Error('Unexpected disabled firmware timer discovery');
+    }
     args[smp + 1] = '2,sockets=2,cores=1,threads=1';
-    args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F')
+    args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F' && flag !== 'acpi=off')
       .map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag).join(' ');
     window.labEvidence.vm = {cpus:2, reportedLogicalCPUs, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false, kernelLogLevel:7, qemuLiveInstanceLimit:null};
     // Keep the explicit virtio NIC, attached only to an isolated guest hub.
