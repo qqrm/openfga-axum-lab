@@ -1,65 +1,92 @@
-name: Read completed Chromium VirtIO RNG evidence 43476279151
+name: Read both completed OpenFGA .10 browser evidence artifacts
 on:
   push:
-    branches: [diag/read-virtio-rng-chromium-43476279151]
-    paths: [.github/workflows/read-virtio-rng-chromium-evidence.yml]
+    branches: [diag/read-openfga10-browsers]
+    paths: [.github/workflows/read-openfga10-browsers.yml]
 permissions:
   actions: read
 concurrency:
-  group: read-virtio-rng-chromium-43476279151
+  group: read-openfga10-browsers
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-virtio-rng-chromium-43476279151'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-openfga10-browsers'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
-      - name: Read only the fixed completed Chromium job artifact
+      - name: Verify and export both fixed completed browser captures without execution
         shell: bash
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import base64, bisect, hashlib, json, os, re, stat, tempfile, urllib.error, urllib.request, uuid, zipfile
+          import base64, hashlib, json, os, re, stat, tempfile, urllib.error, urllib.request, uuid, zipfile
           from urllib.parse import urlsplit
-          
+
           REPO = "qqrm/openfga-axum-lab"
-          RUN = 43476279151
-          HEAD = "0b7431bf861d2b96ef305620f10fc619832ab961"
+          RUN = 43503424618
+          HEAD = "026e526e3077eaa35bfb28e19a25c49a353b9b19"
+          RUNTIME = "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8"
+          NATIVE = "bb8fed250bdee9931f7702ae2475d28e5e9eed8f"
           PREFIX = "source-candidate/artifacts/browser-wasm/"
           SPECS = [
               {
                   "engine": "chromium",
-                  "job": 132060806770,
-                  "artifact": 14064157017,
-                  "artifact_name": "browser-virtio-rng-chromium",
-                  "zip_bytes": 3681340,
-                  "zip_sha256": "f2e687876cf260f92fbb96100d21fb3f370452aeef7ca34b6d3ac17fc7ddafe3",
+                  "job": 132154799208,
+                  "artifact": 14075809028,
+                  "artifact_name": "browser-openfga10-bfs-chromium",
+                  "zip_bytes": 3670836,
+                  "zip_sha256": "463e9928ad1473e7730234d341cc08888c682616144f476609ad9dfe9fabd434",
                   "members": {
                       "console": [
                           "chromium-console.txt",
-                          107164,
-                          "1f6b55b7151d8ee4480393fd740b361d819527daac54ede333ccbed0306297ad"
+                          38030,
+                          "c4a5c5dd8bf2ea577beb23503a1e12c6a7900575896607c5d4b496f999b9abdc"
                       ],
                       "stream": [
                           "chromium-stream.jsonl",
-                          347066,
-                          "a2733b9fa7431d7847bc161fb725a241991c129d8341685e8937744357cf4774"
+                          123356,
+                          "077430baf9fa8c90dc85147a8150b777f4705a5ad8159604a3a5e4e92f48a244"
                       ],
                       "result": [
                           "chromium.json",
-                          19845,
-                          "d7f92d973ddb30a2d066d4d2257f6f371507e679ac869888ecc65174fd6e8650"
+                          11000,
+                          "30db93ea2a8e916d6c206bf9063989469aabd49a78b63b6f8eda18efb6a77787"
+                      ]
+                  }
+              },
+              {
+                  "engine": "firefox",
+                  "job": 132154799577,
+                  "artifact": 14076956224,
+                  "artifact_name": "browser-openfga10-bfs-firefox",
+                  "zip_bytes": 3707534,
+                  "zip_sha256": "7c9e5458e1ca9f6cb8008a8db022637ba192ef0302becffe7b6ac8133e2fbcc3",
+                  "members": {
+                      "console": [
+                          "firefox-console.txt",
+                          176477,
+                          "0c33943dd3a8a98a879d869bdeab3071284c6928dc4be509351d05f53eaf0888"
+                      ],
+                      "stream": [
+                          "firefox-stream.jsonl",
+                          309942,
+                          "9795558a767936c79413e64de86520d5c5a088848efd8bc2814be92b44bdd0a0"
+                      ],
+                      "result": [
+                          "firefox.json",
+                          10991,
+                          "da4cbe7146f81d2af27da2dddc6d5ab8f28fe95384cc77f371c59b7939e9ee4f"
                       ]
                   }
               }
           ]
           M = 1024 * 1024
-          
+
           def require(ok, message):
               if not ok:
                   raise SystemExit(message)
-          
+
           used = 0
           def emit(label, value):
               global used
@@ -68,26 +95,26 @@ jobs:
               used += len(line) + 1
               require(used <= M, "Output exceeded 1 MiB")
               print(line, flush=True)
-          
+
           def clipped(value, limit=1800):
               value = str(value)
               return {"text": value[:limit], "characters": len(value), "truncated": len(value) > limit}
-          
+
           def js_utf8(value):
               return value.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
-          
+
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, *args, **kwargs):
                   return None
-          
+
           opener = urllib.request.build_opener(NoRedirect())
           def request(suffix):
               return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
                   "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "retained-chromium-virtio-rng-reader"})
-          
+                  "User-Agent": "retained-openfga10-browser-reader"})
+
           def api(suffix):
               try:
                   with opener.open(request(suffix), timeout=20) as response:
@@ -98,7 +125,7 @@ jobs:
                   raise SystemExit("GitHub metadata network failure") from None
               require(len(raw) <= M, "Metadata exceeded 1 MiB")
               return json.loads(raw)
-          
+
           def inspect_engine(spec, run, jobs):
               ENGINE = spec["engine"]
               JOB = spec["job"]
@@ -110,11 +137,11 @@ jobs:
               require(len(matches) == 1, "Pinned browser job is absent or ambiguous")
               job = matches[0]
               require(job["run_id"] == RUN and job["head_sha"] == HEAD and job["run_attempt"] == 1
-                      and job["name"] == ("VirtIO RNG browser gate (" + ENGINE + ")")
+                      and job["name"] == ("OpenFGA .10 schema paths browser gate (" + ENGINE + ")")
                       and job["status"] == "completed" and job["conclusion"] == "failure",
                       "Pinned browser job is not the completed failed attempt")
               steps = {step["number"]: step for step in job["steps"]}
-              require(steps[8]["conclusion"] == "failure" and steps[9]["conclusion"] == "success",
+              require(steps[9]["conclusion"] == "failure" and steps[10]["conclusion"] == "success",
                       "Browser failure and evidence-upload outcomes differ")
               artifact = api("/actions/artifacts/" + str(AID))
               require(artifact["id"] == AID and artifact["name"] == spec["artifact_name"]
@@ -178,8 +205,8 @@ jobs:
               require(isinstance(guest, dict) and isinstance(capture, dict), "Invalid result evidence shape")
               rows = content["stream"].decode("utf-8").split("\n")
               require(rows[-1] == "", "Unterminated JSONL stream")
-              chunks, batches, byte_count, offset = 0, 0, 0, 0
-              texts, ends, receipts = [], [], []
+              chunks, batches, byte_count = 0, 0, 0
+              texts, receipts = [], []
               for row in rows[:-1]:
                   item = json.loads(row)
                   values = item.get("texts")
@@ -193,11 +220,9 @@ jobs:
                       require(isinstance(value, str), "Non-string captured chunk")
                       chunks += 1
                       byte_count += len(js_utf8(value))
-                      offset += len(value)
                       require(chunks <= 1000000 and byte_count <= 16 * M, "Captured stream exceeded bounds")
                       texts.append(value)
                   batches += 1
-                  ends.append(offset)
                   receipts.append(receipt)
               joined = "".join(texts)
               integrity = {
@@ -212,8 +237,10 @@ jobs:
               emit(ENGINE + ".source", {"run": RUN, "head": HEAD, "run_status_at_read": run["status"],
                               "run_conclusion_at_read": run["conclusion"], "job": JOB,
                               "job_conclusion": job["conclusion"], "job_started_at": job["started_at"],
-                              "job_completed_at": job["completed_at"], "browser_step": steps[8],
-                              "artifact": AID, "zip_bytes": SIZE, "zip_sha256": SHA,
+                              "job_completed_at": job["completed_at"], "browser_step": steps[9],
+                              "artifact": AID, "artifact_name": spec["artifact_name"], "zip_bytes": SIZE, "zip_sha256": SHA,
+                              "reviewed_runtime_source": RUNTIME, "reviewed_native_source": NATIVE,
+                              "source_gate_record_prefix": "OPENFGA10_BFS_BROWSER_GATE",
                               "artifact_members": len(names), "new_vm_execution": False})
               emit((ENGINE + ".integrity"), {**integrity, "chunks": chunks, "batches": batches,
                                         "encoded_chunk_bytes": byte_count, "first_received_at": receipts[0] if receipts else None,
@@ -225,60 +252,45 @@ jobs:
                    ["booted", "ready", "accepted", "checks", "statuses", "passes", "error", "source", "vm"]})
               emit((ENGINE + ".failure"), clipped(data.get("failure"), 2400))
               require(guest.get("checks") == 0 and guest.get("ready") is False, "Unexpected source acceptance state")
-              lines = joined.split("\n")
-              complete, offset = [], 0
-              for number, line in enumerate(lines[:-1], 1):
-                  offset += len(line) + 1
-                  index = bisect.bisect_left(ends, offset)
-                  require(index < len(receipts), "Line extends beyond recorded capture")
-                  complete.append({"line": number, "receivedAt": receipts[index], "text": line.rstrip("\r")})
-              relevant = re.compile(r"LAB[|_]|browser-(?:guest|single|openfga)|initdb|postgres|Guest diagnostic|Guest process|MemTotal|MemAvailable|Swap|utime_ticks|stime_ticks|wchan|Name:|State:|Pid:|PPid:|VmRSS|Threads:|Listening|ERROR|FATAL|panic|Error:|failed|timed out", re.I)
-              matched = [entry for entry in complete if relevant.search(entry["text"]) and "[browser-qemu]" not in entry["text"]]
-              tail = [entry for entry in complete[-240:] if "[browser-qemu]" not in entry["text"]][-80:]
-              entropy = [entry for entry in complete if re.search(r"random:|crng|virtio_rng|hwrng", entry["text"], re.I)]
-              replay_start = next((entry["line"] for entry in complete if "Guest diagnostic:" in entry["text"]), None)
-              prefix_matches = [entry for entry in matched if replay_start is not None and entry["line"] < replay_start]
-              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail +
-                          entropy[:8] + entropy[-8:] + prefix_matches[:96] + prefix_matches[-32:]}
-              emit((ENGINE + ".selection"), {"complete_lines": len(complete), "relevant_lines": len(matched),
-                                         "selected_lines": len(selected), "omitted_lines": len(complete) - len(selected),
-                                         "partial_final_line": bool(lines[-1]),
-                                         "first_recorded_diagnostic_header": replay_start,
-                                         "prefix_relevant_lines": len(prefix_matches),
-                                         "prefix_scope": "Rows before the first recorded Guest diagnostic header, if present; no independent RPC/pass count is inferred.",
-                                         "scope": "Host receipt completing each line; diagnostic tails may replay prior output. Full raw console follows."})
-              for number in sorted(selected):
-                  entry = selected[number]
-                  emit((ENGINE + ".line"), {"line": number, "receivedAt": entry["receivedAt"], **clipped(entry["text"])})
-              last_qemu = {}
-              for entry in complete:
-                  for match in re.finditer(r"\[browser-qemu\] (\{[^\r\n]*\})", entry["text"]):
-                      snapshot = json.loads(match[1])
-                      last_qemu[snapshot["core_id"]] = {"line": entry["line"], "receivedAt": entry["receivedAt"],
-                                                         "snapshot": snapshot}
-              for core in sorted(last_qemu):
-                  emit((ENGINE + ".last_qemu"), last_qemu[core])
-              console = content["console"]
-              require(len(console) <= 512 * 1024, "Console exceeds the fixed full-export bound")
-              encoded = base64.b64encode(console).decode("ascii")
-              emit((ENGINE + ".full_console"), {"bytes": len(console), "sha256": hashlib.sha256(console).hexdigest(),
-                                            "base64_characters": len(encoded), "parts": (len(encoded) + 4999) // 5000})
-              for offset in range(0, len(encoded), 5000):
-                  emit((ENGINE + ".console_part"), {"offset": offset, "data": encoded[offset:offset + 5000]})
-              emit((ENGINE + ".console_end"), {"base64_characters": len(encoded), "complete": True})
+              # Export all source bytes, including every batch timestamp and chunk boundary.
+              # This avoids treating replayed diagnostic tails as new RPCs or inferring progress
+              # from a filtered excerpt. No kernel/service/QEMU event is omitted by this reader.
+              require(len(content["console"]) <= 512 * 1024, "Console exceeds full-export bound")
+              require(sum(len(value) for value in content.values()) <= 512 * 1024,
+                      "One engine exceeds the fixed full-export byte bound")
+              emit(ENGINE + ".export_scope", {
+                  "all_source_bytes": True, "semantic_event_filter": False,
+                  "receipt_scope": "Each JSONL receivedAt is host receipt of one batch, not a guest event timestamp.",
+                  "replay_scope": "Captured diagnostic tails may repeat earlier messages; no fresh RPC/pass count is inferred.",
+                  "qemu_scope": "Per-worker snapshots are asynchronous; no sum of stale live/pending counters is inferred.",
+                  "files": ["console", "stream", "result"]})
+              for key in ["console", "stream", "result"]:
+                  raw = content[key]
+                  encoded = base64.b64encode(raw).decode("ascii")
+                  emit(ENGINE + ".full_" + key, {
+                      "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                      "base64_characters": len(encoded), "parts": (len(encoded) + 4999) // 5000})
+                  for offset in range(0, len(encoded), 5000):
+                      emit(ENGINE + "." + key + "_part",
+                           {"offset": offset, "data": encoded[offset:offset + 5000]})
+                  emit(ENGINE + "." + key + "_end",
+                       {"base64_characters": len(encoded), "complete": True})
               return {"engine": ENGINE, "source_job": JOB, "source_job_conclusion": job["conclusion"],
                       "checks": guest.get("checks"), "ready": guest.get("ready"), "data_integrity_valid": True}
-          
+
           require(os.environ.get("GITHUB_RUN_ATTEMPT") == "1", "Reader is limited to one attempt")
+          require(sum(spec["zip_bytes"] for spec in SPECS) <= 8 * M, "Pinned archives exceed 8 MiB")
+          require(sum(member[1] for spec in SPECS for member in spec["members"].values()) < 700000,
+                  "Pinned full-export members exceed the reviewed output budget")
           stop = uuid.uuid4().hex
           print("::stop-commands::" + stop, flush=True)
           try:
               run = api("/actions/runs/" + str(RUN))
               require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
-                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-virtio-rng-716b"
+                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-openfga10-bfs"
                       and run["status"] == "completed" and run["conclusion"] == "failure",
-                      "Expected the exact source run with the completed failed Chromium job")
-              jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
+                      "Expected the exact completed failed two-browser source run")
+              jobs = api("/actions/runs/" + str(RUN) + "/attempts/1/jobs?per_page=100")
               results = [inspect_engine(spec, run, jobs) for spec in SPECS]
               emit("finished", {"data_integrity_valid": True, "acceptance_verified": False,
                                 "source_run_conclusion": run["conclusion"], "engines": results,
