@@ -104,7 +104,7 @@ const summary = {
   maxVmStarts:1,startedAt,finishedAt:new Date().toISOString(),outcome,
   browser:result?.browser ?? null,
   twoRealSequencesPassed:validationError===undefined,
-  passes:result?.passes ?? [],guest:result?.guest ? {
+  passes:result?.passes ?? null,guest:result?.guest ? {
     booted:result.guest.booted,ready:result.guest.ready,accepted:result.guest.accepted,
     checks:result.guest.checks,error:result.guest.error ?? null,vm:result.guest.vm
   }:null,
@@ -115,7 +115,7 @@ const summary = {
   data:materialization.data,loader:materialization.loader,kernel:materialization.kernel,
   rootfsUnchanged:materialization.rootfsUnchanged,
   excerptScope:'Raw matching console lines may include diagnostic-tail replays; not fresh RPC results or an independent pass count.',
-  matchedObservationLines:observations.length,excerpt
+  matchedObservationLines:files[engine+'-console.txt']?.error ? null : observations.length,excerpt
 };
 await fs.writeFile(path.join(evidenceDirectory,engine+'-summary.json'),JSON.stringify(summary,null,2)+'\n');
 console.log('BOOTSTRAP_BROWSER_GATE '+JSON.stringify(summary));
