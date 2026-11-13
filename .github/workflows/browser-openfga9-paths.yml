@@ -198,7 +198,7 @@ jobs:
           job_name = "OpenFGA .9 schema paths browser gate (" + engine + ")"
           expected_job_id = None
           for observation in range(1, 7):
-              jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100", observation_deadline)
+              jobs = api("/actions/runs/" + str(current_run) + "/attempts/" + str(current_attempt) + "/jobs?per_page=100", observation_deadline)
               require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
               matching = [job for job in jobs["jobs"] if job["name"] == job_name]
               require(len(matching) == 1, "Expected exactly one current matrix job")
@@ -207,6 +207,7 @@ jobs:
                   **{key: job.get(key) for key in ["id", "name", "run_id", "head_sha", "status", "started_at"]},
                   "reported_job_run_attempt": job.get("run_attempt")})
               require(type(job["id"]) is int and job["id"] > 0 and job["run_id"] == current_run
+                      and ("run_attempt" not in job or job["run_attempt"] == current_attempt)
                       and job["head_sha"] == current_info["head_sha"],
                       "Current job immutable identity mismatch")
               if expected_job_id is None: expected_job_id = job["id"]
