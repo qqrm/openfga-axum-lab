@@ -20,7 +20,7 @@ jobs:
           EVIDENCE_ZIP_SHA256: '972dd8399bb8cc85f75412d824f14a02241dbec4bff7cb76afafa9edf98a9900'
         run: |
           python3 - <<'PY'
-          import collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
+          import base64, collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
           from urllib.parse import urlsplit
 
           REPO = "qqrm/openfga-axum-lab"
@@ -167,6 +167,12 @@ jobs:
                           raw = member("browser-wasm/" + engine + "-console.txt", 16 * 1024**2)
                           if raw is None:
                               continue
+                          require(len(raw) <= 128 * 1024, "Full console exceeded its emission budget")
+                          encoded = base64.b64encode(raw).decode("ascii")
+                          for offset in range(0, len(encoded), 4096):
+                              emit(engine + ".full_console_base64", {
+                                  "offset": offset, "total_encoded_chars": len(encoded),
+                                  "decoded_bytes": len(raw), "data": encoded[offset:offset + 4096]})
                           stream = member("browser-wasm/" + engine + "-stream.jsonl", 64 * 1024**2)
                           if stream is not None:
                               def js_utf8(value):
