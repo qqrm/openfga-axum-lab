@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      COMBINED_SOURCE_COMMIT: PENDING_REVIEWED_COMBINED_OPENFGA_8_SOURCE
+      COMBINED_SOURCE_COMMIT: 1f0954257956bda7c3c2715456ac8385cff32055
     steps:
       - name: Require a reviewed immutable source before checkout or build
         timeout-minutes: 1
