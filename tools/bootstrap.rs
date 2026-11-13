@@ -361,8 +361,7 @@ async fn provision(
         .await?;
         if decision.allowed {
             return Err(
-                "empty-store ownership Check did not deny; configuration was not published"
-                    .into(),
+                "empty-store ownership Check did not deny; configuration was not published".into(),
             );
         }
     }

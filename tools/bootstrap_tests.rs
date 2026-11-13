@@ -744,7 +744,8 @@ async fn empty_store_check_requires_deny_after_model_and_empty_read() -> ToolRes
         json!({"allowed": false, "resolution": ""}),
     ] {
         let stub = Stub::start().await?;
-        stub.enqueue("check", Reply::json(StatusCode::OK, body)).await;
+        stub.enqueue("check", Reply::json(StatusCode::OK, body))
+            .await;
         let directory = tempfile::tempdir()?;
         let model = model_path(directory.path());
         let path = directory.path().join("config.json");
@@ -753,10 +754,7 @@ async fn empty_store_check_requires_deny_after_model_and_empty_read() -> ToolRes
         validate_existing(&serde_json::from_slice(&published)?, MODEL_BYTES)?;
         {
             let requests = stub.state.requests.lock().await;
-            let paths: Vec<_> = requests
-                .iter()
-                .map(|(_, path, _)| path.as_str())
-                .collect();
+            let paths: Vec<_> = requests.iter().map(|(_, path, _)| path.as_str()).collect();
             assert_eq!(
                 paths,
                 [
@@ -812,7 +810,10 @@ async fn empty_store_check_failures_never_publish_or_retry() -> ToolResult {
         Reply::json(StatusCode::OK, json!({"allowed": "false"})),
         Reply::json(StatusCode::OK, json!({"allowed": null})),
         Reply::json(StatusCode::OK, json!({"allowed": false, "resolution": 42})),
-        Reply::json(StatusCode::OK, json!({"allowed": false, "unexpected": true})),
+        Reply::json(
+            StatusCode::OK,
+            json!({"allowed": false, "unexpected": true}),
+        ),
         Reply::json(StatusCode::CREATED, json!({"allowed": false})),
         Reply::json(StatusCode::TEMPORARY_REDIRECT, json!({"allowed": false})),
         Reply::json(StatusCode::INTERNAL_SERVER_ERROR, json!({"allowed": false})),
