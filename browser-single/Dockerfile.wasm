@@ -1,4 +1,0 @@
-# This browser-only derivative sets the explicit opt-in required by
-# browser-lab-entrypoint; the native image keeps fail-closed defaults.
-FROM authz-browser-one:ci
-ENV BROWSER_LAB_EPHEMERAL=yes
