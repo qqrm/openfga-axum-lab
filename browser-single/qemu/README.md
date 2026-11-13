@@ -87,11 +87,30 @@ yielded. That CI trace has no instance/GC counters, so their state at OOM is
 unknown. The final evidence ZIP SHA-256 is
 `caa925fa4dfe8e1d130e25213ec228749d121b6c27dfeb7762538ccbff915780`.
 
-The next candidate keeps this emulator implementation and pins the service/client
-tree to guest CPU 0. It tests whether avoiding duplicated compilation between
-workers helps; the single retained cache and reduced parallelism may also hurt.
-That configuration is unproven. No browser flags, forced GC or synthetic
-authorization results are part of either candidate.
+[Run 43358719645](https://github.com/qqrm/openfga-axum-lab/actions/runs/43358719645)
+used the same actual emulator pair and verified service/client affinity to CPU 0.
+Firefox again failed in `new WebAssembly.Module` during PostgreSQL initialization,
+after 119.996 seconds. Chromium reached its first tuple Write, which returned
+OpenFGA code 2000 / HTTP 400; neither browser completed acceptance. The final
+evidence ZIP SHA-256 is
+`339bad2536bfdd6d88ec4246fcafc6929366958bbb54e354912c4fc9c91f90df`.
+Pinning did not eliminate the observed Firefox failure and is removed from the
+guest wrapper. This is not a controlled comparison of CPU scheduling policies.
+
+The next build retains these admission, eviction and execution rules and adds
+passive per-worker counts for compilation, registration, detachment and delivered
+GC callbacks. Sparse snapshots and a failure-phase snapshot identify the
+remaining lifecycle pressure; an exception is rethrown unchanged. The counters
+retain no modules, instances or exported functions, and introduce no extra
+yield, timer or GC request. Encoded input bytes are not native executable-memory
+measurements. Other workers' last snapshots can be stale: cumulative counts
+give lower bounds, but live/pending counts from different times cannot be summed
+into a current global count. No browser flags, forced GC or synthetic
+authorization results are introduced.
+`registered_total` counts completed `addFunction` operations, not merely the
+earlier finalizer registration. A failed construction can leave those phase
+counts different. The diagnostic C postimage is
+`ccbd0ab09ada98440cda78456cdb2966443ec05d`.
 
 ## Build and provenance
 
@@ -112,12 +131,16 @@ target independently verifies and applies the patch. Focused native tests
 extract the actual patched accounting/eviction functions, exercise competing
 reservations at the limit, delayed GC accounting and FIFO eviction, and retain
 their result. They use native atomic/JS adapters and do not claim to execute
-the WASM engine or browser GC. Emscripten 4.0.10 is pinned
+the WASM engine or browser GC. Separate tests extract the actual JavaScript
+bodies, compile a real small WASM module, and check counter updates, error
+identity, failure phases and logger failure. Controlled finalizer callbacks in
+these tests do not establish browser GC timing or memory use.
+Emscripten 4.0.10 is pinned
 to the amd64 image digest
 `sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7`.
 The build exports only the emulator pair and provenance to
 `artifacts/browser-emulator`: file sizes/hashes in `build.json`, source patch,
-recipes, accounting tests/results, compiler version, build configuration,
+recipes, accounting and diagnostic tests/results, compiler version, build configuration,
 submodule commits and licenses.
 
 The upstream dependency stages still use package repositories and network

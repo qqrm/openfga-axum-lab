@@ -66,6 +66,8 @@ try {
       assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,15000);
       assert.equal(first.startupManifest.emulator_build?.max_instance_running_local,2048);
       assert.equal(first.startupManifest.emulator_build?.instance_reservation,'atomic_compare_exchange');
+      assert.equal(first.startupManifest.emulator_build?.runtime_diagnostics,'module_lifecycle_counters_v1');
+      assert.equal(first.startupManifest.emulator_build?.runtime_diagnostics_tests,'passed');
       assert.equal(first.ready,true);
       assert.equal(first.accepted,true);
       assert.deepEqual(first.statuses,expectedStatuses);

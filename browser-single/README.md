@@ -110,13 +110,14 @@ The launcher requests two sockets with one CPU each. With this kernel's ACPI
 disabled, SeaBIOS's legacy MP table otherwise exposes only one CPU from a
 two-CPU single socket. The guest verifies `online=0-1` before starting services;
 requested QEMU arguments alone do not prove that Linux discovered both CPUs.
-The next scheduling candidate pins the guest wrapper and its service/client
-descendants to CPU 0 with the retained image's `taskset`, then checks the actual
-`Cpus_allowed_list` before starting any service. Failure aborts startup. Both
-Linux CPUs stay online. This may reduce duplicated service code in the workers'
-separate JIT caches; it also concentrates the working set in one 2048-entry
-retained cache and limits service parallelism. Its benefit is unproven and must
-be measured by the unchanged real browser gate.
+The guest also verifies `Cpus_allowed_list=0-1` before starting any service.
+Ordinary scheduling across both CPUs is preserved. The previous candidate
+pinned all services and clients to CPU 0, but
+[run 43358719645](https://github.com/qqrm/openfga-axum-lab/actions/runs/43358719645)
+still failed in both browsers: Chromium's first tuple Write returned
+`validation_error`, and Firefox ran out of memory compiling a WASM module during
+PostgreSQL initialization. That pinning is removed. Successive CI runs are not
+a controlled performance comparison.
 
 The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
 self-dial from three seconds to a bounded 60 seconds. A separate bounded
@@ -139,7 +140,9 @@ not cache Check results or raise request deadlines.
 
 Compact HTTP and gRPC transport traces record request boundaries and timing
 without reading request bodies or changing the handler's context, writer,
-response or error. The browser build omits the upstream unary raw-payload
+response or error. Fixed labels distinguish an expired/canceled RPC context and
+the exact upstream resolver error that maps cancellation to `validation_error`;
+other error messages are not logged. The browser build omits the upstream unary raw-payload
 logger, which otherwise serializes payloads even when INFO is disabled.
 The unused Prometheus exporter is disabled; authentication, validation,
 authorization and timeout middleware remain in place.

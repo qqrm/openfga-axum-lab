@@ -156,6 +156,21 @@ later bottleneck, not the failed operation in that run. Firefox memory pressure
 also remains unresolved. No startup, OpenFGA request, application authorization
 or CLI deadline is increased by this reuse.
 
+[Run 43358719645, commit e2090100](https://github.com/qqrm/openfga-axum-lab/actions/runs/43358719645)
+tested this reuse together with service affinity to CPU 0. Chromium completed
+warmup in 16.890 seconds, self-dial in 180 ms and the real model write in
+4.030 seconds. The first tuple Write failed with code 2000 (`validation_error`),
+RPC 3.440 seconds / HTTP 3.710 seconds. The trace omits the status message and
+therefore does not prove that a tuple or model was invalid. In the pinned
+resolver, a context error from `NewAndValidate` is wrapped as `ErrInvalidModel`
+and then mapped to code 2000. The next diagnostic build labels only the two
+exact resolver messages for deadline/cancellation and the RPC context state;
+it never prints arbitrary error messages or changes the returned error.
+Service affinity is removed separately, restoring scheduling across both CPUs.
+Firefox again failed during PostgreSQL initialization; both browsers recorded
+zero acceptance passes. The final evidence ZIP SHA-256 is
+`339bad2536bfdd6d88ec4246fcafc6929366958bbb54e354912c4fc9c91f90df`.
+
 ## Build and check
 
 Run after approval for any paid CI use, from the repository root:
@@ -219,7 +234,7 @@ the pinned warmup model identity and budget, native warmup proof, same-request
 store/model TypeSystem reuse, native write-test proof, dependency checksum and
 executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.5`.
+`v1.10.3-browser-startup.6`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

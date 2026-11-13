@@ -22,14 +22,8 @@ if ! read -r online_cpus </sys/devices/system/cpu/online || [[ "$online_cpus" !=
     exit 1
 fi
 printf '[browser-guest] confirmed online CPUs: %s\n' "$online_cpus"
-# Keep the service tree on one CPU so its hot code need not populate both
-# workers' independent JIT caches. This is a scheduling candidate, not a memory
-# or performance guarantee. The other Linux CPU remains online.
-if ! taskset -pc 0 "$$" >/dev/null; then
-    printf '[browser-guest] could not set service CPU affinity\n'
-    printf 'LAB|boot-failed\n'
-    exit 1
-fi
+# Preserve ordinary scheduling across both CPUs. Pinning the service tree to
+# CPU 0 did not prevent Firefox's observed module-compilation OOM.
 allowed_cpus=
 while IFS=: read -r key value; do
     if [[ "$key" == Cpus_allowed_list ]]; then
@@ -37,12 +31,12 @@ while IFS=: read -r key value; do
         break
     fi
 done </proc/self/status
-if [[ "$allowed_cpus" != 0 ]]; then
-    printf '[browser-guest] expected service CPU affinity 0, got: %s\n' "$allowed_cpus"
+if [[ "$allowed_cpus" != 0-1 ]]; then
+    printf '[browser-guest] expected service CPU availability 0-1, got: %s\n' "$allowed_cpus"
     printf 'LAB|boot-failed\n'
     exit 1
 fi
-printf '[browser-guest] verified inherited service CPU affinity: %s\n' "$allowed_cpus"
+printf '[browser-guest] confirmed service CPU availability: %s\n' "$allowed_cpus"
 # The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.
 # Copy the verified browser-only OpenFGA build out of the read-only host mount.
 export BROWSER_LAB_OPENFGA_BINARY=/tmp/browser-lab-runtime/openfga

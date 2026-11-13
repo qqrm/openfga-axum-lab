@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 )
 
 // Only the browser build uses this bounded startup budget. RPC deadlines remain
@@ -52,7 +55,38 @@ func browserUnaryObserver(output *log.Logger) grpc.UnaryServerInterceptor {
 			// Match grpc-go's wire status for plain or wrapped context errors.
 			rpcStatus = status.FromContextError(err)
 		}
-		output.Printf("rpc_end method=%q status=%q duration_ms=%d", info.FullMethod, rpcStatus.Code().String(), time.Since(started).Milliseconds())
+		output.Printf("rpc_end method=%q status=%q duration_ms=%d context_state=%q error_kind=%q", info.FullMethod, rpcStatus.Code().String(), time.Since(started).Milliseconds(), browserRPCContextState(ctx.Err()), browserRPCErrorKind(err, rpcStatus))
 		return response, err
 	}
+}
+
+// These diagnostic labels never include an arbitrary context or status message.
+func browserRPCContextState(err error) string {
+	switch err {
+	case nil:
+		return "none"
+	case context.DeadlineExceeded:
+		return "deadline"
+	case context.Canceled:
+		return "canceled"
+	default:
+		return "other"
+	}
+}
+
+func browserRPCErrorKind(err error, rpcStatus *status.Status) string {
+	if err == nil {
+		return "none"
+	}
+	if rpcStatus.Code() == codes.Code(openfgav1.ErrorCode_validation_error) {
+		// Exact messages from the pinned resolver's ErrInvalidModel wrapping.
+		// Prefixes, suffixes and every other validation failure remain redacted.
+		switch rpcStatus.Message() {
+		case "invalid authorization model encountered: context deadline exceeded":
+			return "model_resolution_deadline"
+		case "invalid authorization model encountered: context canceled":
+			return "model_resolution_canceled"
+		}
+	}
+	return "other"
 }

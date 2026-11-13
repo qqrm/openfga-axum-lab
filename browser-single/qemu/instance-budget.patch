@@ -1,10 +1,111 @@
 diff --git a/tcg/wasm32.c b/tcg/wasm32.c
-index d60ce4b..8075f1b 100644
+index d60ce4b..ccbd0ab 100644
 --- a/tcg/wasm32.c
 +++ b/tcg/wasm32.c
-@@ -107,0 +108 @@ struct instance_info {
+@@ -42,8 +42,13 @@ EM_JS(int, instantiate_wasm, (), {
+-        const memory_v = new DataView(HEAP8.buffer);
+-
+-        const tb_ptr = memory_v.getInt32(Module.__wasm32_tb.tb_ptr_ptr, true);
+-        const export_vec_size = memory_v.getInt32(tb_ptr + 4, true);
+-        const export_vec_begin = tb_ptr + 4 + 4;
+-
+-        const counter_vec_size = memory_v.getInt32(export_vec_begin + export_vec_size, true);
+-        const counter_vec_begin = export_vec_begin + export_vec_size + 4;
++        const diagnostics = Module.__wasm32_tb.diagnostics;
++        diagnostics.attempted_total++;
++        let phase = "metadata";
++        let wasm_size = 0;
++        try {
++            const memory_v = new DataView(HEAP8.buffer);
++
++            const tb_ptr = memory_v.getInt32(Module.__wasm32_tb.tb_ptr_ptr, true);
++            const export_vec_size = memory_v.getInt32(tb_ptr + 4, true);
++            const export_vec_begin = tb_ptr + 4 + 4;
++
++            const counter_vec_size = memory_v.getInt32(export_vec_begin + export_vec_size, true);
++            const counter_vec_begin = export_vec_begin + export_vec_size + 4;
+@@ -51,10 +56,13 @@ EM_JS(int, instantiate_wasm, (), {
+-        const tmp_body_size = memory_v.getInt32(counter_vec_begin + counter_vec_size, true);
+-        const tmp_body_begin = counter_vec_begin + counter_vec_size + 4;
+-        const wasm_size = memory_v.getInt32(tmp_body_begin + tmp_body_size, true);
+-        const wasm_begin = tmp_body_begin + tmp_body_size + 4;
+-        const import_vec_size = memory_v.getInt32(wasm_begin + wasm_size, true);
+-        const import_vec_begin = wasm_begin + wasm_size + 4;
+-
+-        // Create a full copy of the bytes instead of a subarray view to fix Firefox compatibility
+-        // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1965217
+-        const wasmBytes = new Uint8Array(HEAP8.slice(wasm_begin, wasm_begin + wasm_size));
++            const tmp_body_size = memory_v.getInt32(counter_vec_begin + counter_vec_size, true);
++            const tmp_body_begin = counter_vec_begin + counter_vec_size + 4;
++            wasm_size = memory_v.getInt32(tmp_body_begin + tmp_body_size, true);
++            const wasm_begin = tmp_body_begin + tmp_body_size + 4;
++            const import_vec_size = memory_v.getInt32(wasm_begin + wasm_size, true);
++            const import_vec_begin = wasm_begin + wasm_size + 4;
++
++            diagnostics.encoded_bytes_total += wasm_size;
++            diagnostics.encoded_bytes_max = Math.max(diagnostics.encoded_bytes_max, wasm_size);
++            phase = "copy";
++            // Create a full copy of the bytes instead of a subarray view to fix Firefox compatibility
++            // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1965217
++            const wasmBytes = new Uint8Array(HEAP8.slice(wasm_begin, wasm_begin + wasm_size));
+@@ -62,15 +70,28 @@ EM_JS(int, instantiate_wasm, (), {
+-        var helper = {};
+-        for (var i = 0; i < import_vec_size / 4; i++) {
+-            helper[i] = wasmTable.get(memory_v.getInt32(import_vec_begin + i * 4, true));
+-        }
+-        const mod = new WebAssembly.Module(wasmBytes);
+-        const inst = new WebAssembly.Instance(mod, {
+-                "env": {
+-                    "buffer": wasmMemory,
+-                        },
+-                    "helper": helper,
+-                        });
+-
+-        Module.__wasm32_tb.inst_gc_registry.register(inst, "instance");
+-
+-        const fidx = addFunction(inst.exports.start, 'ii');
++            phase = "imports";
++            var helper = {};
++            for (var i = 0; i < import_vec_size / 4; i++) {
++                helper[i] = wasmTable.get(memory_v.getInt32(import_vec_begin + i * 4, true));
++            }
++            phase = "module";
++            const mod = new WebAssembly.Module(wasmBytes);
++            diagnostics.module_created_total++;
++            phase = "instance";
++            const inst = new WebAssembly.Instance(mod, {
++                    "env": {
++                        "buffer": wasmMemory,
++                            },
++                        "helper": helper,
++                            });
++
++            diagnostics.instance_created_total++;
++            phase = "register";
++            Module.__wasm32_tb.inst_gc_registry.register(inst, "instance");
++
++            phase = "add_function";
++            const fidx = addFunction(inst.exports.start, 'ii');
++            diagnostics.registered_total++;
++            if (diagnostics.registered_total % 1024 == 0) {
++                try {
++                    Module.__wasm32_tb.snapshot("registered", phase, wasm_size);
++                } catch (ignored) {}
++            }
+@@ -78 +99,7 @@ EM_JS(int, instantiate_wasm, (), {
+-        return fidx;
++            return fidx;
++        } catch (error) {
++            try {
++                Module.__wasm32_tb.snapshot("instantiate_throw", phase, wasm_size);
++            } catch (ignored) {}
++            throw error;
++        }
+@@ -94,0 +122 @@ EM_JS(void, remove_module_js, (), {
++        Module.__wasm32_tb.diagnostics.detached_total += remove_n;
+@@ -107,0 +136 @@ struct instance_info {
 +#define MAX_INSTANCE_RUNNING_LOCAL 2048
-@@ -146,0 +148,15 @@ static void check_instance_garbage_collected()
+@@ -146,0 +176,15 @@ static void check_instance_garbage_collected()
 +/* Reserve before compilation; detached instances still count until GC. */
 +static bool try_reserve_instance()
 +{
@@ -20,16 +121,43 @@ index d60ce4b..8075f1b 100644
 +    return false;
 +}
 +
-@@ -149 +165,2 @@ static void remove_instance_running_local()
+@@ -149 +193,2 @@ static void remove_instance_running_local()
 -    if (instance_pending_gc_local() > 0) {
 +    /* Detach early, leaving room for new compilations while GC is pending. */
 +    if (instance_running_local < MAX_INSTANCE_RUNNING_LOCAL) {
-@@ -174 +190,0 @@ static void add_instance_running_local(int fidx, void *tb_ptr)
+@@ -174 +218,0 @@ static void add_instance_running_local(int fidx, void *tb_ptr)
 -    qatomic_inc(&instance_alive_global);
-@@ -1336 +1352 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
+@@ -239,0 +284,24 @@ EM_JS(void, init_wasm32_js, (int tb_ptr_ptr, int cur_core_num, int to_remove_ins
++            // Numbers only; encoded bytes are input sizes, not native memory.
++            diagnostics: {
++                attempted_total: 0,
++                module_created_total: 0,
++                instance_created_total: 0,
++                registered_total: 0,
++                detached_total: 0,
++                gc_total: 0,
++                encoded_bytes_total: 0,
++                encoded_bytes_max: 0
++            },
++            snapshot: function(event, phase, wasm_size) {
++                try {
++                    err("[browser-qemu] " + JSON.stringify({
++                        event: event,
++                        phase: phase,
++                        core_id: Module.__wasm32_tb.cur_core_num,
++                        wasm_size: wasm_size,
++                        ...Module.__wasm32_tb.diagnostics
++                    }));
++                } catch (ignored) {
++                    // Diagnostics must never replace an emulator exception.
++                }
++            },
+@@ -244,0 +313 @@ EM_JS(void, init_wasm32_js, (int tb_ptr_ptr, int cur_core_num, int to_remove_ins
++                        Module.__wasm32_tb.diagnostics.gc_total++;
+@@ -1336 +1405 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 -        } else if (!can_add_instance()) {
 +        } else if (!try_reserve_instance()) {
-@@ -1338 +1353,0 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
+@@ -1338 +1406,0 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 -            check_instance_garbage_collected();
-@@ -1340,0 +1356 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
+@@ -1340,0 +1409 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 +            remove_instance_running_local();
