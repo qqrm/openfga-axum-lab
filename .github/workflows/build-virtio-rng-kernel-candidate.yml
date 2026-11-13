@@ -1,0 +1,174 @@
+name: Build VirtIO RNG kernel candidate
+on:
+  push:
+    branches: [diag/build-virtio-rng-kernel-716b]
+    paths: [.github/workflows/build-virtio-rng-kernel-candidate.yml]
+permissions:
+  contents: read
+concurrency:
+  group: build-virtio-rng-kernel-716b
+  cancel-in-progress: false
+jobs:
+  kernel:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/build-virtio-rng-kernel-716b'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      KERNEL_SOURCE_COMMIT: 716b77356dd4aab2747d4e37c5da723f3b7a764f
+      KERNEL_RECIPE_BLOB: aeb75dc1f17528939559ffe8f8dd15746c0c2a0e
+    steps:
+      - name: Check out the reviewed kernel source recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qqrm/openfga-axum-lab
+          ref: 716b77356dd4aab2747d4e37c5da723f3b7a764f
+          path: source
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Record exact source identity and check the changed scripts
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=artifacts/browser-virtio-rng-kernel-candidate
+          mkdir -p "$evidence"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(git -C source rev-parse HEAD)" = "$KERNEL_SOURCE_COMMIT"
+          test "$(git -C source rev-parse HEAD^)" = 037a3c22a5fab45a735a6bfea9792c68049a4b62
+          git -C source diff --exit-code HEAD --
+          node --check source/browser-single/repack-runtime.mjs
+          node --input-type=module --check < source/browser-single/pages/launcher.js
+          bash -n source/browser-single/prepare-kernel.sh
+          shellcheck --severity=style source/browser-single/prepare-kernel.sh
+          test "$(git -C source hash-object browser-single/Kernel.Dockerfile)" = "$KERNEL_RECIPE_BLOB"
+          printf '%s\n' '9232b9e18ddf0df757fe5b57c6db9c953f1fde06ae68537dfc7d78039454a7a7  source/browser-single/Kernel.Dockerfile' | sha256sum --check --status
+          cp source/browser-single/Kernel.Dockerfile "$evidence/Kernel.Dockerfile"
+          printf '%s\n' "$KERNEL_SOURCE_COMMIT" > "$evidence/source-commit.txt"
+          printf '%s\n' "$GITHUB_SHA" > "$evidence/workflow-commit.txt"
+      - name: Build only the VirtIO RNG kernel
+        id: build
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence=artifacts/browser-virtio-rng-kernel-candidate
+          set +e
+          timeout --signal=TERM --kill-after=15s 1180s \
+            docker buildx build --file source/browser-single/Kernel.Dockerfile \
+              --output "type=local,dest=$evidence/kernel" --progress plain source \
+              2>&1 | tee "$evidence/build.log"
+          statuses=("${PIPESTATUS[@]}")
+          printf '%s\n' "${statuses[0]}" > "$evidence/build.exit"
+          printf '%s\n' "${statuses[1]}" > "$evidence/log.exit"
+          test "${statuses[0]}" -eq 0 && test "${statuses[1]}" -eq 0
+      - name: Record output hashes and print the complete bounded config diff
+        if: always()
+        timeout-minutes: 2
+        shell: bash
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          SOURCE_CHECK_OUTCOME: ${{ steps.source.outcome }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          root = Path("artifacts/browser-virtio-rng-kernel-candidate")
+          root.mkdir(parents=True, exist_ok=True)
+          files = {}
+          for path in sorted(root.rglob("*")):
+              if path.is_symlink():
+                  raise SystemExit("Unexpected evidence symlink")
+              if path.is_file():
+                  digest = hashlib.sha256()
+                  with path.open("rb") as stream:
+                      while chunk := stream.read(1024 * 1024):
+                          digest.update(chunk)
+                  files[path.relative_to(root).as_posix()] = {
+                      "bytes": path.stat().st_size, "sha256": digest.hexdigest()}
+          expected = ["bzImage", "linux.config", "upstream.config",
+                      "ipc-baseline.config", "acpi.config.diff", "acpi-baseline.config", "rng.config.diff",
+                      "COPYING", "GPL-2.0", "SOURCE.txt", "build.sha256"]
+          missing = [name for name in expected if "kernel/" + name not in files]
+          config_path = root / "kernel/linux.config"
+          config = set(config_path.read_text().splitlines()) if config_path.exists() else set()
+          required = ["CONFIG_SYSVIPC=y", "CONFIG_SYSVIPC_SYSCTL=y", "CONFIG_IPC_NS=y",
+                      "CONFIG_ACPI=y", "CONFIG_X86_PM_TIMER=y", "CONFIG_HPET_TIMER=y",
+                      "CONFIG_HW_RANDOM=y", "CONFIG_HW_RANDOM_VIRTIO=y", "CONFIG_VIRTIO=y", "CONFIG_VIRTIO_PCI=y",
+                      "CONFIG_SMP=y", "CONFIG_X86_MPPARSE=y", "CONFIG_X86_LOCAL_APIC=y",
+                      "CONFIG_X86_IO_APIC=y", "CONFIG_HZ_PERIODIC=y", "CONFIG_HZ_100=y",
+                      "CONFIG_HZ=100", "# CONFIG_HIGH_RES_TIMERS is not set",
+                      "# CONFIG_NO_HZ_IDLE is not set", "# CONFIG_NO_HZ_FULL is not set"]
+          missing_config = [line for line in required if line not in config]
+          hash_path = root / "kernel/build.sha256"
+          recorded_hashes = {}
+          if hash_path.exists():
+              for line in hash_path.read_text().splitlines():
+                  digest, name = line.split()
+                  recorded_hashes[name] = digest
+          hash_names = ["bzImage", "linux.config", "ipc-baseline.config", "acpi.config.diff",
+                        "acpi-baseline.config", "rng.config.diff"]
+          hash_manifest_matches = set(recorded_hashes) == {"/out/" + name for name in hash_names} and all(
+              recorded_hashes["/out/" + name] == files.get("kernel/" + name, {}).get("sha256")
+              for name in hash_names)
+          diff_path = root / "kernel/acpi.config.diff"
+          diff = diff_path.read_bytes() if diff_path.exists() else b""
+          bounded_diff = bool(diff) and len(diff) <= 65536 and len(diff.splitlines()) <= 1024
+          baseline_path = root / "kernel/acpi-baseline.config"
+          baseline = baseline_path.read_bytes() if baseline_path.exists() else b""
+          candidate = config_path.read_bytes() if config_path.exists() else b""
+          old_flag = b"# CONFIG_HW_RANDOM_VIRTIO is not set\n"
+          new_flag = b"CONFIG_HW_RANDOM_VIRTIO=y\n"
+          baseline_matches = (len(baseline) == 75338 and
+              hashlib.sha256(baseline).hexdigest() == "fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8")
+          exactly_one_config_change = (baseline_matches and baseline.count(old_flag) == 1 and
+              candidate == baseline.replace(old_flag, new_flag))
+          rng_path = root / "kernel/rng.config.diff"
+          rng_diff = rng_path.read_bytes() if rng_path.exists() else b""
+          exact_rng_diff = rng_diff == b" HW_RANDOM_VIRTIO n -> y\n"
+          prior_acpi_diff_matches = (len(diff) == 1707 and hashlib.sha256(diff).hexdigest() ==
+              "84520b160eab472b1db6d6b028bd3f0bae19dfda5498d0d914699d514dfd388c")
+          success = (os.environ["BUILD_OUTCOME"] == "success" and os.environ["SOURCE_CHECK_OUTCOME"] == "success"
+                     and not missing and not missing_config and hash_manifest_matches and bounded_diff
+                     and exactly_one_config_change and exact_rng_diff and prior_acpi_diff_matches)
+          result = {
+              "scope": "kernel-only VirtIO RNG driver; no VM or service builds",
+              "source_commit": os.environ["KERNEL_SOURCE_COMMIT"],
+              "recipe_git_blob": os.environ["KERNEL_RECIPE_BLOB"],
+              "workflow_commit": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "linux_source": "830b3c68c1fb1e9176028d02ef86f3cf76aa2476",
+              "upstream_config_blob": "48dd1bf6191dd8d0d220358167f52dce36c69c45",
+              "build_outcome": os.environ["BUILD_OUTCOME"],
+              "source_checks_outcome": os.environ["SOURCE_CHECK_OUTCOME"],
+              "baseline_matches_previous_kernel_config": baseline_matches,
+              "exactly_one_config_change": exactly_one_config_change,
+              "exact_rng_config_diff": exact_rng_diff,
+              "previous_acpi_diff_preserved": prior_acpi_diff_matches,
+              "entropy_delivery_verified": False,
+              "missing_files": missing, "missing_config": missing_config,
+              "kernel_hash_manifest_matches": hash_manifest_matches,
+              "complete_diff_within_output_budget": bounded_diff,
+              "kernel_candidate_built": success, "browser_acceptance_verified": False,
+              "files": files}
+          (root / "metadata.json").write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps(result, sort_keys=True), flush=True)
+          if bounded_diff:
+              print("resolved_config_diff_begin")
+              for line in diff.decode("utf-8").splitlines():
+                  print("config_diff: " + line)
+              print("resolved_config_diff_end", flush=True)
+          if exact_rng_diff:
+              print("rng_config_diff: " + rng_diff.decode("ascii").strip(), flush=True)
+          if not success:
+              raise SystemExit("Kernel-only build or artifact validation failed; retain evidence")
+          PY
+      - name: Retain the kernel candidate and failure evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-virtio-rng-kernel-candidate
+          path: artifacts/browser-virtio-rng-kernel-candidate/
+          if-no-files-found: error
+          retention-days: 7
