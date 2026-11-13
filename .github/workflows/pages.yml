@@ -9,6 +9,11 @@ on:
       - browser-single/entrypoint.sh
       - browser-single/OpenFGA.Dockerfile
       - browser-single/openfga/**
+      - browser-single/bootstrap/**
+      - browser-single/Dockerfile
+      - tools/bootstrap.rs
+      - tools/bootstrap_tests.rs
+      - Cargo.lock
       - browser-single/qemu/**
       - browser-single/prepare-emulator.mjs
       - browser-single/*.test.mjs
@@ -32,6 +37,11 @@ on:
       - browser-single/entrypoint.sh
       - browser-single/OpenFGA.Dockerfile
       - browser-single/openfga/**
+      - browser-single/bootstrap/**
+      - browser-single/Dockerfile
+      - tools/bootstrap.rs
+      - tools/bootstrap_tests.rs
+      - Cargo.lock
       - browser-single/qemu/**
       - browser-single/prepare-emulator.mjs
       - browser-single/*.test.mjs
@@ -64,6 +74,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out the fixed native bootstrap source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 53ff85cfdd3d84c26ae432189790e1e0f72d61db
+          path: browser-bootstrap-source
+          persist-credentials: false
+      - name: Check out the reviewed bootstrap proof entrypoint fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: d7f7ead003c774e30584798adfde38afb854528d
+          path: browser-bootstrap-fixture
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: '1.99.1'
@@ -79,13 +101,27 @@ jobs:
             echo 'Obsolete shelter content must not be published' >&2
             exit 1
           fi
-          shellcheck browser-single/entrypoint.sh browser-single/prepare-pages.sh browser-single/prepare-kernel.sh browser-single/pages/guest.sh browser-single/openfga/build.sh browser-single/qemu/build.sh
+          shellcheck browser-single/entrypoint.sh browser-single/prepare-pages.sh browser-single/prepare-kernel.sh browser-single/pages/guest.sh browser-single/openfga/build.sh browser-single/qemu/build.sh browser-single/bootstrap/build.sh
           node --test browser-single/acceptance-protocol.test.mjs browser-single/startup-payload.test.mjs browser-single/runtime-errors.test.mjs browser-single/log-stream.test.mjs browser-single/qemu-budget.test.mjs
           printf '{"commit":"%s"}\n' "$GITHUB_SHA" > browser-output/revision.json
       - name: Build and regression-test the bounded OpenFGA startup adaptation
         run: |
           docker buildx build --file browser-single/OpenFGA.Dockerfile \
             --output type=local,dest=artifacts/browser-openfga .
+      - name: Build and prove the bootstrap-only executable with the real existing OpenFGA build
+        timeout-minutes: 60
+        run: bash browser-single/bootstrap/build.sh browser-bootstrap-source browser-bootstrap-fixture
+      - name: Clean only bootstrap-proof containers owned by this run
+        if: always()
+        timeout-minutes: 2
+        run: bash browser-single/bootstrap/build.sh --cleanup
+      - name: Retain the tested bootstrap executable and build record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-bootstrap
+          path: artifacts/browser-bootstrap/
+          if-no-files-found: error
+          retention-days: 7
       - name: Build and test bounded emulator retention with room for deferred GC
         run: bash browser-single/qemu/build.sh
       - name: Retain the exact emulator build and source records
@@ -128,6 +164,8 @@ jobs:
             artifacts/browser-wasm/
             artifacts/browser-log-transport/
             artifacts/browser-openfga/
+            artifacts/browser-bootstrap/
+            artifacts/browser-bootstrap-proof/
             artifacts/browser-emulator/
             browser-output/wasm/runtime-source.zip
             browser-output/wasm/runtime/derived-runtime.json
