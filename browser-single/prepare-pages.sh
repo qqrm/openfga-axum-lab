@@ -42,6 +42,7 @@ node browser-single/repack-runtime.mjs "$output/runtime" artifacts/browser-kerne
 node browser-single/prepare-emulator.mjs "$output/runtime" artifacts/browser-emulator
 node --check "$output/launcher.js"
 node --check "$output/runtime-errors.mjs"
+node --check "$output/log-stream.mjs"
 node --check "$output/runtime/out.js"
 node --check "$output/isolation-sw.js"
 bash -n "$output/guest.sh"

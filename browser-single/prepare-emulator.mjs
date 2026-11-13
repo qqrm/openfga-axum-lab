@@ -27,6 +27,10 @@ for (const [key,value] of Object.entries({
   instance_budget_tests:'passed',
   runtime_diagnostics:'module_lifecycle_counters_v1',
   runtime_diagnostics_tests:'passed',
+  i32_multiply_fix:'normalize_operands_before_widening_product',
+  multiply_emitter_preimage_blob:'3c85588be97b6c53a451e30c0593e8b433ede7b6',
+  multiply_emitter_postimage_blob:'d4078f5adac57d9ccc7d792773fff2ea65a33d6a',
+  i32_multiply_tests:'passed',
   instantiate_num:1500
 })) assert.equal(build[key],value,`Unexpected emulator ${key}`);
 assert.equal(await hashFile(path.join(buildDirectory,'upstream.Dockerfile')),build.converter_dockerfile_sha256,
@@ -36,10 +40,31 @@ for (const [key,name] of [
   ['builder_sha256','build.sh'],
   ['dockerfile_appendix_sha256','Dockerfile.appendix'],
   ['budget_test_sha256','check-instance-budget.mjs'],
-  ['diagnostics_test_sha256','check-runtime-diagnostics.mjs']
+  ['diagnostics_test_sha256','check-runtime-diagnostics.mjs'],
+  ['multiply_patch_sha256','i32-multiply.patch'],
+  ['multiply_test_sha256','check-i32-multiply.mjs']
 ]) {
   assert.equal(build[key],await hashFile(`browser-single/qemu/${name}`),`Changed emulator source: ${name}`);
   assert.equal(build[key],await hashFile(path.join(buildDirectory,name)),`Missing emulator source: ${name}`);
+}
+const proofDirectory = path.join(buildDirectory,'i32-multiply-proof');
+const proofBytes = await fs.readFile(path.join(proofDirectory,'summary.json'));
+assert.equal(digest(proofBytes),build.multiply_proof_sha256,'Changed multiplication proof');
+const proof = JSON.parse(proofBytes);
+assert.equal(proof.qemu_commit,build.qemu_commit);
+assert.equal(proof.source_blob,build.multiply_emitter_preimage_blob);
+assert.equal(proof.candidate_blob,build.multiply_emitter_postimage_blob);
+assert.equal(proof.header_blob,'37ad4b93c8ab721639e4cd8603a5dbbe69c07105');
+assert.equal(proof.patch_sha256,build.multiply_patch_sha256);
+assert.equal(proof.checker_sha256,build.multiply_test_sha256);
+assert.deepEqual(proof.baseline,{total:96,passed:54,failed:42});
+assert.deepEqual(proof.candidate,{total:96,passed:96,failed:0});
+assert.deepEqual((await fs.readdir(proofDirectory)).sort(),[...Object.keys(proof.files),'summary.json'].sort());
+for (const [name,expected] of Object.entries(proof.files)) {
+  assert(name === path.basename(name) && !['.','..','summary.json'].includes(name),'Unexpected proof path');
+  const bytes = await fs.readFile(path.join(proofDirectory,name));
+  assert.equal(bytes.length,expected.bytes,`Changed multiplication proof size: ${name}`);
+  assert.equal(digest(bytes),expected.sha256,`Changed multiplication proof file: ${name}`);
 }
 const names = ['out.js','qemu-system-x86_64.wasm'];
 assert.deepEqual(Object.keys(build.files ?? {}).sort(),[...names].sort());
@@ -65,13 +90,16 @@ await fs.mkdir(provenance,{recursive:true});
 for (const name of ['build.json','SOURCE.txt','instance-budget.patch','build.sh','Dockerfile.appendix',
   'check-instance-budget.mjs','instance-budget-tests.log',
   'check-runtime-diagnostics.mjs','runtime-diagnostics-tests.log',
+  'i32-multiply.patch','check-i32-multiply.mjs','i32-multiply-tests.log',
   'upstream.Dockerfile','emscripten-version.txt','config-host.mak','submodules.txt','COPYING','COPYING.LIB','LICENSE']) {
   await fs.copyFile(path.join(buildDirectory,name),path.join(provenance,name));
 }
+await fs.cp(proofDirectory,path.join(provenance,'i32-multiply-proof'),{recursive:true});
 const derivedPath = path.join(runtime,'derived-runtime.json');
 const derived = JSON.parse(await fs.readFile(derivedPath,'utf8'));
 derived.emulator_build = build;
 derived.changes.push('QEMU: evict at 2048 retained instances per CPU; reserve at most 15000 live instances globally');
 derived.changes.push('QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged');
+derived.changes.push('QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked');
 await fs.writeFile(derivedPath,JSON.stringify(derived,null,2)+'\n');
 console.log('Verified emulator pair overlaid; guest data, loader, arguments and kernel are unchanged');

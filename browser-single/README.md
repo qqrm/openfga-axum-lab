@@ -168,6 +168,32 @@ Both browsers are attempted independently, including Firefox after a Chromium
 failure. Any failed browser keeps the combined gate failed; neither a skipped
 browser nor a single successful execution satisfies it.
 
+The checker subscribes to each original serial/print log chunk before starting
+the VM. It retains a full transcript plus numbered JSONL chunks with host-receipt
+timestamps, independently of the UI's 120000-character tail. A sequence gap,
+failed delivery or the host capture limits of 16 MiB/100000 chunks prevent a
+passing gate. The browser delivery queue is bounded at 4 MiB/4096 chunks, and
+a host timer bounds the final drain to ten seconds before closing the browser.
+This repairs
+an observed evidence loss in
+[run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449):
+both browsers timed out after 1200 seconds; Chromium had not emitted the guest
+boot marker, and Firefox emitted it but never became ready. Firefox's UI tail
+contained only emulator counters, overwriting the earlier service logs. Its
+retained counters show continued registration, detachment and GC callbacks;
+they do not establish absent GC, OOM, or the service phase at timeout.
+The existing kernel `loglevel=0` token is replaced in place by `loglevel=7`,
+before the init-argument separator, so ordinary boot diagnostics remain visible.
+This log level is included in the observed VM configuration.
+
+The current QEMU candidate also corrects eight operand-normalization calls in
+the signed/unsigned 32-bit multiply emitters. Extracted upstream C emits real
+Wasm for the regression tests: the original fails 42 of 96 arithmetic cases,
+and the correction passes all 96, including signed negative operands, dirty
+upper bits and register aliases. This separately demonstrated instruction
+defect is not established as the cause of the preceding browser timeouts.
+See the [emulator source and proof](qemu/README.md).
+
 Prepare and check locally (Docker, pinned Rust, Node and Playwright required):
 
 ```sh

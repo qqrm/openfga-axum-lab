@@ -1,22 +1,23 @@
 import {consumeGuestLine, initialEvidence, requestVerification} from './acceptance-protocol.mjs';
 import {loadStartupPayload} from './startup-payload.mjs';
 import {observeRuntimeErrors} from './runtime-errors.mjs';
+import {createTranscriptLog, guestLogEvent} from './log-stream.mjs';
 
 const element = id => document.getElementById(id);
 let started = false;
 let failed = false;
 let input = [];
-let transcript = '';
 let serialLine = '';
 const decoder = new TextDecoder();
 const readable = new Set();
 const signals = new Set();
 window.labEvidence = initialEvidence('99f00cc');
+window.labLogSequence = 0;
 
-function log(text) {
-  transcript = (transcript + text).slice(-120000);
-  element('log').textContent = transcript;
-}
+const log = createTranscriptLog(text => { element('log').textContent = text; }, chunk => {
+  window.labLogSequence = chunk.sequence;
+  window.dispatchEvent(new CustomEvent(guestLogEvent, {detail: chunk}));
+});
 function phase(title, detail) {
   element('phase').textContent = title;
   element('detail').textContent = detail;
@@ -124,9 +125,15 @@ async function start() {
     if (smp < 0 || args[smp + 1] !== '1,sockets=1' || commandLine < 0) throw new Error('Unexpected reviewed CPU/kernel arguments');
     const kernelFlags = args[commandLine + 1].split(/\s+/);
     if (kernelFlags.filter(flag => flag === 'slub_debug=F').length !== 1) throw new Error('Missing reviewed allocator debug option');
+    const initSeparator = kernelFlags.indexOf('--');
+    if (kernelFlags.filter(flag => flag === 'loglevel=0').length !== 1 ||
+        initSeparator < 0 || kernelFlags.indexOf('loglevel=0') >= initSeparator) {
+      throw new Error('Unexpected reviewed kernel log-level option');
+    }
     args[smp + 1] = '2,sockets=2,cores=1,threads=1';
-    args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F').join(' ');
-    window.labEvidence.vm = {cpus:2, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false};
+    args[commandLine + 1] = kernelFlags.filter(flag => flag !== 'slub_debug=F')
+      .map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag).join(' ');
+    window.labEvidence.vm = {cpus:2, cpuTopology:'2,sockets=2,cores=1,threads=1', memoryMiB:512, slabDebug:false, kernelLogLevel:7};
     // Keep the explicit virtio NIC, attached only to an isolated guest hub.
     // Removing it makes this QEMU build enumerate default NICs and trap in
     // g_slist_sort_real. A hub has no host socket, proxy or external backend.

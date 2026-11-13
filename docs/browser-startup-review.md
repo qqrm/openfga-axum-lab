@@ -2,12 +2,54 @@
 
 Status of this review on 13 November 2026: **approved changes under validation;
 browser acceptance has not passed**. The latest completed browser gate below is
-commit `23562aca73d2356df493055aa51a3086d688d7e5`, run `43343577131`.
+commit `4ec7783a68b039b4452a1110e129f2630e99ba73`, run `43364708449`.
 The Browser preview run for the current PR head is the authority for later
 acceptance results. The initial proposal was prepared against PR #36 head
 `c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
 and additional checks. The PR has not been merged and Pages has not been
 published.
+
+## Latest retained result and next correction
+
+[Run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449)
+passed all build/preparation steps, then both real browser checks timed out at
+1200000 ms. Neither recorded an acceptance pass; Pages deployment was skipped.
+The evidence ZIP SHA-256 is
+`bfe38580b7659f98e3eb244a1c16490a0b65d0f06c03318b76614b9518393664`.
+
+| Engine | Retained observation |
+| --- | --- |
+| Chromium 158.0.8127.18 | No `LAB|boot` marker. Last visible output was early Linux boot, ending with `Memory KASLR using RDTSC...`; the kernel's `loglevel=0` prevents that line from locating the actual stopping point. No emulator lifecycle snapshots were retained. |
+| Firefox 159.0 | `booted=true`, `ready=false`, zero checks, no page error. Its 120000-character UI tail had overwritten the earlier service output. Last per-worker cumulative snapshots record at least 1080320 completed registrations and 1067008 delivered GC callbacks. These are cumulative event lower bounds from different times, not simultaneous live-memory measurements. |
+
+The next correction saves every original log chunk on the test host, with
+sequence numbers and receipt timestamps, then drains delivery before closing
+the browser. The UI keeps its bounded tail. Lost chunks or capture overflow
+fail the gate instead of silently discarding evidence. Nothing in log capture
+creates or interprets authorization responses.
+The launcher also replaces the existing kernel `loglevel=0` token in place with
+`loglevel=7`, before `--`, and records that level in VM provenance. This exposes
+ordinary boot messages that were suppressed after early parameter parsing.
+The last KASLR line is emitted through early printk, after the entropy mix;
+it does not identify a stall inside that calculation. This is a diagnostic
+configuration change, not a claim to repair the kernel startup failure.
+
+A separate upstream instruction defect is now reproduced: the Wasm emitters
+for 32-bit signed/unsigned widening multiplication read raw i64 register values.
+In particular, signed `-1 * 2` with clean upper bits produces an incorrect high
+half. The correction normalizes each operand to signed/unsigned i32 before the
+i64 multiplication: exactly eight additional emitter calls. Tests execute
+bytes emitted by extracted actual C functions; the original fails 42 of 96
+cases, the correction passes all 96. This does not attribute the browser
+timeouts to that defect or establish browser acceptance. Source context:
+[upstream PR 54](https://github.com/ktock/qemu-wasm/pull/54),
+[pinned emitter](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32/tcg-target.c.inc).
+
+The OpenFGA `.6` build and its request deadlines remain unchanged in this
+candidate. A separately tested one-shot TypeSystem transfer has not been
+included: the latest run provides no captured model-resolution deadline to
+justify it. The emulator's existing admission/retention policy also remains
+unchanged; the new trace does not demonstrate a missing GC or Module OOM.
 
 ## Diagnosis
 

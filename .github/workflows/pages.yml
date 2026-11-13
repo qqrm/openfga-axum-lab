@@ -78,7 +78,7 @@ jobs:
             exit 1
           fi
           shellcheck browser-single/entrypoint.sh browser-single/prepare-pages.sh browser-single/prepare-kernel.sh browser-single/pages/guest.sh browser-single/openfga/build.sh browser-single/qemu/build.sh
-          node --test browser-single/acceptance-protocol.test.mjs browser-single/startup-payload.test.mjs browser-single/runtime-errors.test.mjs
+          node --test browser-single/acceptance-protocol.test.mjs browser-single/startup-payload.test.mjs browser-single/runtime-errors.test.mjs browser-single/log-stream.test.mjs
           printf '{"commit":"%s"}\n' "$GITHUB_SHA" > browser-output/revision.json
       - name: Build and regression-test the bounded OpenFGA startup adaptation
         run: |

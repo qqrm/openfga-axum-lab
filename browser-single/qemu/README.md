@@ -1,10 +1,10 @@
-# Browser QEMU instance-budget candidate
+# Browser QEMU adaptations
 
 This directory rebuilds only `out.js` and `qemu-system-x86_64.wasm` from
 [QEMU-WASM `8604ed49`](https://github.com/ktock/qemu-wasm/tree/8604ed49a3cde392890b014a8d5a959c8a2fe72a),
 using the dependency stages and x86_64 build flags in
 [container2wasm `087c313`](https://github.com/container2wasm/container2wasm/blob/087c313479d51cdf255e4f28ded6ae7d8141297b/Dockerfile).
-The C patch separates the retained-function threshold from the total number of
+The instance-budget patch separates the retained-function threshold from the total number of
 live instances. At 2048 retained instances on a CPU, it detaches the oldest
 half before another compilation. The global backstop is the upstream value of
 15000 live instances,
@@ -13,6 +13,45 @@ compare/exchange reserves a slot before compilation, so simultaneous CPU
 workers cannot exceed that count. `INSTANTIATE_NUM=1500`, `MAX_EXEC_NUM=50000`
 and the TCI fallback remain unchanged. PostgreSQL, OpenFGA, Axum, the
 authorization model and request deadlines are outside this patch.
+
+A separate eight-line patch fixes signed and unsigned 32-bit widening
+multiplication in the Wasm emitter. It preserves the retention, diagnostic and
+execution rules above. This is an arithmetic correctness fix, not a demonstrated
+remedy for browser OOM or startup timeouts.
+
+## Multiplication correctness
+
+The pinned `tcg_wasm_out_mulu2_i32` and `tcg_wasm_out_muls2_i32` multiply raw
+64-bit register globals. TCG's i32 operands require only their low 32 bits:
+unsigned operands must be zero-extended, and signed operands sign-extended,
+before the widening multiply. For example, signed `0xffffffff × 2` with clean
+upper bits must produce high word `0xffffffff` and low word `0xfffffffe`;
+the upstream emitter produces high word `0x00000001` instead.
+
+`i32-multiply.patch` adds only `i32.wrap_i64` followed by the appropriate
+`i64.extend_i32_u/s` for each operand. These are the two multiplication hunks
+from [upstream PR #54](https://github.com/ktock/qemu-wasm/pull/54); no other
+proposed i32 or POPCNT changes are included. Ordinary guest 32-bit MUL/IMUL
+can reach these emitters without an optional CPUID feature.
+The emitter file's Git blob changes from
+`3c85588be97b6c53a451e30c0593e8b433ede7b6` to
+`d4078f5adac57d9ccc7d792773fff2ea65a33d6a`.
+
+`check-i32-multiply.mjs` verifies the actual patched file and header, reconstructs
+and verifies the pinned upstream preimage, then extracts the real C emitters,
+instruction helpers, register mapping and LEB encoder from both versions. A
+small native output-sink adapter records their bytes; Node executes those bytes
+as real Wasm with mutable i64 globals. BigInt references check 96 cases per
+version: signed/unsigned bounds, clean and polluted upper bits, and distinct,
+aliased, swapped and shared input registers. The upstream negative control
+produces 42 mismatches, including the clean-upper signed example; the candidate
+passes all 96. Other registers must remain unchanged. This checks the actual
+emitted arithmetic, not the full guest translator or a browser VM.
+
+The build retains full pinned/postimage sources, extracted C, emitted bytes,
+tiny Wasm modules, compiler logs and per-case results in `i32-multiply-proof/`.
+Its hashed summary lists every proof file. This archive is separate from the
+required two-pass browser acceptance gate.
 
 ## Evidence and limits
 
@@ -123,11 +162,11 @@ bash browser-single/qemu/build.sh /path/to/emulator-output
 ```
 
 The script downloads the pinned upstream Dockerfile into a temporary directory
-and verifies its SHA256, fetches the exact QEMU commit, verifies both backend
-source-file preimages, and checks the exact patched C postimage. Only
-`tcg/wasm32.c` may change.
+and verifies its SHA256, fetches the exact QEMU commit, verifies the backend and
+emitter/header preimages, and checks both exact patched C postimages. Only
+`tcg/wasm32.c` and `tcg/wasm32/tcg-target.c.inc` may change.
 A named `qemu-repo` build context supplies the clean checkout. The appended
-target independently verifies and applies the patch. Focused native tests
+target independently verifies and applies both patches. Focused native tests
 extract the actual patched accounting/eviction functions, exercise competing
 reservations at the limit, delayed GC accounting and FIFO eviction, and retain
 their result. They use native atomic/JS adapters and do not claim to execute
@@ -135,12 +174,14 @@ the WASM engine or browser GC. Separate tests extract the actual JavaScript
 bodies, compile a real small WASM module, and check counter updates, error
 identity, failure phases and logger failure. Controlled finalizer callbacks in
 these tests do not establish browser GC timing or memory use.
+The multiplication checker runs in both host preflight and the build target;
+an unchanged upstream emitter cannot pass as the candidate.
 Emscripten 4.0.10 is pinned
 to the amd64 image digest
 `sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7`.
 The build exports only the emulator pair and provenance to
-`artifacts/browser-emulator`: file sizes/hashes in `build.json`, source patch,
-recipes, accounting and diagnostic tests/results, compiler version, build configuration,
+`artifacts/browser-emulator`: file sizes/hashes in `build.json`, source patches,
+recipes, accounting, diagnostic and multiplication tests/results, compiler version, build configuration,
 submodule commits and licenses.
 
 The upstream dependency stages still use package repositories and network

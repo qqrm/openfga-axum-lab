@@ -27,7 +27,8 @@ printf '%s  %s\n' "$converter_dockerfile_sha256" "$context_dir/upstream.Dockerfi
     | sha256sum --check -
 cp -- "$script_dir/build.sh" "$script_dir/Dockerfile.appendix" \
     "$script_dir/instance-budget.patch" "$script_dir/check-instance-budget.mjs" \
-    "$script_dir/check-runtime-diagnostics.mjs" "$context_dir/"
+    "$script_dir/check-runtime-diagnostics.mjs" "$script_dir/i32-multiply.patch" \
+    "$script_dir/check-i32-multiply.mjs" "$context_dir/"
 cat "$context_dir/upstream.Dockerfile" "$context_dir/Dockerfile.appendix" > "$context_dir/Dockerfile"
 
 git -C "$source_dir" init -q
@@ -39,20 +40,27 @@ check_clean_source() {
     test "$(git -C "$source_dir" rev-parse HEAD)" = "$qemu_commit"
     test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6
     test "$(git -C "$source_dir" hash-object tcg/wasm32.h)" = 82ac7e37677a57b27c95e9efe4741a4cec39cf46
+    test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = 3c85588be97b6c53a451e30c0593e8b433ede7b6
+    test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.h)" = 37ad4b93c8ab721639e4cd8603a5dbbe69c07105
     git -C "$source_dir" diff --quiet --exit-code HEAD --
 }
 check_clean_source
-# Validate the exact edit before spending work on dependencies, then supply a
-# clean checkout. The Docker target independently validates and applies it.
+# Validate both exact edits before spending work on dependencies, then supply a
+# clean checkout. The Docker target independently validates and applies them.
 git -C "$source_dir" apply --unidiff-zero --check --whitespace=error-all "$context_dir/instance-budget.patch"
 git -C "$source_dir" apply --unidiff-zero --whitespace=error-all "$context_dir/instance-budget.patch"
-test "$(git -C "$source_dir" diff --name-only HEAD --)" = tcg/wasm32.c
+git -C "$source_dir" apply --check --whitespace=error-all "$context_dir/i32-multiply.patch"
+git -C "$source_dir" apply --whitespace=error-all "$context_dir/i32-multiply.patch"
+test "$(git -C "$source_dir" diff --name-only HEAD --)" = $'tcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc'
 test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = ccbd0ab09ada98440cda78456cdb2966443ec05d
+test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a
 grep -qx '#define MAX_INSTANCE_ALIVE 15000' "$source_dir/tcg/wasm32.c"
 grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' "$source_dir/tcg/wasm32.c"
 git -C "$source_dir" diff --check HEAD --
 node "$script_dir/check-instance-budget.mjs" "$source_dir/tcg/wasm32.c"
 node "$script_dir/check-runtime-diagnostics.mjs" "$source_dir/tcg/wasm32.c"
+node "$script_dir/check-i32-multiply.mjs" "$source_dir/tcg/wasm32/tcg-target.c.inc"
+git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/i32-multiply.patch"
 git -C "$source_dir" apply --unidiff-zero --reverse --whitespace=error-all "$context_dir/instance-budget.patch"
 check_clean_source
 
@@ -85,6 +93,10 @@ expected = {
     "instance_budget_tests": "passed",
     "runtime_diagnostics": "module_lifecycle_counters_v1",
     "runtime_diagnostics_tests": "passed",
+    "i32_multiply_fix": "normalize_operands_before_widening_product",
+    "multiply_emitter_preimage_blob": "3c85588be97b6c53a451e30c0593e8b433ede7b6",
+    "multiply_emitter_postimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "i32_multiply_tests": "passed",
     "instantiate_num": 1500,
     "browser_acceptance": "not_run",
 }
@@ -96,9 +108,28 @@ for key, name in [
     ("dockerfile_appendix_sha256", "Dockerfile.appendix"),
     ("budget_test_sha256", "check-instance-budget.mjs"),
     ("diagnostics_test_sha256", "check-runtime-diagnostics.mjs"),
+    ("multiply_patch_sha256", "i32-multiply.patch"),
+    ("multiply_test_sha256", "check-i32-multiply.mjs"),
 ]:
     assert metadata[key] == hashlib.sha256((source / name).read_bytes()).hexdigest(), key
     assert (output / name).read_bytes() == (source / name).read_bytes(), name
+proof_dir = output / "i32-multiply-proof"
+proof_bytes = (proof_dir / "summary.json").read_bytes()
+assert hashlib.sha256(proof_bytes).hexdigest() == metadata["multiply_proof_sha256"]
+proof = json.loads(proof_bytes)
+assert proof["qemu_commit"] == metadata["qemu_commit"]
+assert proof["source_blob"] == metadata["multiply_emitter_preimage_blob"]
+assert proof["candidate_blob"] == metadata["multiply_emitter_postimage_blob"]
+assert proof["header_blob"] == "37ad4b93c8ab721639e4cd8603a5dbbe69c07105"
+assert proof["patch_sha256"] == metadata["multiply_patch_sha256"]
+assert proof["checker_sha256"] == metadata["multiply_test_sha256"]
+assert proof["candidate"] == {"total": 96, "passed": 96, "failed": 0}
+assert proof["baseline"] == {"total": 96, "passed": 54, "failed": 42}
+assert {item.name for item in proof_dir.iterdir()} == set(proof["files"]) | {"summary.json"}
+for name, item in proof["files"].items():
+    assert Path(name).name == name and name not in (".", "..", "summary.json")
+    data = (proof_dir / name).read_bytes()
+    assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
 assert set(metadata["files"]) == {"out.js", "qemu-system-x86_64.wasm"}
 for name, expected_file in metadata["files"].items():
     data = (output / name).read_bytes()

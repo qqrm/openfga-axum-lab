@@ -3,17 +3,22 @@
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs i32-multiply.patch check-i32-multiply.mjs upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
     && test "$(git -C /qemu hash-object tcg/wasm32.h)" = 82ac7e37677a57b27c95e9efe4741a4cec39cf46 \
+    && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.c.inc)" = 3c85588be97b6c53a451e30c0593e8b433ede7b6 \
+    && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.h)" = 37ad4b93c8ab721639e4cd8603a5dbbe69c07105 \
     && git -C /qemu diff --quiet --exit-code HEAD -- \
     && git -C /qemu apply --unidiff-zero --check --whitespace=error-all /browser-qemu-input/instance-budget.patch \
     && git -C /qemu apply --unidiff-zero --whitespace=error-all /browser-qemu-input/instance-budget.patch \
+    && git -C /qemu apply --check --whitespace=error-all /browser-qemu-input/i32-multiply.patch \
+    && git -C /qemu apply --whitespace=error-all /browser-qemu-input/i32-multiply.patch \
     && git -C /qemu diff --check HEAD -- \
-    && test "$(git -C /qemu diff --name-only HEAD --)" = tcg/wasm32.c \
+    && test "$(git -C /qemu diff --name-only HEAD --)" = "$(printf 'tcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc')" \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = ccbd0ab09ada98440cda78456cdb2966443ec05d \
+    && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a \
     && grep -qx '#define MAX_INSTANCE_ALIVE 15000' /qemu/tcg/wasm32.c \
     && grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' /qemu/tcg/wasm32.c \
     && mkdir /emulator-out \
@@ -21,6 +26,8 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && cat /emulator-out/instance-budget-tests.log \
     && node /browser-qemu-input/check-runtime-diagnostics.mjs /qemu/tcg/wasm32.c > /emulator-out/runtime-diagnostics-tests.log \
     && cat /emulator-out/runtime-diagnostics-tests.log \
+    && node /browser-qemu-input/check-i32-multiply.mjs /qemu/tcg/wasm32/tcg-target.c.inc /emulator-out/i32-multiply-proof > /emulator-out/i32-multiply-tests.log \
+    && cat /emulator-out/i32-multiply-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
 
 # Same configure/compiler/linker flags as pinned converter lines 866-870.
@@ -66,6 +73,10 @@ metadata = {
     "instance_budget_tests": "passed",
     "runtime_diagnostics": "module_lifecycle_counters_v1",
     "runtime_diagnostics_tests": "passed",
+    "i32_multiply_fix": "normalize_operands_before_widening_product",
+    "multiply_emitter_preimage_blob": "3c85588be97b6c53a451e30c0593e8b433ede7b6",
+    "multiply_emitter_postimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "i32_multiply_tests": "passed",
     "instantiate_num": 1500,
     "change_kind": "separate_retention_and_live_instance_budget_candidate",
     "patch_sha256": digest("instance-budget.patch"),
@@ -73,6 +84,9 @@ metadata = {
     "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
     "budget_test_sha256": digest("check-instance-budget.mjs"),
     "diagnostics_test_sha256": digest("check-runtime-diagnostics.mjs"),
+    "multiply_patch_sha256": digest("i32-multiply.patch"),
+    "multiply_test_sha256": digest("check-i32-multiply.mjs"),
+    "multiply_proof_sha256": digest("i32-multiply-proof/summary.json"),
     "files": files,
     "browser_acceptance": "not_run",
 }
@@ -91,6 +105,12 @@ metadata = {
     "The original exception is rethrown unchanged. No additional GC/yield or "
     "Wasm object retention is introduced. Encoded sizes are input bytes, not "
     "native memory. Stale per-worker live estimates are not a global bound. "
+    "The separate i32-multiply.patch normalizes each i32 input before the "
+    "signed/unsigned widening multiply. Its exact C emitter postimage is "
+    "d4078f5adac57d9ccc7d792773fff2ea65a33d6a. Actual extracted C emitters "
+    "produce real Wasm for 96 candidate cases and the pinned upstream negative "
+    "control. Raw C, emitted bytes, Wasm and results are in i32-multiply-proof/. "
+    "This arithmetic defect is not established as the cause of browser failures. "
     "Native accounting and extracted-JS tests passed; this is an unproven browser memory-budget "
     "candidate; browser acceptance is required separately.\n"
     "Rebuild with browser-single/qemu/build.sh in qqrm/openfga-axum-lab.\n"
