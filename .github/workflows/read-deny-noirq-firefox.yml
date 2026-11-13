@@ -1,0 +1,252 @@
+name: Read completed Firefox deny/noirq evidence 43458558432
+on:
+  push:
+    branches: [diag/read-deny-noirq-firefox-43458558432]
+    paths: [.github/workflows/read-deny-noirq-firefox.yml]
+permissions:
+  actions: read
+concurrency:
+  group: read-deny-noirq-firefox-43458558432
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-deny-noirq-firefox-43458558432'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Read only the fixed completed Firefox job artifact
+        shell: bash
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, bisect, collections, hashlib, json, os, re, stat, tempfile, urllib.error, urllib.request, uuid, zipfile
+          from urllib.parse import urlsplit
+          
+          REPO = "qqrm/openfga-axum-lab"
+          RUN = 43458558432
+          JOB = 131999071574
+          HEAD = "bacae1042386782bb693798ec4d6c15d77c707e2"
+          AID = 14057020652
+          SIZE = 3692031
+          SHA = "a1149c5fd7370406db9235cc5c3193e79f7c3d6467043cfb5947db5d0a4d5206"
+          PREFIX = "source-candidate/artifacts/browser-wasm/"
+          MEMBERS = {
+              "console": ("firefox-console.txt", 352698, "78bc794b926358f925a39cd57f6ca921236741235dfe5e830b3360491b4ad62c"),
+              "stream": ("firefox-stream.jsonl", 798307, "94573da4cdb01519b7197319de6b83b9d33a6a4b2c309fa738278ccd6b2b957f"),
+              "result": ("firefox.json", 19500, "f28c29f832e411503fb7436d9a3c23e98e38759901639111fdbba88bbd090462"),
+          }
+          M = 1024 * 1024
+          
+          def require(ok, message):
+              if not ok:
+                  raise SystemExit(message)
+          
+          used = 0
+          def emit(label, value):
+              global used
+              line = json.dumps({"label": label, "value": value}, ensure_ascii=True, separators=(",", ":"))
+              require(len(line) <= 12000, "Output record exceeded 12000 bytes")
+              used += len(line) + 1
+              require(used <= M, "Output exceeded 1 MiB")
+              print(line, flush=True)
+          
+          def clipped(value, limit=1800):
+              value = str(value)
+              return {"text": value[:limit], "characters": len(value), "truncated": len(value) > limit}
+          
+          def js_utf8(value):
+              return value.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          
+          opener = urllib.request.build_opener(NoRedirect())
+          def request(suffix):
+              return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
+                  "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "retained-firefox-deny-noirq-reader"})
+          
+          def api(suffix):
+              try:
+                  with opener.open(request(suffix), timeout=20) as response:
+                      raw = response.read(M + 1)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit("GitHub metadata HTTP " + str(error.code)) from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit("GitHub metadata network failure") from None
+              require(len(raw) <= M, "Metadata exceeded 1 MiB")
+              return json.loads(raw)
+          
+          require(os.environ.get("GITHUB_RUN_ATTEMPT") == "1", "Reader is limited to one attempt")
+          stop = uuid.uuid4().hex
+          print("::stop-commands::" + stop, flush=True)
+          try:
+              run = api("/actions/runs/" + str(RUN))
+              require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
+                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-deny-noirq-543a",
+                      "Source run identity differs")
+              require((run["status"] == "in_progress" and run["conclusion"] is None) or
+                      (run["status"] == "completed" and run["conclusion"] == "failure"),
+                      "Only an active sibling or the final failed run is accepted")
+              jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
+              matches = [job for job in jobs["jobs"] if job["id"] == JOB]
+              require(len(matches) == 1, "Pinned Firefox job is absent or ambiguous")
+              job = matches[0]
+              require(job["run_id"] == RUN and job["head_sha"] == HEAD and job["run_attempt"] == 1
+                      and job["name"] == "Bootstrap deny/noirq browser gate (firefox)"
+                      and job["status"] == "completed" and job["conclusion"] == "failure",
+                      "Pinned Firefox job is not the completed failed attempt")
+              steps = {step["number"]: step for step in job["steps"]}
+              require(steps[8]["conclusion"] == "failure" and steps[9]["conclusion"] == "success",
+                      "Browser failure and evidence-upload outcomes differ")
+              artifact = api("/actions/artifacts/" + str(AID))
+              require(artifact["id"] == AID and artifact["name"] == "browser-deny-noirq-firefox"
+                      and not artifact["expired"] and artifact["workflow_run"]["id"] == RUN
+                      and artifact["workflow_run"]["head_sha"] == HEAD and artifact["size_in_bytes"] == SIZE
+                      and artifact["digest"] == "sha256:" + SHA, "Pinned artifact identity differs")
+              try:
+                  opener.open(request("/actions/artifacts/" + str(AID) + "/zip"), timeout=20)
+                  raise SystemExit("Expected artifact HTTP 302")
+              except urllib.error.HTTPError as error:
+                  require(error.code == 302, "Artifact redirect was not HTTP 302")
+                  location = error.headers.get("Location", "")
+                  error.close()
+              target = urlsplit(location)
+              host = target.hostname or ""
+              require(target.scheme == "https" and target.port in (None, 443)
+                      and target.username is None and target.password is None
+                      and (host.endswith(".blob.core.windows.net") or host.endswith(".actions.githubusercontent.com")),
+                      "Unexpected artifact storage host")
+              with tempfile.TemporaryFile() as archive:
+                  actual, count = hashlib.sha256(), 0
+                  try:
+                      # No GitHub Authorization header is forwarded to artifact storage.
+                      with opener.open(urllib.request.Request(location), timeout=30) as response:
+                          while block := response.read(M):
+                              count += len(block)
+                              require(count <= SIZE, "Archive exceeded pinned size")
+                              actual.update(block)
+                              archive.write(block)
+                  except (urllib.error.URLError, TimeoutError):
+                      raise SystemExit("Artifact storage network failure") from None
+                  require(count == SIZE and actual.hexdigest() == SHA, "Archive size/SHA mismatch")
+                  archive.seek(0)
+                  with zipfile.ZipFile(archive) as package:
+                      names = package.namelist()
+                      require(len(names) <= 10000 and len(names) == len(set(names)), "Duplicate or excessive ZIP members")
+                      require(all(not name.startswith("/") and "\\" not in name and
+                                  all(part not in ("", ".", "..") for part in name.rstrip("/").split("/"))
+                                  for name in names), "Unsafe ZIP member name")
+                      content = {}
+                      for key, (suffix, size, sha) in MEMBERS.items():
+                          name = PREFIX + suffix
+                          info = package.getinfo(name)
+                          mode = info.external_attr >> 16
+                          require(not info.is_dir() and not stat.S_ISLNK(mode)
+                                  and stat.S_IFMT(mode) in (0, stat.S_IFREG)
+                                  and not (info.flag_bits & 1) and info.file_size == size and size <= 2 * M,
+                                  "Pinned regular member shape differs: " + name)
+                          with package.open(info) as source:
+                              raw = source.read(size + 1)
+                          require(len(raw) == size and hashlib.sha256(raw).hexdigest() == sha,
+                                  "Pinned member bytes differ: " + name)
+                          content[key] = raw
+                          emit("member", {"name": name, "bytes": size, "sha256": sha})
+              data = json.loads(content["result"])
+              require(isinstance(data, dict) and data.get("engine") == "firefox" and data.get("passed") is False,
+                      "Expected a failed Firefox result")
+              guest = data.get("guest") or {}
+              capture = data.get("logCapture") or {}
+              require(isinstance(guest, dict) and isinstance(capture, dict), "Invalid result evidence shape")
+              rows = content["stream"].decode("utf-8").split("\n")
+              require(rows[-1] == "", "Unterminated JSONL stream")
+              chunks, batches, byte_count, offset = 0, 0, 0, 0
+              texts, ends, receipts = [], [], []
+              for row in rows[:-1]:
+                  item = json.loads(row)
+                  values = item.get("texts")
+                  receipt = item.get("receivedAt")
+                  require(type(item.get("firstSequence")) is int and item["firstSequence"] == chunks + 1
+                          and isinstance(values, list) and 0 < len(values) <= 1024,
+                          "Invalid captured batch sequence")
+                  require(isinstance(receipt, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", receipt),
+                          "Invalid host receipt timestamp")
+                  for value in values:
+                      require(isinstance(value, str), "Non-string captured chunk")
+                      chunks += 1
+                      byte_count += len(js_utf8(value))
+                      offset += len(value)
+                      require(chunks <= 1000000 and byte_count <= 16 * M, "Captured stream exceeded bounds")
+                      texts.append(value)
+                  batches += 1
+                  ends.append(offset)
+                  receipts.append(receipt)
+              joined = "".join(texts)
+              integrity = {
+                  "format_matches": capture.get("format") == "browser-lab-log-batches-v1",
+                  "reconstructed_console_equal": js_utf8(joined) == content["console"],
+                  "metadata_counts_match": [capture.get(k) for k in ["chunks", "batches", "bytes"]] ==
+                                           [chunks, batches, byte_count],
+                  "recorded_cutoff_matches": capture.get("expectedSequence") == chunks,
+                  "recorded_complete": capture.get("complete") is True,
+                  "recorded_error_absent": capture.get("error") is None,
+              }
+              emit("source", {"run": RUN, "head": HEAD, "run_status_at_read": run["status"],
+                              "run_conclusion_at_read": run["conclusion"], "job": JOB,
+                              "job_conclusion": job["conclusion"], "job_started_at": job["started_at"],
+                              "job_completed_at": job["completed_at"], "browser_step": steps[8],
+                              "artifact": AID, "zip_bytes": SIZE, "zip_sha256": SHA,
+                              "artifact_members": len(names), "new_vm_execution": False})
+              emit("firefox.integrity", {**integrity, "chunks": chunks, "batches": batches,
+                                        "encoded_chunk_bytes": byte_count, "first_received_at": receipts[0] if receipts else None,
+                                        "last_received_at": receipts[-1] if receipts else None})
+              require(all(integrity.values()), "Complete captured-console validation failed")
+              emit("firefox.result", {k: data.get(k) for k in
+                   ["engine", "browser", "passed", "passes", "startedAt", "finishedAt", "pageErrors", "logCapture"]})
+              emit("firefox.guest", {k: guest.get(k) for k in
+                   ["booted", "ready", "accepted", "checks", "statuses", "passes", "error", "source", "vm"]})
+              emit("firefox.failure", clipped(data.get("failure"), 2400))
+              require(guest.get("checks") == 0 and guest.get("ready") is False, "Unexpected source acceptance state")
+              lines = joined.split("\n")
+              complete, offset = [], 0
+              for number, line in enumerate(lines[:-1], 1):
+                  offset += len(line) + 1
+                  index = bisect.bisect_left(ends, offset)
+                  require(index < len(receipts), "Line extends beyond recorded capture")
+                  complete.append({"line": number, "receivedAt": receipts[index], "text": line.rstrip("\r")})
+              relevant = re.compile(r"LAB[|_]|browser-(?:guest|single|openfga)|initdb|postgres|Guest diagnostic|Guest process|MemTotal|MemAvailable|Swap|utime_ticks|stime_ticks|wchan|Name:|State:|Pid:|PPid:|VmRSS|Threads:|Listening|ERROR|FATAL|panic|Error:|failed|timed out", re.I)
+              matched = [entry for entry in complete if relevant.search(entry["text"]) and "[browser-qemu]" not in entry["text"]]
+              tail = [entry for entry in complete[-240:] if "[browser-qemu]" not in entry["text"]][-80:]
+              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail}
+              emit("firefox.selection", {"complete_lines": len(complete), "relevant_lines": len(matched),
+                                         "selected_lines": len(selected), "omitted_lines": len(complete) - len(selected),
+                                         "partial_final_line": bool(lines[-1]),
+                                         "scope": "Host receipt completing each line; diagnostic tails may replay prior output. Full raw console follows."})
+              for number in sorted(selected):
+                  entry = selected[number]
+                  emit("firefox.line", {"line": number, "receivedAt": entry["receivedAt"], **clipped(entry["text"])})
+              last_qemu = {}
+              for entry in complete:
+                  for match in re.finditer(r"\[browser-qemu\] (\{[^\r\n]*\})", entry["text"]):
+                      snapshot = json.loads(match[1])
+                      last_qemu[snapshot["core_id"]] = {"line": entry["line"], "receivedAt": entry["receivedAt"],
+                                                         "snapshot": snapshot}
+              for core in sorted(last_qemu):
+                  emit("firefox.last_qemu", last_qemu[core])
+              console = content["console"]
+              require(len(console) <= 512 * 1024, "Console exceeds the fixed full-export bound")
+              encoded = base64.b64encode(console).decode("ascii")
+              emit("firefox.full_console", {"bytes": len(console), "sha256": hashlib.sha256(console).hexdigest(),
+                                            "base64_characters": len(encoded), "parts": (len(encoded) + 4999) // 5000})
+              for offset in range(0, len(encoded), 5000):
+                  emit("firefox.console_part", {"offset": offset, "data": encoded[offset:offset + 5000]})
+              emit("firefox.console_end", {"base64_characters": len(encoded), "complete": True})
+              emit("finished", {"data_integrity_valid": True, "acceptance_verified": False,
+                                "source_job_conclusion": job["conclusion"], "output_bytes_before_final": used})
+          finally:
+              print("::" + stop + "::", flush=True)
+          PY
