@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Authorization Lab · Browser Linux experiment</title>
+  <link rel="stylesheet" href="site.css">
+  <script type="module" src="launcher.js"></script>
+</head>
+<body>
+<header><a href="../">Authorization Lab</a><span>EXPERIMENTAL · LOCAL TO THIS TAB</span></header>
+<main>
+  <h1>PostgreSQL + OpenFGA + Axum, inside your browser</h1>
+  <p>This runs the real Linux binaries under QEMU/WebAssembly with the pinned Lakekeeper authorization model. PostgreSQL and Axum are unchanged. A browser build of OpenFGA allows more time for its internal startup connection; permission checks keep their original deadlines. All accounts and data are synthetic.</p>
+  <aside><strong>Explicit opt-in:</strong> starting downloads about 625 MiB and can use several GiB of RAM. Startup and checks may be slow. Use a desktop browser. Closing or resetting this tab discards its data. Do not enter real credentials or production data.</aside>
+  <p id="isolation" role="status">Preparing browser isolation…</p>
+  <div class="buttons">
+    <button id="start" disabled>Start real browser lab</button>
+    <button id="verify" disabled>Run grant / revoke check again</button>
+    <button id="reset">Stop and reset tab</button>
+  </div>
+  <section class="panel" aria-live="polite">
+    <h2 id="phase">Not started</h2>
+    <p id="detail">No VM or backend runs until you press Start.</p>
+    <output id="result">No authorization test has run in this tab.</output>
+  </section>
+  <section class="panel">
+    <h2>What the check actually does</h2>
+    <p>The guest invokes the existing <code>lab-tool acceptance</code> against its own Axum HTTP server: denied read → owner grants access → permitted read → owner revokes access → denied read. The expected real response sequence is <code>403 → 204 → 200 → 204 → 403</code>.</p>
+    <p>A completed download or boot is not a passing authorization test. This page reports success only after the native acceptance program completes successfully inside the guest.</p>
+    <p>This is a minimal in-browser acceptance console, not the full interactive catalog UI or a production deployment. The complete UI remains available in the private Codespaces/local Docker lab linked from the main page.</p>
+  </section>
+  <details class="panel"><summary>Guest diagnostics</summary><pre id="log" aria-label="Guest console output"></pre></details>
+  <footer>Runtime source: <code>99f00cc</code> · <a href="runtime-manifest.json">Original artifact</a> · <a href="runtime/derived-runtime.json">Kernel rebuild and checksums</a> · <a href="runtime/startup-manifest.json">Startup build and checksums</a> · <a href="runtime/openfga-build/SOURCE.txt">OpenFGA adaptation source</a> · <a href="https://github.com/qqrm/openfga-axum-lab/tree/main/browser-single">Source and limitations</a></footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+--- a/tcg/wasm32/tcg-target.c.inc
++++ b/tcg/wasm32/tcg-target.c.inc
+@@ -3730,7 +3730,10 @@
+         break;
+     case INDEX_op_mb:
+         tcg_tci_out_op_v(s, opc);
+-        tcg_wasm_out8(s, 0x01); // nop
++        /* atomic.fence: full ordering, as in the TCI smp_mb() path. */
++        tcg_wasm_out8(s, 0xfe);
++        tcg_wasm_out8(s, 0x03);
++        tcg_wasm_out8(s, 0x00);
+         break;
+     case INDEX_op_extract_i32:
+         tcg_out_extract_i32(s, opc, args[0], args[1], args[2], args[3]);
