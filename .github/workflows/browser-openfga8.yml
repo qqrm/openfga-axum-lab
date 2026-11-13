@@ -51,9 +51,20 @@ jobs:
           # Fill both artifacts only from one completed successful combined native run.
           # Missing pins stop before artifact reads, browser installation or VM startup.
           native = {
-            "run": None, "head": None,
-            "bootstrap": {"artifact": None, "name": "browser-bootstrap-openfga8", "bytes": None, "sha256": None},
-            "evidence": {"artifact": None, "name": "browser-openfga8-native-evidence", "bytes": None, "sha256": None}
+            "run": 43445129977,
+            "head": "21f2e02551cf75675a9031a20da0d4acdb4f4899",
+            "bootstrap": {
+              "artifact": 14047378538,
+              "name": "browser-bootstrap-openfga8",
+              "bytes": 3306734,
+              "sha256": "f4eb84008b06c01c7457f6ed8c6b2c5675469c726dcaa7eb0f1cfacaa117146e"
+            },
+            "evidence": {
+              "artifact": 14048022132,
+              "name": "browser-openfga8-native-evidence",
+              "bytes": 23967145,
+              "sha256": "d7277d2cbca89d6c522b22f574d20dfc1cecadab64f2bd04480d3e9d61846dca"
+            }
           }
           if (type(native["run"]) is not int or native["run"] <= 0
               or not isinstance(native["head"], str) or re.fullmatch(r"[0-9a-f]{40}", native["head"]) is None
