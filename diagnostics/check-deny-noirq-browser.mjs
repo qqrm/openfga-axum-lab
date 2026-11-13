@@ -6,14 +6,17 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 
-const sourceCommit = 'b267fefdba375395d496e6d89413786c048c70d2';
+const sourceCommit = '543a2af2ddabd48002ebc57bebf95694c95438d7';
 const engine = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(engine),'Expected one allowlisted engine');
 const source = path.resolve('source-candidate');
-const evidenceDirectory = path.resolve('artifacts/openfga8-browser-gate');
+const evidenceDirectory = path.resolve('artifacts/deny-noirq-browser-gate');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const materialization = JSON.parse(await fs.readFile(path.join(evidenceDirectory,'materialization.json'),'utf8'));
 assert.equal(materialization.sourceCommit,sourceCommit);
+assert.equal(materialization.configurationExperiment.bootstrap,'one_real_higher_consistency_ownership_deny');
+assert.equal(materialization.configurationExperiment.kernelIRQ,'acpi=noirq');
+assert.equal(materialization.configurationExperiment.inverseByteComparison,true);
 const head = spawnSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'});
 assert.equal(head.status,0);
 assert.equal(head.stdout.trim(),sourceCommit);
@@ -46,7 +49,7 @@ await fs.writeFile(path.join(evidenceDirectory,engine+'-checker-transform.json')
 // A late local timestamp must never manufacture another 30-minute budget.
 const jobTiming = JSON.parse(await fs.readFile(path.resolve('prepared/job-timing.json'),'utf8'));
 assert.equal(jobTiming.source,'GitHub Actions current job API');
-assert.equal(jobTiming.name,'OpenFGA .8 browser gate ('+engine+')');
+assert.equal(jobTiming.name,'Bootstrap deny/noirq browser gate ('+engine+')');
 assert.equal(jobTiming.run_id,Number(process.env.GITHUB_RUN_ID));
 assert.equal(jobTiming.run_attempt,1);
 assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');
@@ -66,10 +69,10 @@ if (!jobBudget.launchPermitted) {
   const stopped = {phase:'preflight_stop',engine,sourceCommit,checkerLaunched:false,
     passes:null,reason:'Insufficient or unverified remaining Actions job budget',jobBudget};
   await fs.writeFile(path.join(evidenceDirectory,engine+'-preflight-stop.json'),JSON.stringify(stopped,null,2)+'\n');
-  console.log('OPENFGA8_BROWSER_GATE '+JSON.stringify(stopped));
+  console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify(stopped));
   throw new Error('Refusing to start a VM more than four minutes after the Actions job began');
 }
-console.log('OPENFGA8_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
+console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
 const startedAt = new Date().toISOString();
 const child = spawn(process.execPath,[copiedPath],{cwd:source,env:process.env,stdio:'inherit'});
 const outcome = await new Promise(resolve=>{
@@ -117,6 +120,8 @@ try {
   assert.deepEqual(result.guest.startupManifest.bootstrap_build,materialization.bootstrapBuild);
   assert.deepEqual(result.guest.startupManifest.files['runtime/openfga'],materialization.openfgaBinary);
   assert.deepEqual(result.guest.startupManifest.files['runtime/bootstrap'],materialization.nativeVerification.bootstrapBinary);
+  assert.deepEqual(result.guest.startupManifest.files['guest.sh'],materialization.configurationExperiment.guest);
+  assert.deepEqual(result.guest.startupManifest.files['entrypoint.sh'],materialization.sourceFiles['browser-single/entrypoint.sh']);
   assert.deepEqual(result.passes,result.guest.passes);
   assert.equal(result.passes.length,2);
   for (let i=0;i<2;i++) {
@@ -130,7 +135,7 @@ const observations = consoleText.split(/\r?\n/).filter(line=>
   /LAB\||\[browser-(guest|single|openfga)\]|Listening on|database system is ready|TimedOut|Elapsed\(\(\)\)|context canceled|error_kind|Error:|FATAL|PANIC/.test(line));
 const excerpt = observations.slice(-40).map(line=>line.length>1500?line.slice(0,1500)+' [truncated; see full console]':line);
 const summary = {
-  schemaVersion:1,experiment:'openfga8_model_reuse',diagnosticOnly:true,
+  schemaVersion:1,experiment:'bootstrap_real_deny_and_noirq',diagnosticOnly:true,
   sourceCommit,workflowCommit:process.env.GITHUB_SHA ?? null,engine,
   maxVmStarts:1,startedAt,finishedAt:new Date().toISOString(),outcome,
   browser:result?.browser ?? null,
@@ -144,11 +149,12 @@ const summary = {
   files,sourceTransformation:transformProof,jobBudget,
   openfgaBuild:materialization.openfgaBuild,openfgaBinary:materialization.openfgaBinary,
   nativeVerification:materialization.nativeVerification,bootstrapBuild:materialization.bootstrapBuild,
+  configurationExperiment:materialization.configurationExperiment,
   data:materialization.data,loader:materialization.loader,kernel:materialization.kernel,
   rootfsUnchanged:materialization.rootfsUnchanged,
   excerptScope:'Raw matching console lines may include diagnostic-tail replays; not fresh RPC results or an independent pass count.',
   matchedObservationLines:files[engine+'-console.txt']?.error ? null : observations.length,excerpt
 };
 await fs.writeFile(path.join(evidenceDirectory,engine+'-summary.json'),JSON.stringify(summary,null,2)+'\n');
-console.log('OPENFGA8_BROWSER_GATE '+JSON.stringify(summary));
+console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify(summary));
 if (validationError!==undefined) process.exitCode=1;

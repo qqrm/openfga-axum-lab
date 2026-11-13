@@ -1,21 +1,21 @@
-name: Real browser OpenFGA .8 model reuse gate
+name: Real browser bootstrap deny probe with ACPI noirq
 on:
   push:
-    branches: [diag/browser-openfga8-379e]
+    branches: [diag/browser-deny-noirq-543a]
     paths:
-      - .github/workflows/browser-openfga8.yml
-      - diagnostics/prepare-openfga8-browser.mjs
-      - diagnostics/check-openfga8-browser.mjs
+      - .github/workflows/browser-deny-noirq.yml
+      - diagnostics/prepare-deny-noirq-browser.mjs
+      - diagnostics/check-deny-noirq-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-openfga8-379e
+  group: browser-deny-noirq-543a
   cancel-in-progress: false
 jobs:
   browser:
-    name: OpenFGA .8 browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga8-379e'
+    name: Bootstrap deny/noirq browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-deny-noirq-543a'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,8 +29,14 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b267fefdba375395d496e6d89413786c048c70d2
+          ref: 543a2af2ddabd48002ebc57bebf95694c95438d7
+          fetch-depth: 2
           path: source-candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 207d15fab685d3adb9c5d51a048982c2236ae75c
+          path: source-candidate/browser-bootstrap-source
           persist-credentials: false
       - name: Verify pinned archives and extract only the required runtime/proof members
         timeout-minutes: 4
@@ -51,19 +57,19 @@ jobs:
           # Fill both artifacts only from one completed successful combined native run.
           # Missing pins stop before artifact reads, browser installation or VM startup.
           native = {
-            "run": 43445129977,
-            "head": "21f2e02551cf75675a9031a20da0d4acdb4f4899",
+            "run": 43456493622,
+            "head": "4a757f3d8f194d9e3137611be97e01fc23edd67f",
             "bootstrap": {
-              "artifact": 14047378538,
-              "name": "browser-bootstrap-openfga8",
-              "bytes": 3306734,
-              "sha256": "f4eb84008b06c01c7457f6ed8c6b2c5675469c726dcaa7eb0f1cfacaa117146e"
+              "artifact": 14053708919,
+              "name": "browser-bootstrap-deny-probe",
+              "bytes": 3321933,
+              "sha256": "9f8cb1db426985b3cd111aaa3ca109aca5c8fb0aed33407f0604d6597f9e6674"
             },
             "evidence": {
-              "artifact": 14048022132,
-              "name": "browser-openfga8-native-evidence",
-              "bytes": 23967145,
-              "sha256": "d7277d2cbca89d6c522b22f574d20dfc1cecadab64f2bd04480d3e9d61846dca"
+              "artifact": 14052644609,
+              "name": "browser-bootstrap-deny-probe-native-evidence",
+              "bytes": 23986894,
+              "sha256": "6c333d6af6e23574f50669c8f2fdb2df3f7b483a78f81585f964c3f3d90b30a5"
             }
           }
           if (type(native["run"]) is not int or native["run"] <= 0
@@ -126,7 +132,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "OpenFGA .8 browser gate (" + engine + ")"
+          job_name = "Bootstrap deny/noirq browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -248,18 +254,22 @@ jobs:
                           "Kernel build metadata identity mismatch")
               elif label == "native":
                   inputs = json.loads((root / "native-evidence/openfga8-verifier-input.json").read_text())
-                  require(inputs["producerSource"] == "b267fefdba375395d496e6d89413786c048c70d2" and
+                  require(inputs["schemaVersion"] == 2 and inputs["experiment"] == "bootstrap_real_empty_store_check" and
+                          inputs["producerSource"] == "e381339f80dd76777ef526b0073dc5eb34739f26" and
                           inputs["workflowCommit"] == head and inputs["runId"] == str(run_id) and inputs["runAttempt"] == "1" and
                           inputs["repositoryRuntimeContract"] == "passed" and inputs["scriptSyntaxAndShellCheck"] == "passed" and
                           inputs["browserAcceptanceVerified"] is False, "Combined native source/input provenance mismatch")
               elif label == "bootstrap":
                   built = json.loads((source_root / "artifacts/browser-bootstrap/build.json").read_text())
-                  require(built["source_commit"] == "53ff85cfdd3d84c26ae432189790e1e0f72d61db" and
-                          built["packaging_commit"] == "d7f7ead003c774e30584798adfde38afb854528d" and
+                  require(built["source_commit"] == "207d15fab685d3adb9c5d51a048982c2236ae75c" and
+                          built["packaging_commit"] == "4b7a1e1933083232fb8305a60a47bdd3c32e6689" and
                           built["workflow_commit"] == head and built["run_id"] == str(run_id) and built["run_attempt"] == "1" and
                           built["browser_acceptance_verified"] is False and built["native_tests"] == "passed" and
-                          built["binary_bytes"] == 7415568 and
-                          built["binary_sha256"] == "d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f" and
+                          built["empty_store_check"] == "one_real_higher_consistency_ownership_deny" and
+                          built["empty_store_check_default"] is False and built["browser_empty_store_check"] is True and
+                          built["empty_store_check_timeout_seconds"] == 5 and built["empty_store_check_tests"] == "passed" and
+                          built["binary_bytes"] == 7444640 and
+                          built["binary_sha256"] == "e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275" and
                           built["binary_bytes"] == members["bootstrap"]["bytes"] and
                           built["binary_sha256"] == members["bootstrap"]["sha256"] and
                           built["native_test_log_sha256"] == members["native-tests.log"]["sha256"],
@@ -274,9 +284,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-openfga8-browser.mjs
-          node --check diagnostics/check-openfga8-browser.mjs
-          node diagnostics/prepare-openfga8-browser.mjs
+          node --check diagnostics/prepare-deny-noirq-browser.mjs
+          node --check diagnostics/check-deny-noirq-browser.mjs
+          node diagnostics/prepare-deny-noirq-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -289,14 +299,14 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-openfga8-browser.mjs
+        run: node diagnostics/check-deny-noirq-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-openfga8-${{ matrix.engine }}
+          name: browser-deny-noirq-${{ matrix.engine }}
           path: |
-            artifacts/openfga8-browser-gate/
+            artifacts/deny-noirq-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/
