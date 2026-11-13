@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      COMBINED_SOURCE_COMMIT: 1f0954257956bda7c3c2715456ac8385cff32055
+      COMBINED_SOURCE_COMMIT: 501cfc2535f09826550aae97225fa5cbda86f08d
     steps:
       - name: Require a reviewed immutable source before checkout or build
         timeout-minutes: 1
