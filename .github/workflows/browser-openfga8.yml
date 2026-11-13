@@ -1,21 +1,21 @@
-name: Real browser bootstrap model budget gate
+name: Real browser OpenFGA .8 model reuse gate
 on:
   push:
-    branches: [diag/bootstrap-model-budget-379e]
+    branches: [diag/browser-openfga8-379e]
     paths:
-      - .github/workflows/browser-bootstrap-budget.yml
-      - diagnostics/prepare-bootstrap-browser.mjs
-      - diagnostics/check-bootstrap-browser.mjs
+      - .github/workflows/browser-openfga8.yml
+      - diagnostics/prepare-openfga8-browser.mjs
+      - diagnostics/check-openfga8-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-bootstrap-model-budget-379e
+  group: browser-openfga8-379e
   cancel-in-progress: false
 jobs:
   browser:
-    name: Bootstrap browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/bootstrap-model-budget-379e'
+    name: OpenFGA .8 browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga8-379e'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: d7f7ead003c774e30584798adfde38afb854528d
+          ref: 1f0954257956bda7c3c2715456ac8385cff32055
           path: source-candidate
           persist-credentials: false
       - name: Verify pinned archives and extract only the required runtime/proof members
@@ -48,20 +48,31 @@ jobs:
           root = pathlib.Path("prepared")
           root.mkdir(exist_ok=False)
           source_root = pathlib.Path("source-candidate")
-          # Fill only from the completed, verified native gate; missing pins forbid VM startup.
-          native = {"run":43433122340,"head":"c051d07bcdb83991de923782accfb51db302a3c2","artifact":14040871235,"name":"browser-bootstrap","bytes":3306577,"sha256":"225eab0937c6b51c36f3c9ad900864f065979d9662a9a9bca2525050e0e3974c"}
-          if (not all(native.values()) or any(type(native[key]) is not int or native[key] <= 0 for key in ["run", "artifact", "bytes"])
-              or native["bytes"] > 192*M or not isinstance(native["name"], str)
-              or re.fullmatch(r"[0-9a-f]{40}", native["head"]) is None
-              or re.fullmatch(r"[0-9a-f]{64}", native["sha256"]) is None):
-              raise SystemExit("Native bootstrap artifact pins have not been filled from a successful gate")
+          # Fill both artifacts only from one completed successful combined native run.
+          # Missing pins stop before artifact reads, browser installation or VM startup.
+          native = {
+            "run": None, "head": None,
+            "bootstrap": {"artifact": None, "name": "browser-bootstrap-openfga8", "bytes": None, "sha256": None},
+            "evidence": {"artifact": None, "name": "browser-openfga8-native-evidence", "bytes": None, "sha256": None}
+          }
+          if (type(native["run"]) is not int or native["run"] <= 0
+              or not isinstance(native["head"], str) or re.fullmatch(r"[0-9a-f]{40}", native["head"]) is None
+              or any(type(item["artifact"]) is not int or item["artifact"] <= 0
+                     or type(item["bytes"]) is not int or not 0 < item["bytes"] <= 192*M
+                     or not isinstance(item["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None
+                     for item in [native["bootstrap"], native["evidence"]])):
+              raise SystemExit("Combined native OpenFGA/bootstrap artifact pins are not verified yet")
+          if native["bootstrap"]["artifact"] == native["evidence"]["artifact"]:
+              raise SystemExit("The two named native artifacts must be distinct")
           specs = [
             ("retained", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", 14029511154,
              "pages-browser-vm-evidence", 260830150, "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e", "failure", "pull_request"),
             ("kernel", 43421624199, "1a1d55f0b02519ff0c3eb1ed3f86b2852f2f8e85", 14033713071,
              "browser-acpi-kernel-candidate", 3669750, "51b42d5fb8894930f9344f39754968fd8ed73b103d0a818c45ab4d2bb22edf64", "success", "push"),
-            ("bootstrap", native["run"], native["head"], native["artifact"], native["name"],
-             native["bytes"], native["sha256"], "success", "push")
+            ("native", native["run"], native["head"], native["evidence"]["artifact"], native["evidence"]["name"],
+             native["evidence"]["bytes"], native["evidence"]["sha256"], "success", "push"),
+            ("bootstrap", native["run"], native["head"], native["bootstrap"]["artifact"], native["bootstrap"]["name"],
+             native["bootstrap"]["bytes"], native["bootstrap"]["sha256"], "success", "push")
           ]
           def require(ok, message):
               if not ok: raise SystemExit(message)
@@ -72,7 +83,7 @@ jobs:
               return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
                 "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                 "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "bounded-browser-bootstrap-gate"})
+                "User-Agent": "bounded-browser-openfga8-gate"})
           def api(suffix):
               with opener.open(request(suffix), timeout=20) as response: raw = response.read(M + 1)
               require(len(raw) <= M, "Metadata response exceeded budget")
@@ -104,7 +115,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "Bootstrap browser gate (" + engine + ")"
+          job_name = "OpenFGA .8 browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -159,7 +170,7 @@ jobs:
                         ("browser-output/wasm/runtime/derived-runtime.json", root / "retained/derived-runtime.json", 4*M),
                         ("browser-output/wasm/runtime/startup-manifest.json", root / "retained/startup-manifest.json", 4*M)
                       ]
-                      for prefix in ["artifacts/browser-openfga/", "artifacts/browser-emulator/"]:
+                      for prefix in ["artifacts/browser-emulator/"]:
                           subtree = [item for item in package.infolist() if item.filename.startswith(prefix) and not item.is_dir()]
                           require(0 < len(subtree) <= 256, "Unexpected retained proof subtree size")
                           selected.extend((item.filename, source_root / item.filename, 128*M) for item in subtree)
@@ -175,12 +186,25 @@ jobs:
                         ("metadata.json", "metadata.json", M), ("Kernel.Dockerfile", "Kernel.Dockerfile", 65536),
                         ("source-commit.txt", "source-commit.txt", 128), ("workflow-commit.txt", "workflow-commit.txt", 128)
                       ]]
-                  else:
+                  elif label == "native":
+                      # upload-artifact's common root is producer/artifacts, not producer.
+                      prefix = "browser-openfga/"
+                      subtree = [item for item in package.infolist() if item.filename.startswith(prefix) and not item.is_dir()]
+                      require(0 < len(subtree) <= 256, "Unexpected new OpenFGA proof subtree size")
+                      selected = [(item.filename, source_root / "artifacts" / item.filename, 128*M) for item in subtree]
+                      selected.extend((member, root / "native-evidence" / member, limit) for member, limit in [
+                        ("openfga8-verifier-input.json", M),
+                        ("browser-bootstrap-proof/native-result.json", 4*M),
+                        ("browser-bootstrap-proof/openfga-build.json", 4*M)
+                      ])
+                  elif label == "bootstrap":
                       expected = {"bootstrap": 128*M, "build.json": 4*M, "native-tests.log": 16*M, "SOURCE.txt": 65536}
                       require({item.filename for item in package.infolist() if not item.is_dir()} == set(expected),
                               "Unexpected native bootstrap artifact members")
                       selected = [(name, source_root / "artifacts/browser-bootstrap" / name, limit)
                                   for name, limit in expected.items()]
+                  else:
+                      raise SystemExit("Unexpected archive role")
                   for member, destination, limit in selected:
                       selected_total += package.getinfo(member).file_size
                       require(selected_total <= 768*M, "Selected artifact members exceeded budget")
@@ -209,10 +233,20 @@ jobs:
                           built["run_id"] == str(run_id) and built["run_attempt"] == "1" and
                           built["kernel_candidate_built"] is True and built["browser_acceptance_verified"] is False,
                           "Kernel build metadata identity mismatch")
-              else:
+              elif label == "native":
+                  inputs = json.loads((root / "native-evidence/openfga8-verifier-input.json").read_text())
+                  require(inputs["producerSource"] == "1f0954257956bda7c3c2715456ac8385cff32055" and
+                          inputs["workflowCommit"] == head and inputs["runId"] == str(run_id) and inputs["runAttempt"] == "1" and
+                          inputs["repositoryRuntimeContract"] == "passed" and inputs["scriptSyntaxAndShellCheck"] == "passed" and
+                          inputs["browserAcceptanceVerified"] is False, "Combined native source/input provenance mismatch")
+              elif label == "bootstrap":
                   built = json.loads((source_root / "artifacts/browser-bootstrap/build.json").read_text())
                   require(built["source_commit"] == "53ff85cfdd3d84c26ae432189790e1e0f72d61db" and
-                          built["native_tests"] == "passed" and
+                          built["packaging_commit"] == "d7f7ead003c774e30584798adfde38afb854528d" and
+                          built["workflow_commit"] == head and built["run_id"] == str(run_id) and built["run_attempt"] == "1" and
+                          built["browser_acceptance_verified"] is False and built["native_tests"] == "passed" and
+                          built["binary_bytes"] == 7415568 and
+                          built["binary_sha256"] == "d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f" and
                           built["binary_bytes"] == members["bootstrap"]["bytes"] and
                           built["binary_sha256"] == members["bootstrap"]["sha256"] and
                           built["native_test_log_sha256"] == members["native-tests.log"]["sha256"],
@@ -227,9 +261,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-bootstrap-browser.mjs
-          node --check diagnostics/check-bootstrap-browser.mjs
-          node diagnostics/prepare-bootstrap-browser.mjs
+          node --check diagnostics/prepare-openfga8-browser.mjs
+          node --check diagnostics/check-openfga8-browser.mjs
+          node diagnostics/prepare-openfga8-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -242,16 +276,19 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-bootstrap-browser.mjs
+        run: node diagnostics/check-openfga8-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-bootstrap-budget-${{ matrix.engine }}
+          name: browser-openfga8-${{ matrix.engine }}
           path: |
-            artifacts/bootstrap-browser-gate/
+            artifacts/openfga8-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
+            prepared/native-evidence/
+            source-candidate/artifacts/browser-openfga/build.json
+            source-candidate/artifacts/browser-openfga/model-reuse-race-tests.log
             source-candidate/artifacts/browser-wasm/
             source-candidate/artifacts/browser-bootstrap/
             source-candidate/browser-output/wasm/runtime/startup-manifest.json

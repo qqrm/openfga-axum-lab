@@ -5,10 +5,10 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = 'd7f7ead003c774e30584798adfde38afb854528d';
+const sourceCommit = '1f0954257956bda7c3c2715456ac8385cff32055';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/bootstrap-browser-gate');
+const evidence = path.resolve('artifacts/openfga8-browser-gate');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -54,6 +54,48 @@ async function segmentRecord(directory,segment) {
 await fs.mkdir(evidence,{recursive:true});
 assert.equal(command('git',['rev-parse','HEAD'],{stdio:'pipe'}).trim(),sourceCommit);
 command('git',['diff','--exit-code']);
+// These six production files must remain byte-identical to the reviewed d7 fixture.
+const fixtureFiles = {
+  "browser-single/entrypoint.sh": {
+    "gitBlob": "828a107cb517edc1d938a83c996d4017c5506b99",
+    "bytes": 5367,
+    "mode": "100755"
+  },
+  "browser-single/pages/guest.sh": {
+    "gitBlob": "ff07c8f9ce78da7e366321c8b755033d21b61ff9",
+    "bytes": 6155,
+    "mode": "100755"
+  },
+  "browser-single/pages/startup-payload.mjs": {
+    "gitBlob": "6078c754c273a82e5b1d5d29156b1aa472e5ad94",
+    "bytes": 3287,
+    "mode": "100644"
+  },
+  "browser-single/startup-payload.test.mjs": {
+    "gitBlob": "4fef07ea20a3306f9c03ea6d5dbcbd95d75161f1",
+    "bytes": 7001,
+    "mode": "100644"
+  },
+  "browser-single/prepare-pages.sh": {
+    "gitBlob": "ad7b86f56707d78371b89d4435e35af61fa234d6",
+    "bytes": 8469,
+    "mode": "100755"
+  },
+  "browser-single/check-pages.mjs": {
+    "gitBlob": "6a0de543019051b44b708f837f6cf8d656fa9d29",
+    "bytes": 11835,
+    "mode": "100644"
+  }
+};
+for (const [name,expected] of Object.entries(fixtureFiles)) {
+  assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),expected.gitBlob,
+    'Reviewed production runtime file changed: '+name);
+  assert.equal((await fs.stat(path.join(source,name))).size,expected.bytes);
+}
+const archives = {};
+for (const label of ['retained','kernel','native','bootstrap']) {
+  archives[label] = await readJSON(path.join(prepared,label+'-archive-provenance.json'));
+}
 const originalManifest = await readJSON(path.join(source,'browser-single/pages/runtime-manifest.json'));
 assert.equal(originalManifest.source_commit,'99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58');
 assert.equal(originalManifest.archive_sha256,'fd7511caa98399d245adce39feb3398884f8dc56a82aa44c625e6fa46bf0acee');
@@ -65,7 +107,115 @@ assert.equal(retained.rootfs_changed,false);
 const previousStartup = await readJSON(path.join(prepared,'retained/startup-manifest.json'));
 const openfga = await readJSON(path.join(source,'artifacts/browser-openfga/build.json'));
 const emulator = await readJSON(path.join(source,'artifacts/browser-emulator/build.json'));
-assert.deepEqual(previousStartup.openfga_build,openfga);
+// The old .7 OpenFGA is provenance only. This run must use the new native-tested .8.
+const nativeArchive = archives.native;
+const bootstrapArchive = archives.bootstrap;
+assert(Number.isSafeInteger(nativeArchive.run) && nativeArchive.run>0);
+assert.match(nativeArchive.head,/^[0-9a-f]{40}$/);
+assert.equal(nativeArchive.run,bootstrapArchive.run);
+assert.equal(nativeArchive.head,bootstrapArchive.head);
+assert.notEqual(nativeArchive.artifact,bootstrapArchive.artifact);
+assert.equal(nativeArchive.artifact_name,'browser-openfga8-native-evidence');
+assert.equal(bootstrapArchive.artifact_name,'browser-bootstrap-openfga8');
+const nativeRoot = path.join(prepared,'native-evidence');
+const inputs = await readJSON(path.join(nativeRoot,'openfga8-verifier-input.json'));
+for (const [key,value] of Object.entries({
+  producerSource:sourceCommit,rustSource:'53ff85cfdd3d84c26ae432189790e1e0f72d61db',
+  packagingSource:'d7f7ead003c774e30584798adfde38afb854528d',
+  workflowCommit:nativeArchive.head,runId:String(nativeArchive.run),runAttempt:'1',
+  repositoryRuntimeContract:'passed',scriptSyntaxAndShellCheck:'passed',browserAcceptanceVerified:false
+})) assert.equal(inputs[key],value,'Native verifier input differs: '+key);
+const inputFiles = ['browser-single/OpenFGA.Dockerfile','browser-single/openfga/build.sh',
+  'browser-single/bootstrap/build.sh','browser-single/bootstrap/native-proof.mjs'];
+assert.deepEqual(Object.keys(inputs.sourceSha256).sort(),inputFiles.slice().sort());
+for (const name of inputFiles) {
+  assert.equal(inputs.sourceSha256[name],(await fileRecord(path.join(source,name))).sha256);
+}
+const openfgaDirectory = path.join(source,'artifacts/browser-openfga');
+const openfgaBinary = await fileRecord(path.join(openfgaDirectory,'openfga'));
+assert(openfgaBinary.bytes>0 && openfgaBinary.bytes<=128*1024*1024);
+assert.equal(openfga.binary_sha256,openfgaBinary.sha256);
+for (const [key,value] of Object.entries({
+  source_commit:'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4',upstream_version:'1.10.3',
+  target:'linux/amd64',model_json_encoder:'single_exact_real_model_response',
+  first_resolver_typesystem_reuse:'one_shot_after_real_model_read',
+  model_reuse_race_tests:'passed',model_codec_tests:'passed',model_validation_tests:'passed',
+  startup_dial_timeout_seconds:60,warmup_timeout_seconds:60,warmup_cycles:1,
+  authorization_request_timeout_default_seconds:3
+})) assert.equal(openfga[key],value,'New OpenFGA build contract differs: '+key);
+const sourceBindings = {
+  patch_sha256:'startup-dial.patch',helper_sha256:'browser_http_dial.go',
+  tests_sha256:'browser_http_dial_test.go',warmup_helper_sha256:'browser_http_warmup.go',
+  warmup_tests_sha256:'browser_http_warmup_test.go',model_codec_helper_sha256:'browser_model_codec.go',
+  model_codec_tests_sha256:'browser_model_codec_test.go',
+  model_codec_integration_tests_sha256:'browser_model_codec_integration_test.go',
+  model_validation_helper_sha256:'browser_model_validation.go',
+  model_validation_tests_sha256:'browser_model_validation_test.go',
+  write_typesystem_tests_sha256:'browser_write_typesystem_test.go',
+  resolver_transfer_integration_tests_sha256:'browser_resolver_transfer_integration_test.go'
+};
+const exportedSources = new Set(['startup-dial.patch','browser_http_dial.go','browser_http_warmup.go',
+  'browser_model_validation.go','browser_model_validation_test.go','browser_model_codec.go',
+  'browser_model_codec_test.go','browser_model_codec_integration_test.go',
+  'browser_write_typesystem_test.go','browser_resolver_transfer_integration_test.go']);
+for (const [key,name] of Object.entries(sourceBindings)) {
+  const actual = await fileRecord(path.join(source,'browser-single/openfga',name));
+  assert.equal(openfga[key],actual.sha256,'OpenFGA source/test hash differs: '+name);
+  if (exportedSources.has(name)) {
+    assert.deepEqual(await fileRecord(path.join(openfgaDirectory,name)),actual,'Exported proof source differs: '+name);
+  }
+}
+const raceLog = await fileRecord(path.join(openfgaDirectory,'model-reuse-race-tests.log'));
+assert(raceLog.bytes>0);
+assert.equal(openfga.model_reuse_race_tests_sha256,raceLog.sha256,'Race log hash differs');
+const bootstrapDirectory = path.join(source,'artifacts/browser-bootstrap');
+const bootstrapBuild = await readJSON(path.join(bootstrapDirectory,'build.json'));
+const bootstrapBinary = await fileRecord(path.join(bootstrapDirectory,'bootstrap'));
+assert.deepEqual(bootstrapBinary,{bytes:7415568,sha256:'d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f'});
+for (const [key,value] of Object.entries({
+  source_commit:'53ff85cfdd3d84c26ae432189790e1e0f72d61db',
+  packaging_commit:'d7f7ead003c774e30584798adfde38afb854528d',
+  workflow_commit:nativeArchive.head,run_id:String(nativeArchive.run),run_attempt:'1',
+  native_tests:'passed',native_harness_runtime:'node',
+  expected_openfga_sha_input:'required_verified_build_metadata',browser_acceptance_verified:false,
+  binary_bytes:bootstrapBinary.bytes,binary_sha256:bootstrapBinary.sha256,
+  openfga_binary_sha256:openfgaBinary.sha256
+})) assert.equal(bootstrapBuild[key],value,'Native bootstrap build differs: '+key);
+assert.equal(bootstrapBuild.producer_sha256,inputs.sourceSha256['browser-single/bootstrap/build.sh']);
+assert.equal(bootstrapBuild.native_harness_sha256,inputs.sourceSha256['browser-single/bootstrap/native-proof.mjs']);
+assert.equal(bootstrapBuild.native_test_log_sha256,(await fileRecord(path.join(bootstrapDirectory,'native-tests.log'))).sha256);
+const nativeBuildPath = path.join(nativeRoot,'browser-bootstrap-proof/openfga-build.json');
+assert.deepEqual(await readJSON(nativeBuildPath),openfga);
+assert.equal(bootstrapBuild.openfga_build_sha256,(await fileRecord(nativeBuildPath)).sha256);
+assert.equal(bootstrapBuild.openfga_build_sha256,(await fileRecord(path.join(openfgaDirectory,'build.json'))).sha256);
+const nativeProofPath = path.join(nativeRoot,'browser-bootstrap-proof/native-result.json');
+assert.equal(bootstrapBuild.native_proof_sha256,(await fileRecord(nativeProofPath)).sha256);
+const nativeProof = await readJSON(nativeProofPath);
+for (const [key,value] of Object.entries({
+  passed:true,source_commit:bootstrapBuild.source_commit,packaging_commit:bootstrapBuild.packaging_commit,
+  image_id:bootstrapBuild.image_id,binary_sha256:bootstrapBinary.sha256,
+  openfga_binary_sha256:openfgaBinary.sha256,browser_acceptance_verified:false,
+  opt_in_model_timeout_seconds:30,delayed_model_post_and_get_seconds:6,actual_postgres_model_count:3
+})) assert.equal(nativeProof[key],value,'Actual native proof differs: '+key);
+assert.equal(nativeProof.native_passes.length,2);
+for (const pass of nativeProof.native_passes) {
+  assert.equal(pass.accepted,true);
+  assert.deepEqual(pass.statuses,[403,204,200,204,403]);
+}
+assert.deepEqual(nativeProof.default_failures.map(item=>item.phase),['default-post','default-get']);
+for (const failure of nativeProof.default_failures) {
+  assert.equal(failure.exit,1);
+  assert.equal(failure.config_published,false);
+  assert.equal(failure.response_still_withheld,true);
+  assert(Number.isSafeInteger(failure.elapsed_ms) && failure.elapsed_ms>=4500 && failure.elapsed_ms<6000);
+}
+const nativeVerification = {
+  run:nativeArchive.run,head:nativeArchive.head,producerSource:sourceCommit,
+  evidenceArtifact:nativeArchive.artifact,bootstrapArtifact:bootstrapArchive.artifact,
+  openfgaBinary,openfgaBuild:await fileRecord(path.join(openfgaDirectory,'build.json')),
+  raceLog,nativeProof:await fileRecord(nativeProofPath),bootstrapBinary,
+  sourceBindings,browserAcceptanceVerified:false
+};
 assert.deepEqual(previousStartup.emulator_build,emulator);
 assert.equal(previousStartup.base_source_commit,originalManifest.source_commit);
 
@@ -140,6 +290,9 @@ for (const segment of derivedMetadata.files) {
 }
 const startup = await readJSON(path.join(runtime,'startup-manifest.json'));
 assert.deepEqual(startup.openfga_build,openfga);
+assert.deepEqual(startup.bootstrap_build,bootstrapBuild);
+assert.deepEqual(startup.files['runtime/openfga'],openfgaBinary);
+assert.deepEqual(startup.files['runtime/bootstrap'],bootstrapBinary);
 assert.deepEqual(startup.emulator_build,emulator);
 assert.deepEqual(Object.keys(startup.files).sort(),
   ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap'].sort());
@@ -154,27 +307,25 @@ for (const name of ['browser-single/prepare-pages.sh','browser-single/check-page
   'e2e/package-lock.json','fga/model.json']) {
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
-const archives = {};
-for (const label of ['retained','kernel','bootstrap']) {
-  archives[label] = await readJSON(path.join(prepared,label+'-archive-provenance.json'));
-}
 const proof = {
-  schemaVersion:1,experiment:'bootstrap_model_budget_30',diagnosticOnly:true,
-  modelExplorerBuildVerified:false,sourceCommit,sourceFiles,archives,
+  schemaVersion:1,experiment:'openfga8_model_reuse',diagnosticOnly:true,
+  modelExplorerBuildVerified:false,sourceCommit,sourceFiles,fixtureFiles,archives,nativeVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
   originalRuntimeSource:originalManifest.source_commit,
   kernelSource:'af9c5555e312ffaec3785154f5be83be7469c95f',
   rootfsUnchanged:true,preservedSegments,data:expectedData,loader:expectedLoader,
   args:originalManifest.files['arg-module.js'],kernel:kernelFiles.bzImage,emulator:pair,
   startupManifest:await fileRecord(path.join(runtime,'startup-manifest.json')),
-  bootstrapBuild:startup.bootstrap_build,
+  openfgaBuild:openfga,openfgaBinary,bootstrapBuild:startup.bootstrap_build,
   executions:{initialBootstrap:'/tmp/browser-lab-runtime/bootstrap',
     probe:'/usr/local/bin/lab-tool',acceptance:'/usr/local/bin/lab-tool'},
   expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi'},
   authorizationDeadlinesChanged:false
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
-console.log('BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,
+console.log('OPENFGA8_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,
   rootfsUnchanged:true,data:expectedData,loader:expectedLoader,kernel:kernelFiles.bzImage,
+  nativeVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
+  resolverTypesystemReuse:openfga.first_resolver_typesystem_reuse,
   bootstrapSource:startup.bootstrap_build.source_commit,bootstrapSha256:startup.bootstrap_build.binary_sha256,
   modelExplorerBuildVerified:false}));
