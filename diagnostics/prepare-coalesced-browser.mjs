@@ -5,12 +5,12 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
+const sourceCommit = '037a3c22a5fab45a735a6bfea9792c68049a4b62';
 const nativeProducerCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
 const bootstrapCoreCommit = '207d15fab685d3adb9c5d51a048982c2236ae75c';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/deny-default-acpi-browser-gate');
+const evidence = path.resolve('artifacts/coalesced-browser-gate');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -56,7 +56,8 @@ async function segmentRecord(directory,segment) {
 await fs.mkdir(evidence,{recursive:true});
 assert.equal(command('git',['rev-parse','HEAD'],{stdio:'pipe'}).trim(),sourceCommit);
 command('git',['diff','--exit-code']);
-// These six production files are exact bytes from the reviewed deny-probe fixture.
+// Five files stay exact to the native deny-probe fixture; the guest's sole
+// failure-only syscall addition is checked separately against that fixture.
 const fixtureFiles = {
   "browser-single/entrypoint.sh": {
     "gitBlob": "828a107cb517edc1d938a83c996d4017c5506b99",
@@ -89,18 +90,80 @@ const fixtureFiles = {
     "mode": "100644"
   }
 };
+const uiCommit = 'a438aedc8b3abd7abd1a5038ebeda7e20c63fd70';
+assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),uiCommit);
+assert.equal(command('git',['rev-parse','HEAD^^'],{stdio:'pipe'}).trim(),nativeProducerCommit);
+const changedFiles = {
+  "browser-single/pages/log-stream.mjs": {
+    "gitBlob": "ef118064b006fbc41a32b98f177ed0f8f2302b4f",
+    "mode": "100644",
+    "bytes": 8244,
+    "sha256": "90941538e1c26c7d657591c840b08f168bdc93db8a56d07921e3a9dc02d31bc3"
+  },
+  "browser-single/pages/launcher.js": {
+    "gitBlob": "50212b2234a04550086a9834c1fbe820073826ca",
+    "mode": "100644",
+    "bytes": 10898,
+    "sha256": "e369bc067e1bcc1f932d7aeedffa1cb34bb63903093501791a722f88577343ee"
+  },
+  "browser-single/log-stream.test.mjs": {
+    "gitBlob": "5287b425a3bd130de6547285e42eca4529ab1281",
+    "mode": "100644",
+    "bytes": 18004,
+    "sha256": "dbe62e63ef170343fdf171e61bc59e18c8b128c4b7a51f4bc724b0a7fa071a52"
+  },
+  "browser-single/pages/guest.sh": {
+    "gitBlob": "a36a387f941571ee322971a4aa92ce24196e03b2",
+    "mode": "100755",
+    "bytes": 6354,
+    "sha256": "213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649"
+  }
+};
+assert.deepEqual(command('git',['diff','--name-only',nativeProducerCommit,'HEAD'],{stdio:'pipe'})
+  .trim().split('\n').sort(),Object.keys(changedFiles).sort(),'Candidate scope exceeds the four reviewed files');
+assert.deepEqual(command('git',['diff','--name-only','HEAD^','HEAD'],{stdio:'pipe'})
+  .trim().split('\n'),['browser-single/pages/guest.sh'],'Failure-only diagnostic commit changed other files');
+for (const [name,expected] of Object.entries(changedFiles)) {
+  assert.equal(command('git',['rev-parse','HEAD:'+name],{stdio:'pipe'}).trim(),expected.gitBlob);
+  assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),expected.gitBlob);
+  assert.equal(command('git',['ls-tree','HEAD','--',name],{stdio:'pipe'}).split(' ')[0],expected.mode);
+  assert.deepEqual(await fileRecord(path.join(source,name)),{bytes:expected.bytes,sha256:expected.sha256});
+}
+const bytesRecord = bytes => ({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
+const originalGuestPath = 'browser-single/pages/guest.sh';
+const guest = await fs.readFile(path.join(source,originalGuestPath),'utf8');
+const originalGuest = command('git',['show',nativeProducerCommit+':'+originalGuestPath],{stdio:'pipe'});
+const guestDiagnosticAddition = "    printf 'syscall: '\n    cat \"$proc/syscall\" 2>/dev/null || true\n    printf '\\n'\n";
+assert.equal(guest.split(guestDiagnosticAddition).length,2,'Expected exactly one failure-only syscall snapshot');
+assert.deepEqual(Buffer.from(guest.replace(guestDiagnosticAddition,()=>'')),Buffer.from(originalGuest));
+assert.deepEqual(bytesRecord(Buffer.from(originalGuest)),
+  {bytes:6271,sha256:'4b2eda00f0af736ac02ec4992ea150e9337242512cb3595cbe8a3330609010ab'});
+assert.equal(command('git',['rev-parse',nativeProducerCommit+':'+originalGuestPath],{stdio:'pipe'}).trim(),
+  fixtureFiles[originalGuestPath].gitBlob);
 const launcherPath = 'browser-single/pages/launcher.js';
-assert.equal(sourceCommit,nativeProducerCommit,'This diagnostic must use the exact native producer source');
 const expectedLauncher = {
   gitBlob:'30c578771b85f7eb5f5adc15f94fd72142c21c7d',mode:'100644',
   bytes:10715,sha256:'055204abad48a78914c7322b9692b972f68fc06522578d7994f3b3fa38d83bd0'
 };
-assert.equal(command('git',['rev-parse','HEAD:'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
-assert.equal(command('git',['hash-object','--',launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
-assert.equal(command('git',['ls-tree','HEAD','--',launcherPath],{stdio:'pipe'}).split(' ')[0],expectedLauncher.mode);
+const launcher = await fs.readFile(path.join(source,launcherPath),'utf8');
+const originalLauncher = command('git',['show',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'});
+assert.equal(command('git',['rev-parse',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
+assert.deepEqual(bytesRecord(Buffer.from(originalLauncher)),{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256});
+const launcherChanges = [
+  ["import {createTranscriptLog, createCoalescedTranscriptRender, guestLogEvent} from './log-stream.mjs';",
+   "import {createTranscriptLog, guestLogEvent} from './log-stream.mjs';"],
+  ["const transcriptRender = createCoalescedTranscriptRender(text => { element('log').textContent = text; }, fail);\nwindow.__flushBrowserLabTranscript = transcriptRender.flush;\nconst log = createTranscriptLog(transcriptRender.render, chunk => {",
+   "const log = createTranscriptLog(text => { element('log').textContent = text; }, chunk => {"]
+];
+let restoredLauncher = launcher;
+for (const [candidate,original] of launcherChanges) {
+  assert.equal(restoredLauncher.split(candidate).length,2,'Expected exactly one reviewed launcher change');
+  restoredLauncher = restoredLauncher.replace(candidate,()=>original);
+}
+assert.deepEqual(Buffer.from(restoredLauncher),Buffer.from(originalLauncher),'Launcher changed outside render coalescing');
 const launcherRecord = await fileRecord(path.join(source,launcherPath));
-assert.deepEqual(launcherRecord,{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256});
 for (const [name,expected] of Object.entries(fixtureFiles)) {
+  if (name===originalGuestPath) continue;
   assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),expected.gitBlob,
     'Reviewed production runtime file changed: '+name);
   assert.equal((await fs.stat(path.join(source,name))).size,expected.bytes);
@@ -117,17 +180,82 @@ for (const [name,blob] of Object.entries({
 const configurationExperiment = {
   bootstrap:'one_real_higher_consistency_ownership_deny',kernelIRQ:'default_acpi',
   runtimeSource:sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
-  runtimeSourceMatchesNativeProducer:true,launcherIdentityVerified:true,
-  launcher:launcherRecord,launcherGitBlob:expectedLauncher.gitBlob,launcherMode:expectedLauncher.mode,
-  guest:await fileRecord(path.join(source,'browser-single/pages/guest.sh')),
-  unchangedAuthorizationDeadlines:true,unchangedModelAndRootfs:true,
-  scope:'Native-proven initial deny probe with unchanged production ACPI routing'
+  runtimeSourceMatchesNativeProducer:false,launcherIdentityVerified:true,
+  launcher:launcherRecord,launcherGitBlob:changedFiles[launcherPath].gitBlob,launcherMode:expectedLauncher.mode,
+  nativeLauncher:{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256},
+  guest:await fileRecord(path.join(source,originalGuestPath)),
+  nativeGuest:bytesRecord(Buffer.from(originalGuest)),
+  reviewedChangedFiles:changedFiles,guestDiagnosticInverseVerified:true,launcherInverseVerified:true,
+  renderDelayMilliseconds:16,partialBatchDelayMilliseconds:16,
+  synchronousProtocolUnchanged:true,unchangedAuthorizationDeadlines:true,unchangedModelAndRootfs:true,
+  scope:'UI render/capture scheduling and failure-only syscall snapshot; backend native proof remains bound to e381'
 };
 
 const archives = {};
-for (const label of ['retained','kernel','native','bootstrap']) {
+for (const label of ['retained','kernel','native','bootstrap','lightweight']) {
   archives[label] = await readJSON(path.join(prepared,label+'-archive-provenance.json'));
 }
+const lightRoot = path.join(prepared,'lightweight-evidence');
+const lightPrefix = 'artifacts/browser-log-transport-candidate/';
+const lightInputs = ['browser-single/pages/log-stream.mjs','browser-single/pages/launcher.js',
+  'browser-single/log-stream.test.mjs','browser-single/runtime-errors.test.mjs',
+  'browser-single/acceptance-protocol.test.mjs','e2e/package.json','e2e/package-lock.json'];
+const lightMembers = [lightPrefix+'summary.json',lightPrefix+'node-tests.log',
+  'diagnostics/check-log-transport-candidate.mjs',
+  ...lightInputs.slice(0,3).map(name=>'source-candidate/'+name)];
+const lightArchive = archives.lightweight;
+assert.equal(lightArchive.head,'0a8d7dc4ba611fe7071b34005410f4dc832d7b71');
+assert.equal(lightArchive.artifact_name,'browser-log-transport-candidate');
+assert(Number.isSafeInteger(lightArchive.run) && lightArchive.run>0);
+assert(Number.isSafeInteger(lightArchive.artifact) && lightArchive.artifact>0);
+assert.deepEqual(Object.keys(lightArchive.members).sort(),lightMembers.slice().sort());
+for (const name of lightMembers) {
+  assert.deepEqual(await fileRecord(path.join(lightRoot,name)),lightArchive.members[name],
+    'Lightweight proof member changed: '+name);
+}
+const light = await readJSON(path.join(lightRoot,lightPrefix+'summary.json'));
+for (const [key,value] of Object.entries({
+  schemaVersion:1,sourceCommit,productionAcceptance:false,vmStarts:0,runtimeDownloads:0,
+  expectedCases:14,completedCases:14,passed:true
+})) assert.equal(light[key],value,'Lightweight proof differs: '+key);
+assert.deepEqual(light.failures,[]);
+assert.deepEqual(light.unexpectedRequests,[]);
+assert.deepEqual(Object.keys(light.inputs).sort(),lightInputs.slice().sort());
+for (const name of lightInputs) {
+  const actual = await fileRecord(path.join(source,name));
+  assert.deepEqual(light.inputs[name],actual,'Transport proof input differs: '+name);
+  if (lightInputs.indexOf(name)<3) {
+    assert.deepEqual(await fileRecord(path.join(lightRoot,'source-candidate',name)),actual);
+  }
+}
+assert.deepEqual(lightArchive.members['diagnostics/check-log-transport-candidate.mjs'],
+  {bytes:16939,sha256:'6042f8049571a33e53f34defc36037d580aa797127397cd28ca2373a4bf92350'});
+assert.equal(light.harnessSha256,lightArchive.members['diagnostics/check-log-transport-candidate.mjs'].sha256);
+const lightScenarios = ['synchronous_uart_burst','separate_tasks_ack_gate','separate_tasks_unblocked',
+  'finish_partial_utf16','render_error_at_cutoff','delivery_error','pending_chunk_bound'];
+assert.equal(light.cases.length,14);
+assert.deepEqual(light.cases.map(item=>item.engine+'/'+item.scenario).sort(),
+  ['chromium','firefox'].flatMap(engine=>lightScenarios.map(name=>engine+'/'+name)).sort());
+for (const item of light.cases) {
+  const expectedFailure = ['render_error_at_cutoff','delivery_error','pending_chunk_bound'].includes(item.scenario);
+  assert.equal(item.passed,true);
+  assert.equal(item.expectedFailure,expectedFailure);
+  assert.equal(item.captureQualified,!expectedFailure);
+  assert.equal(item.maximumInFlight,1);
+  assert(Number.isSafeInteger(item.maximumBatch) && item.maximumBatch>0 && item.maximumBatch<=1024);
+  assert(Number.isSafeInteger(item.bindingCalls) && item.bindingCalls>0);
+}
+const nodeLog = await fs.readFile(path.join(lightRoot,lightPrefix+'node-tests.log'),'utf8');
+const nodeCounts = Object.fromEntries([...nodeLog.matchAll(/^# (tests|pass|fail|cancelled|skipped|todo) (\d+)\r?$/gm)]
+  .map(match=>[match[1],Number(match[2])]));
+assert(Number.isSafeInteger(nodeCounts.tests) && nodeCounts.tests>=22);
+assert.equal(nodeCounts.pass,nodeCounts.tests);
+for (const name of ['fail','cancelled','skipped','todo']) assert.equal(nodeCounts[name],0);
+const lightweightVerification = {
+  run:lightArchive.run,head:lightArchive.head,artifact:lightArchive.artifact,
+  archive:lightArchive.archive,sourceCommit,passed:true,cases:light.cases,nodeCounts,
+  memberRecords:lightArchive.members,productionAcceptance:false,vmStarts:0,runtimeDownloads:0
+};
 const originalManifest = await readJSON(path.join(source,'browser-single/pages/runtime-manifest.json'));
 assert.equal(originalManifest.source_commit,'99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58');
 assert.equal(originalManifest.archive_sha256,'fd7511caa98399d245adce39feb3398884f8dc56a82aa44c625e6fa46bf0acee');
@@ -449,6 +577,9 @@ assert.deepEqual(startup.files['runtime/openfga'],openfgaBinary);
 assert.deepEqual(startup.files['runtime/bootstrap'],bootstrapBinary);
 assert.deepEqual(startup.files['guest.sh'],configurationExperiment.guest);
 assert.deepEqual(await fileRecord(path.join(source,'browser-output/wasm/launcher.js')),configurationExperiment.launcher);
+assert.deepEqual(await fileRecord(path.join(source,'browser-output/wasm/log-stream.mjs')),
+  {bytes:changedFiles['browser-single/pages/log-stream.mjs'].bytes,
+   sha256:changedFiles['browser-single/pages/log-stream.mjs'].sha256});
 assert.deepEqual(startup.emulator_build,emulator);
 assert.deepEqual(Object.keys(startup.files).sort(),
   ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap'].sort());
@@ -458,15 +589,16 @@ assert.equal(startup.bootstrap_build.browser_model_timeout_seconds,30);
 assert.equal(derived.startup_overlay.sha256,(await fileRecord(path.join(runtime,'startup-manifest.json'))).sha256);
 const sourceFiles = {};
 for (const name of ['browser-single/prepare-pages.sh','browser-single/check-pages.mjs',
-  'browser-single/pages/launcher.js','browser-single/pages/startup-payload.mjs',
+  'browser-single/pages/launcher.js','browser-single/pages/log-stream.mjs','browser-single/log-stream.test.mjs',
+  'browser-single/pages/startup-payload.mjs',
   'browser-single/pages/guest.sh','browser-single/entrypoint.sh',
   'e2e/package-lock.json','fga/model.json']) {
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
 const proof = {
-  schemaVersion:1,experiment:'bootstrap_real_deny_default_acpi',diagnosticOnly:true,
+  schemaVersion:1,experiment:'coalesced_ui_and_log_capture',diagnosticOnly:true,
   modelExplorerBuildVerified:false,sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
-  sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,
+  sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,lightweightVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
   originalRuntimeSource:originalManifest.source_commit,
   kernelSource:'af9c5555e312ffaec3785154f5be83be7469c95f',
@@ -481,9 +613,9 @@ const proof = {
   authorizationDeadlinesChanged:false
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
-console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
+console.log('COALESCED_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
   rootfsUnchanged:true,data:expectedData,loader:expectedLoader,kernel:kernelFiles.bzImage,
-  nativeVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
+  nativeVerification,lightweightVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
   resolverTypesystemReuse:openfga.first_resolver_typesystem_reuse,
   bootstrapSource:startup.bootstrap_build.source_commit,bootstrapSha256:startup.bootstrap_build.binary_sha256,
   modelExplorerBuildVerified:false}));

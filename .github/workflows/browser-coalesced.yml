@@ -1,21 +1,21 @@
-name: Real browser bootstrap deny probe with default ACPI
+name: Real browser acceptance with coalesced UI and capture
 on:
   push:
-    branches: [diag/browser-deny-default-acpi-e381]
+    branches: [diag/browser-coalesced-037a]
     paths:
-      - .github/workflows/browser-deny-default-acpi.yml
-      - diagnostics/prepare-deny-default-acpi-browser.mjs
-      - diagnostics/check-deny-default-acpi-browser.mjs
+      - .github/workflows/browser-coalesced.yml
+      - diagnostics/prepare-coalesced-browser.mjs
+      - diagnostics/check-coalesced-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-deny-default-acpi-e381
+  group: browser-coalesced-037a
   cancel-in-progress: false
 jobs:
   browser:
-    name: Bootstrap deny/default-ACPI browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-deny-default-acpi-e381'
+    name: Coalesced UI/capture browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-coalesced-037a'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,8 +29,8 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: e381339f80dd76777ef526b0073dc5eb34739f26
-          fetch-depth: 2
+          ref: 037a3c22a5fab45a735a6bfea9792c68049a4b62
+          fetch-depth: 3
           path: source-candidate
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -81,7 +81,24 @@ jobs:
               raise SystemExit("Combined native OpenFGA/bootstrap artifact pins are not verified yet")
           if native["bootstrap"]["artifact"] == native["evidence"]["artifact"]:
               raise SystemExit("The two named native artifacts must be distinct")
+          # Immutable successful transport-only proof; unresolved pins fail before downloads.
+          lightweight = {
+            "run": None,
+            "head": "0a8d7dc4ba611fe7071b34005410f4dc832d7b71",
+            "artifact": None,
+            "name": "browser-log-transport-candidate",
+            "bytes": None,
+            "sha256": None
+          }
+          if (type(lightweight["run"]) is not int or lightweight["run"] <= 0
+              or type(lightweight["artifact"]) is not int or lightweight["artifact"] <= 0
+              or type(lightweight["bytes"]) is not int or not 0 < lightweight["bytes"] <= 16*M
+              or not isinstance(lightweight["sha256"], str)
+              or re.fullmatch(r"[0-9a-f]{64}", lightweight["sha256"]) is None):
+              raise SystemExit("Successful exact-source lightweight transport artifact pins are not verified yet")
           specs = [
+            ("lightweight", lightweight["run"], lightweight["head"], lightweight["artifact"], lightweight["name"],
+             lightweight["bytes"], lightweight["sha256"], "success", "push"),
             ("retained", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", 14029511154,
              "pages-browser-vm-evidence", 260830150, "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e", "failure", "pull_request"),
             ("kernel", 43421624199, "1a1d55f0b02519ff0c3eb1ed3f86b2852f2f8e85", 14033713071,
@@ -132,7 +149,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "Bootstrap deny/default-ACPI browser gate (" + engine + ")"
+          job_name = "Coalesced UI/capture browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -181,7 +198,23 @@ jobs:
               selected_total = 0
               with zipfile.ZipFile(archive_path) as package:
                   check_members(package)
-                  if label == "retained":
+                  if label == "lightweight":
+                      prefix = "artifacts/browser-log-transport-candidate/"
+                      scenarios = ["synchronous_uart_burst", "separate_tasks_ack_gate", "separate_tasks_unblocked",
+                                   "finish_partial_utf16", "render_error_at_cutoff", "delivery_error", "pending_chunk_bound"]
+                      source_paths = ["browser-single/pages/log-stream.mjs", "browser-single/pages/launcher.js",
+                                      "browser-single/log-stream.test.mjs"]
+                      proof_paths = [prefix + "summary.json", prefix + "node-tests.log",
+                                     "diagnostics/check-log-transport-candidate.mjs"] + [
+                                     "source-candidate/" + path for path in source_paths]
+                      expected_files = set(proof_paths) | {
+                          prefix + browser + "-" + scenario + suffix
+                          for browser in ["chromium", "firefox"] for scenario in scenarios
+                          for suffix in [".json", "-console.txt", "-stream.jsonl"]}
+                      require({item.filename for item in package.infolist() if not item.is_dir()} == expected_files,
+                              "Unexpected lightweight proof artifact members")
+                      selected = [(name, root / "lightweight-evidence" / name, 2*M) for name in proof_paths]
+                  elif label == "retained":
                       selected = [
                         ("browser-output/wasm/runtime-source.zip", root / "runtime-source.zip", 384*M),
                         ("browser-output/wasm/runtime/derived-runtime.json", root / "retained/derived-runtime.json", 4*M),
@@ -284,9 +317,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-deny-default-acpi-browser.mjs
-          node --check diagnostics/check-deny-default-acpi-browser.mjs
-          node diagnostics/prepare-deny-default-acpi-browser.mjs
+          node --check diagnostics/prepare-coalesced-browser.mjs
+          node --check diagnostics/check-coalesced-browser.mjs
+          node diagnostics/prepare-coalesced-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -299,17 +332,18 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-deny-default-acpi-browser.mjs
+        run: node diagnostics/check-coalesced-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-deny-default-acpi-${{ matrix.engine }}
+          name: browser-coalesced-${{ matrix.engine }}
           path: |
-            artifacts/deny-default-acpi-browser-gate/
+            artifacts/coalesced-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/
+            prepared/lightweight-evidence/
             source-candidate/artifacts/browser-openfga/build.json
             source-candidate/artifacts/browser-openfga/model-reuse-race-tests.log
             source-candidate/artifacts/browser-wasm/

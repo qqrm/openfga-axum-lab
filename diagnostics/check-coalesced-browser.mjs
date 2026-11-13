@@ -6,19 +6,26 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 
-const sourceCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
+const sourceCommit = '037a3c22a5fab45a735a6bfea9792c68049a4b62';
 const engine = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(engine),'Expected one allowlisted engine');
 const source = path.resolve('source-candidate');
-const evidenceDirectory = path.resolve('artifacts/deny-default-acpi-browser-gate');
+const evidenceDirectory = path.resolve('artifacts/coalesced-browser-gate');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const materialization = JSON.parse(await fs.readFile(path.join(evidenceDirectory,'materialization.json'),'utf8'));
 assert.equal(materialization.sourceCommit,sourceCommit);
 assert.equal(materialization.configurationExperiment.bootstrap,'one_real_higher_consistency_ownership_deny');
 assert.equal(materialization.configurationExperiment.kernelIRQ,'default_acpi');
-assert.equal(materialization.configurationExperiment.runtimeSourceMatchesNativeProducer,true);
+assert.equal(materialization.configurationExperiment.runtimeSourceMatchesNativeProducer,false);
 assert.equal(materialization.configurationExperiment.launcherIdentityVerified,true);
-assert.equal(materialization.configurationExperiment.nativeProducerCommit,sourceCommit);
+assert.equal(materialization.configurationExperiment.nativeProducerCommit,'e381339f80dd76777ef526b0073dc5eb34739f26');
+assert.equal(materialization.configurationExperiment.guestDiagnosticInverseVerified,true);
+assert.equal(materialization.configurationExperiment.launcherInverseVerified,true);
+assert.equal(materialization.configurationExperiment.synchronousProtocolUnchanged,true);
+assert.equal(materialization.lightweightVerification.sourceCommit,sourceCommit);
+assert.equal(materialization.lightweightVerification.passed,true);
+assert.equal(materialization.lightweightVerification.productionAcceptance,false);
+assert.equal(materialization.lightweightVerification.vmStarts,0);
 const head = spawnSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'});
 assert.equal(head.status,0);
 assert.equal(head.stdout.trim(),sourceCommit);
@@ -51,7 +58,7 @@ await fs.writeFile(path.join(evidenceDirectory,engine+'-checker-transform.json')
 // A late local timestamp must never manufacture another 30-minute budget.
 const jobTiming = JSON.parse(await fs.readFile(path.resolve('prepared/job-timing.json'),'utf8'));
 assert.equal(jobTiming.source,'GitHub Actions current job API');
-assert.equal(jobTiming.name,'Bootstrap deny/default-ACPI browser gate ('+engine+')');
+assert.equal(jobTiming.name,'Coalesced UI/capture browser gate ('+engine+')');
 assert.equal(jobTiming.run_id,Number(process.env.GITHUB_RUN_ID));
 assert.equal(jobTiming.run_attempt,1);
 assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');
@@ -71,10 +78,10 @@ if (!jobBudget.launchPermitted) {
   const stopped = {phase:'preflight_stop',engine,sourceCommit,checkerLaunched:false,
     passes:null,reason:'Insufficient or unverified remaining Actions job budget',jobBudget};
   await fs.writeFile(path.join(evidenceDirectory,engine+'-preflight-stop.json'),JSON.stringify(stopped,null,2)+'\n');
-  console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify(stopped));
+  console.log('COALESCED_BROWSER_GATE '+JSON.stringify(stopped));
   throw new Error('Refusing to start a VM more than four minutes after the Actions job began');
 }
-console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
+console.log('COALESCED_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
 const startedAt = new Date().toISOString();
 const child = spawn(process.execPath,[copiedPath],{cwd:source,env:process.env,stdio:'inherit'});
 const outcome = await new Promise(resolve=>{
@@ -137,7 +144,7 @@ const observations = consoleText.split(/\r?\n/).filter(line=>
   /LAB\||\[browser-(guest|single|openfga)\]|Listening on|database system is ready|TimedOut|Elapsed\(\(\)\)|context canceled|error_kind|Error:|FATAL|PANIC/.test(line));
 const excerpt = observations.slice(-40).map(line=>line.length>1500?line.slice(0,1500)+' [truncated; see full console]':line);
 const summary = {
-  schemaVersion:1,experiment:'bootstrap_real_deny_default_acpi',diagnosticOnly:true,
+  schemaVersion:1,experiment:'coalesced_ui_and_log_capture',diagnosticOnly:true,
   sourceCommit,workflowCommit:process.env.GITHUB_SHA ?? null,engine,
   maxVmStarts:1,startedAt,finishedAt:new Date().toISOString(),outcome,
   browser:result?.browser ?? null,
@@ -152,11 +159,12 @@ const summary = {
   openfgaBuild:materialization.openfgaBuild,openfgaBinary:materialization.openfgaBinary,
   nativeVerification:materialization.nativeVerification,bootstrapBuild:materialization.bootstrapBuild,
   configurationExperiment:materialization.configurationExperiment,
+  lightweightVerification:materialization.lightweightVerification,
   data:materialization.data,loader:materialization.loader,kernel:materialization.kernel,
   rootfsUnchanged:materialization.rootfsUnchanged,
   excerptScope:'Raw matching console lines may include diagnostic-tail replays; not fresh RPC results or an independent pass count.',
   matchedObservationLines:files[engine+'-console.txt']?.error ? null : observations.length,excerpt
 };
 await fs.writeFile(path.join(evidenceDirectory,engine+'-summary.json'),JSON.stringify(summary,null,2)+'\n');
-console.log('DENY_BOOTSTRAP_BROWSER_GATE '+JSON.stringify(summary));
+console.log('COALESCED_BROWSER_GATE '+JSON.stringify(summary));
 if (validationError!==undefined) process.exitCode=1;
