@@ -27,7 +27,7 @@ const kernelPath = path.join(kernel, 'bzImage');
 const kernelSize = (await fs.stat(kernelPath)).size;
 assert(kernelSize > 1024 * 1024 && kernelSize < 32 * 1024 * 1024, 'Unexpected kernel size');
 const config = await fs.readFile(path.join(kernel, 'linux.config'), 'utf8');
-for (const option of ['CONFIG_SYSVIPC=y', 'CONFIG_IPC_NS=y']) assert(config.split('\n').includes(option), `Missing ${option}`);
+for (const option of ['CONFIG_SYSVIPC=y', 'CONFIG_IPC_NS=y', 'CONFIG_ACPI=y', 'CONFIG_X86_PM_TIMER=y', 'CONFIG_HPET_TIMER=y']) assert(config.split('\n').includes(option), `Missing ${option}`);
 const outputPath = `${dataPath}.new`;
 const output = createWriteStream(outputPath, {flags:'wx'});
 const hash = createHash('sha256');
