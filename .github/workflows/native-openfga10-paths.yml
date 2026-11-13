@@ -1,18 +1,18 @@
-name: Verify fresh OpenFGA schema reachability and native deny proof
+name: Verify two-walk OpenFGA schema reachability and native deny proof
 on:
   push:
-    branches: [diag/native-openfga9-paths]
-    paths: [.github/workflows/native-openfga9-paths.yml]
+    branches: [diag/native-openfga10-paths]
+    paths: [.github/workflows/native-openfga10-paths.yml]
 permissions:
   contents: read
 jobs:
   native:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/native-openfga9-paths'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/native-openfga10-paths'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      COMBINED_SOURCE_COMMIT: fe42a6bcb91b0702b38836dbec51fa1549cc97be
-      RUNTIME_SOURCE_COMMIT: b04bad4ac109a5fdab185a9025b1ae3982953629
+      COMBINED_SOURCE_COMMIT: bb8fed250bdee9931f7702ae2475d28e5e9eed8f
+      RUNTIME_SOURCE_COMMIT: 444b069daf16e9606a0bbf1ea0aea7f4d61b97d8
       BOOTSTRAP_CORE_COMMIT: 207d15fab685d3adb9c5d51a048982c2236ae75c
       BOOTSTRAP_FIXTURE_COMMIT: 4b7a1e1933083232fb8305a60a47bdd3c32e6689
       NATIVE_PROOF_BLOB: b9f889e63f6fd6c3fc1bfa146e59c160958eae92
@@ -124,7 +124,7 @@ jobs:
           }
           const inputSetSha256=createHash('sha256').update(JSON.stringify(verifiedInputs)).digest('hex');
           const digest = path => createHash('sha256').update(readFileSync('producer/'+path)).digest('hex');
-          const proof = {schemaVersion:3,experiment:'fresh_openfga9_schema_reachability_and_bootstrap_deny',producerSource:process.env.COMBINED_SOURCE_COMMIT,
+          const proof = {schemaVersion:3,experiment:'fresh_openfga10_two_walk_schema_reachability_and_bootstrap_deny',producerSource:process.env.COMBINED_SOURCE_COMMIT,
             runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,
             rustSource:process.env.BOOTSTRAP_CORE_COMMIT,
             packagingSource:process.env.BOOTSTRAP_FIXTURE_COMMIT,
@@ -139,10 +139,10 @@ jobs:
             scope:'native producers and real native service verification; no emulator, kernel build or browser VM',
             browserAcceptanceVerified:false};
           mkdirSync('producer/artifacts',{recursive:true});
-          writeFileSync('producer/artifacts/openfga9-verifier-input.json',JSON.stringify(proof,null,2)+'\n');
+          writeFileSync('producer/artifacts/openfga10-verifier-input.json',JSON.stringify(proof,null,2)+'\n');
           console.log(JSON.stringify(proof));
           JS
-      - name: Build and regression-test the fresh OpenFGA .9 producer
+      - name: Build and regression-test the fresh OpenFGA .10 producer
         timeout-minutes: 25
         working-directory: producer
         run: |
@@ -162,7 +162,7 @@ jobs:
           const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
           const digest=path=>hash(readFileSync(path));
           const readJSON=path=>JSON.parse(readFileSync(path,'utf8'));
-          const inputPath='producer/artifacts/openfga9-verifier-input.json';
+          const inputPath='producer/artifacts/openfga10-verifier-input.json';
           const input=readJSON(inputPath);
           assert.equal(input.producerSource,process.env.COMBINED_SOURCE_COMMIT);
           assert.equal(input.runtimeSource,process.env.RUNTIME_SOURCE_COMMIT);
@@ -198,6 +198,7 @@ jobs:
             first_resolver_typesystem_reuse:'one_shot_after_real_model_read',
             schema_reachability_reuse:'readonly_plain_user_paths_on_startup_typesystem',
             schema_reachability_max_relations:512,schema_reachability_tests:'passed',
+            schema_reachability_preparation:'two_breadth_first_walks',schema_reachability_max_walks:2,
             tuple_write_typesystem_reuse:'same_request_store_and_model',warmup_generated_validation:'ValidateAll',
             startup_dial_tests:'passed',transport_diagnostics_tests:'passed',warmup_tests:'passed',
             model_codec_tests:'passed',model_validation_tests:'passed',write_typesystem_tests:'passed',
@@ -220,9 +221,11 @@ jobs:
           assert.equal(members.LICENSE.sha256,digest('upstream/LICENSE'));
           assert.equal(build.warmup_model_sha256,digest('producer/fga/model.json'));
           assert.equal(build.model_reuse_race_tests_sha256,members['model-reuse-race-tests.log'].sha256);
-          assert(readFileSync(root+'SOURCE.txt','utf8').includes('Browser build v1.10.3-browser-startup.9 '));
+          assert(readFileSync(root+'SOURCE.txt','utf8').includes('Browser build v1.10.3-browser-startup.10 '));
           const pathTests=['TestBrowserModelUserPathsPinnedParity','TestBrowserModelUserPathsEligibilityAndBound',
-            'TestBrowserModelUserPathsFailureDoesNotPublish','TestBrowserModelUserPathsConcurrentReadonly'];
+            'TestBrowserModelUserPathsFailureDoesNotPublish','TestBrowserModelUserPathsConcurrentReadonly',
+            'TestBrowserModelUserPathsTwoWalkParity','TestBrowserModelUserPathsLookupFallbacks',
+            'TestBrowserModelUserPathsCanceledDuringWalk'];
           for(const name of ['model-validation-tests.log','model-reuse-race-tests.log']){
             const log=readFileSync(root+name,'utf8');
             assert(!/^(?:--- FAIL:|FAIL(?:\s|$))/m.test(log),'Go failures in '+name);
@@ -240,7 +243,7 @@ jobs:
             inputRecordSha256:digest(inputPath),inputSetSha256:input.inputSetSha256,members,
             buildLogSha256:digest('producer/artifacts/browser-openfga-build.log'),completedPathTests:pathTests,
             directoryPermissionFixture:'0700',browserAcceptanceVerified:false};
-          writeFileSync('producer/artifacts/openfga9-build-verification.json',JSON.stringify(verified,null,2)+'\n');
+          writeFileSync('producer/artifacts/openfga10-build-verification.json',JSON.stringify(verified,null,2)+'\n');
           console.log(JSON.stringify({freshGoBuildVerified:true,producerSource:verified.producerSource,
             runtimeSource:verified.runtimeSource,binary:members.openfga,build:members['build.json'],
             raceLog:members['model-reuse-race-tests.log'],completedPathTests:pathTests,browserAcceptanceVerified:false}));
@@ -334,9 +337,9 @@ jobs:
           assert.equal(build.native_harness_sha256,hashFile('browser-single/bootstrap/native-proof.mjs'));
           assert.equal(build.native_proof_sha256,hashFile('artifacts/browser-bootstrap-proof/native-result.json'));
           assert.equal(build.browser_acceptance_verified,false);
-          const verifierInputPath='artifacts/openfga9-verifier-input.json';
+          const verifierInputPath='artifacts/openfga10-verifier-input.json';
           const verifierInput=JSON.parse(readFileSync(verifierInputPath,'utf8'));
-          const verified=JSON.parse(readFileSync('artifacts/openfga9-build-verification.json','utf8'));
+          const verified=JSON.parse(readFileSync('artifacts/openfga10-build-verification.json','utf8'));
           assert.equal(verified.kind,'fresh_go_build');
           assert.equal(verified.producerSource,process.env.COMBINED_SOURCE_COMMIT);
           assert.equal(verified.runtimeSource,process.env.RUNTIME_SOURCE_COMMIT);
@@ -370,7 +373,7 @@ jobs:
           console.log(JSON.stringify({producerOutputVerified:true,producerSource:process.env.COMBINED_SOURCE_COMMIT,
             runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,binaryBytes:binary.length,binarySha256:digest(binary),
             openfgaBinarySha256:fga.binary_sha256,openfgaBuildSha256:build.openfga_build_sha256,
-            freshGoBuildVerificationSha256:hashFile('artifacts/openfga9-build-verification.json'),
+            freshGoBuildVerificationSha256:hashFile('artifacts/openfga10-build-verification.json'),
             nativePasses:proof.native_passes,emptyStoreCheckDeadlineMs:denied.elapsed_ms,
             browserAcceptanceVerified:false}));
           JS
@@ -388,12 +391,13 @@ jobs:
           const record={scope:'native service startup observations only',producerSource:process.env.COMBINED_SOURCE_COMMIT,
             runtimeSource:process.env.RUNTIME_SOURCE_COMMIT,stackLogAvailable:bytes!==null,
             stackLogBytes:bytes?.length??null,stackLogSha256:bytes?createHash('sha256').update(bytes).digest('hex'):null,
-            sourceExpectedPredicateCalls:316,sourceMaximumRelations:512,existingWarmupTimeoutSeconds:60,
+            sourceExpectedSchemaPairs:316,sourceMaximumGraphWalks:2,sourceMaximumRelations:512,
+            existingWarmupTimeoutSeconds:60,
             typesystemStageIncludesOriginalValidationAndSchemaSeed:true,
             warmupRecords:lines.slice(0,8),warmupRecordCount:lines.length,recordsTruncated:lines.length>8,
             browserPerformanceVerified:false,browserAcceptanceVerified:false};
           mkdirSync('producer/artifacts',{recursive:true});
-          writeFileSync('producer/artifacts/openfga9-native-startup-timing.json',JSON.stringify(record,null,2)+'\n');
+          writeFileSync('producer/artifacts/openfga10-native-startup-timing.json',JSON.stringify(record,null,2)+'\n');
           console.log(JSON.stringify(record));
           JS
       - name: Clean only proof containers owned by this run
@@ -404,7 +408,7 @@ jobs:
       - name: Retain the four-file verified native bootstrap output
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-bootstrap-openfga9-paths
+          name: browser-bootstrap-openfga10-paths
           path: producer/artifacts/browser-bootstrap/
           if-no-files-found: error
           retention-days: 7
@@ -412,15 +416,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-openfga9-paths-native-evidence
+          name: browser-openfga10-paths-native-evidence
           path: |
             producer/artifacts/browser-openfga/
             producer/artifacts/browser-openfga-build.log
             producer/artifacts/browser-bootstrap/
             producer/artifacts/browser-bootstrap-proof/
             producer/artifacts/bootstrap-producer-run.log
-            producer/artifacts/openfga9-verifier-input.json
-            producer/artifacts/openfga9-build-verification.json
-            producer/artifacts/openfga9-native-startup-timing.json
+            producer/artifacts/openfga10-verifier-input.json
+            producer/artifacts/openfga10-build-verification.json
+            producer/artifacts/openfga10-native-startup-timing.json
           if-no-files-found: warn
           retention-days: 7
