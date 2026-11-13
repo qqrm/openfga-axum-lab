@@ -1,0 +1,64 @@
+name: Real browser log transport candidate smoke
+on:
+  push:
+    branches: [diag/log-transport-ui-037a]
+    paths:
+      - .github/workflows/log-transport-ui-smoke.yml
+      - diagnostics/check-log-transport-candidate.mjs
+permissions:
+  contents: read
+concurrency:
+  group: log-transport-ui-037a
+  cancel-in-progress: false
+jobs:
+  transport:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/log-transport-ui-037a'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 037a3c22a5fab45a735a6bfea9792c68049a4b62
+          path: source-candidate
+          persist-credentials: false
+      - name: Require the exact reviewed source and finite Node regressions
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(git -C source-candidate rev-parse HEAD)" = 037a3c22a5fab45a735a6bfea9792c68049a4b62
+          git -C source-candidate diff --exit-code HEAD --
+          mkdir -p artifacts/browser-log-transport-candidate
+          node --check diagnostics/check-log-transport-candidate.mjs
+          node --input-type=module --check < source-candidate/browser-single/pages/launcher.js
+          node --test \
+            source-candidate/browser-single/log-stream.test.mjs \
+            source-candidate/browser-single/runtime-errors.test.mjs \
+            source-candidate/browser-single/acceptance-protocol.test.mjs \
+            | tee artifacts/browser-log-transport-candidate/node-tests.log
+      - name: Install the exact locked Playwright runtime and both browsers
+        working-directory: source-candidate/e2e
+        timeout-minutes: 4
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium firefox
+      - name: Exercise real browser transport and cutoff without a VM or backend
+        timeout-minutes: 3
+        run: node diagnostics/check-log-transport-candidate.mjs
+      - name: Retain transport-only proof and exact reviewed sources
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-log-transport-candidate
+          path: |
+            artifacts/browser-log-transport-candidate/
+            diagnostics/check-log-transport-candidate.mjs
+            source-candidate/browser-single/pages/log-stream.mjs
+            source-candidate/browser-single/pages/launcher.js
+            source-candidate/browser-single/log-stream.test.mjs
+          if-no-files-found: warn
+          retention-days: 7
