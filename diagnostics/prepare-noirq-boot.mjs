@@ -4,13 +4,14 @@ import {createHash} from 'node:crypto';
 import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {runInNewContext} from 'node:vm';
 
-const sourceCommit = 'ff69d1eaa8e5f9bb51bc396355f4cdf3accec822';
+const sourceCommit = '1f10fb8b17cf09ae18b0003fbf0b7e731b91b6aa';
 const nativeProducerCommit = 'b267fefdba375395d496e6d89413786c048c70d2';
 const baselineProductionCommit = '55fb279741aa47ae813e5b7d5aff73dbd2692cc1';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/breadth2-browser-gate');
+const evidence = path.resolve('artifacts/noirq-boot-diagnostic');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -56,7 +57,7 @@ async function segmentRecord(directory,segment) {
 await fs.mkdir(evidence,{recursive:true});
 assert.equal(command('git',['rev-parse','HEAD'],{stdio:'pipe'}).trim(),sourceCommit);
 command('git',['diff','--exit-code']);
-// Five production files remain exact d7 bytes; only the proven guest export is allowed.
+// All six runtime payload/production-checker files remain exact d7 bytes.
 const fixtureFiles = {
   "browser-single/entrypoint.sh": {
     "gitBlob": "828a107cb517edc1d938a83c996d4017c5506b99",
@@ -89,41 +90,41 @@ const fixtureFiles = {
     "mode": "100644"
   }
 };
-const guestPath = 'browser-single/pages/guest.sh';
+const launcherPath = 'browser-single/pages/launcher.js';
 assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),baselineProductionCommit);
 const changedPaths = command('git',['diff','--name-only',baselineProductionCommit,'HEAD'],{stdio:'pipe'}).trim().split('\n');
-assert.deepEqual(changedPaths,[guestPath],'The candidate must change only the diagnostic guest environment');
-const baselineGuest = command('git',['show',baselineProductionCommit+':'+guestPath],{stdio:'pipe',encoding:null});
-assert(Buffer.isBuffer(baselineGuest));
-const guest = await fs.readFile(path.join(source,guestPath));
-const addition = Buffer.from('# Diagnostic only: bound resolver branch pools without changing deadlines.\nexport OPENFGA_RESOLVE_NODE_BREADTH_LIMIT=2\n');
-const anchor = Buffer.from('export OPENFGA_METRICS_ENABLED=false\n');
-const index = guest.indexOf(addition);
-assert(index>=0 && guest.lastIndexOf(addition)===index,'Expected one exact diagnostic export block');
-assert.equal(index,guest.indexOf(anchor)+anchor.length,'Diagnostic export moved from its reviewed position');
-const inverse = Buffer.concat([guest.subarray(0,index),guest.subarray(index+addition.length)]);
-assert.deepEqual(inverse,baselineGuest,'Removing only the reviewed export must restore the exact parent bytes');
-assert.equal(baselineGuest.length,6155);
-assert.equal(createHash('sha256').update(baselineGuest).digest('hex'),
-  '85567170437e8e6d18d089d859b292bf86c2e6b44519f6099ca80810b02f3d9c');
-assert.equal(command('git',['hash-object','--stdin'],{stdio:'pipe',input:baselineGuest}).trim(),fixtureFiles[guestPath].gitBlob);
-assert.equal(command('git',['ls-tree','HEAD','--',guestPath],{stdio:'pipe'}).split(' ')[0],'100755');
-assert.equal(command('git',['hash-object','--',guestPath],{stdio:'pipe'}).trim(),'8f37ad259c4784788579d6924432150f1d5f1c98');
-assert.equal(guest.length,6274);
+assert.deepEqual(changedPaths,[launcherPath],'The candidate must change only the reviewed kernel argument mapping');
+const baselineLauncher = command('git',['show',baselineProductionCommit+':'+launcherPath],{stdio:'pipe',encoding:null});
+assert(Buffer.isBuffer(baselineLauncher));
+const launcher = await fs.readFile(path.join(source,launcherPath));
+const replacements = [
+  ["kernelFlags.filter(flag => flag !== 'slub_debug=F' && flag !== 'acpi=off')",
+   "kernelFlags.filter(flag => flag !== 'slub_debug=F')"],
+  [".map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag).join(' ');",
+   ".map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag === 'acpi=off' ? 'acpi=noirq' : flag).join(' ');"]
+];
+let inverse = launcher.toString('utf8');
+for (const [before,after] of replacements) {
+  assert.equal(inverse.split(after).length,2,'Expected one exact reviewed launcher replacement');
+  inverse = inverse.replace(after,()=>before);
+}
+assert.deepEqual(Buffer.from(inverse),baselineLauncher,'Reversing only two reviewed lines must restore the exact parent');
+assert.equal(command('git',['hash-object','--',launcherPath],{stdio:'pipe'}).trim(),'ea8e9a477a48b41d4137ad38b322977fd65dbda0');
 for (const [name,expected] of Object.entries(fixtureFiles)) {
-  if (name===guestPath) continue;
   assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),expected.gitBlob,
     'Reviewed production runtime file changed: '+name);
   assert.equal((await fs.stat(path.join(source,name))).size,expected.bytes);
+  assert.equal(command('git',['ls-tree','HEAD','--',name],{stdio:'pipe'}).split(' ')[0],expected.mode);
 }
 const configurationExperiment = {
-  variable:'OPENFGA_RESOLVE_NODE_BREADTH_LIMIT',value:2,engine:'chromium',
+  variable:'kernel_acpi_irq_routing',value:'acpi=noirq',engine:'firefox',
   runtimeSource:sourceCommit,baselineProductionCommit,nativeProducerCommit,
   nativeConfigurationProof:false,inverseByteComparison:true,changedPaths,
-  baselineGuest:{bytes:baselineGuest.length,sha256:createHash('sha256').update(baselineGuest).digest('hex')},
-  candidateGuest:{bytes:guest.length,sha256:createHash('sha256').update(guest).digest('hex')},
+  baselineLauncher:{bytes:baselineLauncher.length,sha256:createHash('sha256').update(baselineLauncher).digest('hex')},
+  candidateLauncher:{bytes:launcher.length,sha256:createHash('sha256').update(launcher).digest('hex')},
+  guest:await fileRecord(path.join(source,'browser-single/pages/guest.sh')),
   unchangedRequestDeadlines:true,unchangedModelAndBinaries:true,
-  scope:'One scheduling configuration hypothesis; the retained native proof used the original configuration'
+  scope:'One kernel routing hypothesis; boot observation only, no backend acceptance claim'
 };
 const archives = {};
 for (const label of ['retained','kernel','native','bootstrap']) {
@@ -335,10 +336,48 @@ const kernelFiles = {
 for (const [name,expected] of Object.entries(kernelFiles)) {
   assert.deepEqual(await fileRecord(path.join(source,'artifacts/browser-kernel',name)),expected);
 }
+const kernelConfig = await fs.readFile(path.join(source,'artifacts/browser-kernel/linux.config'),'utf8');
+const requiredConfig = ['CONFIG_SYSVIPC=y','CONFIG_IPC_NS=y','CONFIG_SMP=y',
+  'CONFIG_X86_LOCAL_APIC=y','CONFIG_X86_IO_APIC=y','CONFIG_HPET_TIMER=y',
+  'CONFIG_ACPI=y','CONFIG_X86_PM_TIMER=y','CONFIG_HZ_100=y',
+  'CONFIG_X86_MPPARSE=y','# CONFIG_PCI_MSI is not set'];
+for (const line of requiredConfig) {
+  assert.equal(kernelConfig.split('\n').filter(value=>value===line).length,1,'Required actual kernel config differs: '+line);
+}
 const originalDirectory = path.join(prepared,'original-runtime');
 for (const [name,expected] of Object.entries(originalManifest.files)) {
   assert.deepEqual(await fileRecord(path.join(originalDirectory,name)),expected);
 }
+// This is the exact SHA-verified converter argument asset, not a VM launch.
+const argumentAsset = await fs.readFile(path.join(originalDirectory,'arg-module.js'),'utf8');
+const sandbox = {Module:{}};
+runInNewContext(argumentAsset,sandbox,{timeout:1000});
+const originalArguments = JSON.parse(JSON.stringify(sandbox.Module.arguments));
+assert(Array.isArray(originalArguments) && originalArguments.every(value=>typeof value==='string'));
+const expectedArguments = originalArguments.slice();
+const option = name => {
+  assert.equal(expectedArguments.filter(value=>value===name).length,1,'Unexpected argument multiplicity: '+name);
+  const index = expectedArguments.indexOf(name);
+  assert(index>=0 && index+1<expectedArguments.length);
+  return index;
+};
+assert.equal(expectedArguments[option('-accel')+1],'tcg,tb-size=500,thread=multi');
+assert.equal(expectedArguments[option('-m')+1],'128M');
+assert.equal(expectedArguments[option('-smp')+1],'1,sockets=1');
+expectedArguments.splice(option('-incoming'),2);
+expectedArguments[option('-m')+1]='512M';
+expectedArguments[option('-smp')+1]='2,sockets=2,cores=1,threads=1';
+const append = option('-append');
+const flags = expectedArguments[append+1].split(/\s+/);
+const separator = flags.indexOf('--');
+for (const flag of ['acpi=off','slub_debug=F','loglevel=0']) {
+  assert.equal(flags.filter(value=>value===flag).length,1);
+  assert(flags.indexOf(flag)<separator);
+}
+assert(separator>=0 && !expectedArguments.includes('-no-acpi') && !expectedArguments.includes('-no-hpet'));
+expectedArguments[append+1]=flags.filter(flag=>flag!=='slub_debug=F')
+  .map(flag=>flag==='loglevel=0'?'loglevel=7':flag==='acpi=off'?'acpi=noirq':flag).join(' ');
+expectedArguments[option('-netdev')+1]='hubport,id=vmnic,hubid=0';
 const originalMetadata = await metadata(originalDirectory);
 const originalSegments = {};
 for (const segment of originalMetadata.files) {
@@ -391,7 +430,8 @@ assert.deepEqual(startup.openfga_build,openfga);
 assert.deepEqual(startup.bootstrap_build,bootstrapBuild);
 assert.deepEqual(startup.files['runtime/openfga'],openfgaBinary);
 assert.deepEqual(startup.files['runtime/bootstrap'],bootstrapBinary);
-assert.deepEqual(startup.files['guest.sh'],configurationExperiment.candidateGuest);
+assert.deepEqual(startup.files['guest.sh'],configurationExperiment.guest);
+assert.deepEqual(await fileRecord(path.join(source,'browser-output/wasm/launcher.js')),configurationExperiment.candidateLauncher);
 assert.deepEqual(startup.emulator_build,emulator);
 assert.deepEqual(Object.keys(startup.files).sort(),
   ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap'].sort());
@@ -407,22 +447,23 @@ for (const name of ['browser-single/prepare-pages.sh','browser-single/check-page
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
 const proof = {
-  schemaVersion:1,experiment:'openfga8_resolver_breadth_2',diagnosticOnly:true,
+  schemaVersion:1,experiment:'firefox_acpi_noirq_boot',diagnosticOnly:true,
   modelExplorerBuildVerified:false,sourceCommit,nativeProducerCommit,sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
   originalRuntimeSource:originalManifest.source_commit,
   kernelSource:'af9c5555e312ffaec3785154f5be83be7469c95f',
   rootfsUnchanged:true,preservedSegments,data:expectedData,loader:expectedLoader,
+  kernelConfig:kernelFiles['linux.config'],requiredConfig,originalArguments,expectedArguments,
   args:originalManifest.files['arg-module.js'],kernel:kernelFiles.bzImage,emulator:pair,
   startupManifest:await fileRecord(path.join(runtime,'startup-manifest.json')),
   openfgaBuild:openfga,openfgaBinary,bootstrapBuild:startup.bootstrap_build,
   executions:{initialBootstrap:'/tmp/browser-lab-runtime/bootstrap',
     probe:'/usr/local/bin/lab-tool',acceptance:'/usr/local/bin/lab-tool'},
   expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi'},
-  authorizationDeadlinesChanged:false
+  authorizationDeadlinesChanged:false,productionAcceptance:false,maxVmStarts:1,hostObservationMilliseconds:300000
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
-console.log('BREADTH2_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
+console.log('NOIRQ_BOOT_DIAGNOSTIC '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
   rootfsUnchanged:true,data:expectedData,loader:expectedLoader,kernel:kernelFiles.bzImage,
   nativeVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
   resolverTypesystemReuse:openfga.first_resolver_typesystem_reuse,
