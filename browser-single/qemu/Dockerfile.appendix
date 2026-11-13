@@ -3,7 +3,7 @@
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs check-instance-budget-bridge.mjs i32-multiply.patch check-i32-multiply.mjs upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs check-instance-budget-bridge.mjs i32-multiply.patch check-i32-multiply.mjs memory-barrier.patch check-memory-barrier.mjs upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
@@ -30,6 +30,12 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && cat /emulator-out/instance-budget-bridge-tests.log \
     && node /browser-qemu-input/check-i32-multiply.mjs /qemu/tcg/wasm32/tcg-target.c.inc /emulator-out/i32-multiply-proof > /emulator-out/i32-multiply-tests.log \
     && cat /emulator-out/i32-multiply-tests.log \
+    && git -C /qemu apply --check --whitespace=error-all /browser-qemu-input/memory-barrier.patch \
+    && git -C /qemu apply --whitespace=error-all /browser-qemu-input/memory-barrier.patch \
+    && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.c.inc)" = 4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355 \
+    && git -C /qemu diff --check HEAD -- \
+    && node /browser-qemu-input/check-memory-barrier.mjs /qemu/tcg/wasm32/tcg-target.c.inc /emulator-out/memory-barrier-proof > /emulator-out/memory-barrier-tests.log \
+    && cat /emulator-out/memory-barrier-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
 
 # Same configure/compiler/linker flags as pinned converter lines 866-870.
@@ -83,6 +89,10 @@ metadata = {
     "multiply_emitter_preimage_blob": "3c85588be97b6c53a451e30c0593e8b433ede7b6",
     "multiply_emitter_postimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
     "i32_multiply_tests": "passed",
+    "memory_barrier_fix": "emit_atomic_fence_for_tcg_mb",
+    "barrier_emitter_preimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "barrier_emitter_postimage_blob": "4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355",
+    "memory_barrier_tests": "passed",
     "instantiate_num": 1500,
     "change_kind": "separate_retention_and_live_instance_budget_candidate",
     "patch_sha256": digest("instance-budget.patch"),
@@ -95,6 +105,9 @@ metadata = {
     "multiply_patch_sha256": digest("i32-multiply.patch"),
     "multiply_test_sha256": digest("check-i32-multiply.mjs"),
     "multiply_proof_sha256": digest("i32-multiply-proof/summary.json"),
+    "barrier_patch_sha256": digest("memory-barrier.patch"),
+    "barrier_test_sha256": digest("check-memory-barrier.mjs"),
+    "barrier_proof_sha256": digest("memory-barrier-proof/summary.json"),
     "files": files,
     "browser_acceptance": "not_run",
 }
@@ -118,11 +131,20 @@ metadata = {
     "Wasm object retention is introduced. Encoded sizes are input bytes, not "
     "native memory. Stale per-worker live estimates are not a global bound. "
     "The separate i32-multiply.patch normalizes each i32 input before the "
-    "signed/unsigned widening multiply. Its exact C emitter postimage is "
+    "signed/unsigned widening multiply. Its intermediate C emitter postimage is "
     "d4078f5adac57d9ccc7d792773fff2ea65a33d6a. Actual extracted C emitters "
     "produce real Wasm for 96 candidate cases and the pinned upstream negative "
     "control. Raw C, emitted bytes, Wasm and results are in i32-multiply-proof/. "
     "This arithmetic defect is not established as the cause of browser failures. "
+    "The following memory-barrier.patch replaces the compiled INDEX_op_mb nop "
+    "with atomic.fence (FE 03 00), preserving the TCI smp_mb path. The final "
+    "emitter postimage is 4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355. "
+    "memory-barrier-proof/ retains exact source, extracted C and real Wasm "
+    "for 64 masks, stack/shared-memory execution and malformed-encoding controls. "
+    "The full fence also applies to ordinary x86 guest load/store ordering "
+    "requests and may increase execution cost. This is a separate correctness "
+    "repair, with no established connection to OpenFGA startup latency and "
+    "no inter-thread ordering or full-emulator proof from the tiny tests. "
     "Native accounting, extracted-JS and compiled SDK 4.0.10 budget-bridge tests passed. "
     "The bridge proof uses the extracted C with actual preRun/proxy-main/two-pthread "
     "glue, a 64 MiB fixture heap and EXIT_RUNTIME=1; it does not run complete QEMU. "

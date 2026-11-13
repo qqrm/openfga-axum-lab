@@ -75,9 +75,13 @@ try {
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.ok(first.startupManifest,'Missing verified startup provenance');
       assert.equal(first.vm?.kernelLogLevel,7);
+      assert.ok(Number.isSafeInteger(first.vm?.reportedLogicalCPUs) && first.vm.reportedLogicalCPUs >= 2);
       assert.equal(first.startupManifest.openfga_build.warmup_cycles,1);
       assert.equal(first.startupManifest.openfga_build.model_validation_cache,'conditionless_exact_protobuf_body_except_id');
       assert.equal(first.startupManifest.openfga_build.model_validation_tests,'passed');
+      assert.equal(first.startupManifest.openfga_build.model_json_decoder,'pinned_json_decode_private_clone');
+      assert.equal(first.startupManifest.openfga_build.model_codec_tests,'passed');
+      assert.equal(first.startupManifest.openfga_build.warmup_generated_validation,'ValidateAll');
       assert.equal(first.startupManifest.openfga_build.tuple_write_typesystem_reuse,'same_request_store_and_model');
       assert.equal(first.startupManifest.openfga_build.write_typesystem_tests,'passed');
       assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,15000);
@@ -94,6 +98,10 @@ try {
       assert.equal(first.startupManifest.emulator_build?.multiply_emitter_preimage_blob,'3c85588be97b6c53a451e30c0593e8b433ede7b6');
       assert.equal(first.startupManifest.emulator_build?.multiply_emitter_postimage_blob,'d4078f5adac57d9ccc7d792773fff2ea65a33d6a');
       assert.equal(first.startupManifest.emulator_build?.i32_multiply_tests,'passed');
+      assert.equal(first.startupManifest.emulator_build?.memory_barrier_fix,'emit_atomic_fence_for_tcg_mb');
+      assert.equal(first.startupManifest.emulator_build?.barrier_emitter_preimage_blob,'d4078f5adac57d9ccc7d792773fff2ea65a33d6a');
+      assert.equal(first.startupManifest.emulator_build?.barrier_emitter_postimage_blob,'4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355');
+      assert.equal(first.startupManifest.emulator_build?.memory_barrier_tests,'passed');
       assert.equal(first.ready,true);
       assert.equal(first.accepted,true);
       assert.deepEqual(first.statuses,expectedStatuses);

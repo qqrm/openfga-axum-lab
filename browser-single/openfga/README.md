@@ -61,7 +61,7 @@ The checked input is the unchanged repository `fga/model.json`; the real HTTP
 client's serialized request is a separate representation.
 
 One startup cycle exercises the pinned grpc-gateway `JSONPb` decoder, protobuf
-binary encoding/decoding, generated request validation and the complete original
+binary encoding/decoding, generated `ValidateAll` request validation and the complete original
 TypeSystem validator. It then encodes local write-model and full read-model
 response fixtures through protobuf and JSONPb. The fixed ULID is codec input
 only. No request handler, datastore, store/tuple write or Check is called, and
@@ -111,6 +111,54 @@ pass. Repeating validation did not establish adequate request performance;
 this revision removes that repetition without changing request deadlines.
 The remaining graph construction and browser JIT/GC costs still require actual
 browser verification.
+
+## Exact pinned-model JSON decoding
+
+[Run 43378543550](https://github.com/qqrm/openfga-axum-lab/actions/runs/43378543550)
+started PostgreSQL and OpenFGA in Chromium and Firefox. Both completed warmup,
+self-dial, Health and CreateStore; both failed the initial model POST at the
+unchanged five-second bootstrap limit. HTTP start to unary observer took
+4780 ms in Chromium and 6450 ms in Firefox. Generated validation and auth run
+after that observer. Warmup's separate JSON decode stage took 3970/7440 ms;
+this supports examining the decoder but does not attribute the entire request
+interval to JSON. Both browsers completed zero acceptance passes.
+
+The pinned gateway's `JSONPb.NewDecoder` first reads a `json.RawMessage` with
+the standard streaming JSON decoder, then invokes `protojson.Unmarshal`.
+The browser codec retains the first step unchanged. Only an exact raw-byte
+match of the pinned model can replace the second step with an independent
+protobuf copy of the already decoded request. Internal whitespace changes,
+different fields, unknown fields and malformed bodies use the original
+decoder and its original errors. Other message types, decoder options,
+encoding and HTTP-body behavior retain the original JSONPb path.
+
+The ordinary JSONPb decoder prepares a private prototype during the existing
+bounded startup phase. The caller receives this codec only after every warmup
+stage succeeds; no global codec entry or partially initialized gateway is
+published. Warmup uses an independent request before setting its fixture ID.
+Each real request receives another independent copy, with no fixture store ID.
+The generated gateway still supplies the actual `store_id` from the URL and
+calls the real gRPC client. Validation, authentication, context/deadlines, model
+size checks, real model ID generation and PostgreSQL writes remain mandatory.
+No RPC response, store existence, tuple or authorization result is cached.
+
+One fixed diagnostic event records decode duration, byte count, cache hit and
+failure state without the JSON body. The native parity and real HTTP/gRPC
+integration tests are separate from the required browser acceptance gate.
+The candidate keeps the two/three/five-second request limits unchanged.
+
+The retained image's actual `lab-tool` executable was also run natively against
+the generated HTTP gateway, loopback gRPC and OpenFGA's real memory datastore.
+Its successful bootstrap sent exactly **52708 bytes**, SHA-256
+`ac5325a6b1d41ec045393b3ccba88bfcb2b016c9cfa19a31773e149c7d152a59`,
+matching the private raw key byte for byte. The model was read back through the
+real service. Executable SHA-256:
+`f11c71c16a1b74063a7a1c2a5ea72601efe165bc5cff327a732e68bd988999b8`.
+This wire proof uses the retained binary, rather than a reimplementation of
+Rust serialization. It is optional in the native test suite through
+`BROWSER_RETAINED_LAB_TOOL`; the ordinary builder does not have that image's
+executable and explicitly skips this one check. This is not PostgreSQL or
+browser acceptance.
 
 ## Reuse within a real tuple Write
 
@@ -207,6 +255,12 @@ Tests invoke the same helper called by the patched server:
   cancellation fail closed.
 - The patched server entry point rejects an unacceptable model or cancelled
   parent before datastore or listener initialization.
+- Model decoder parity covers exact/deeply independent copies, changed and
+  malformed JSON, unknown/duplicate fields, streaming/read-ahead and reader
+  errors, other request types/options, HTTP-body encoding and panic behavior.
+  The real HTTP/gRPC integration compares default and cached decoding with
+  model writes/readback, separate store bindings, auth failures, invalid models
+  and cancellation without a datastore write.
 - Exact-schema cache tests cover generated IDs, nested/unknown-field mismatches,
   invalid-model fallback, independent inputs/TypeSystems and cancellation. The
   cache contains validation evidence only and never substitutes a Check result.
@@ -226,15 +280,16 @@ Both Chromium and Firefox must still pass the actual sequence twice, in order:
 
 Output contains `openfga`, `build.json`, `dial-tests.log`,
 `model-validation-tests.log`, `write-typesystem-tests.log`, `LICENSE`, `SOURCE.txt`,
-the exact source patch, all three helpers and the new Write-command test source.
+the exact source patch, injected helpers and the new codec and Write-command test sources.
 `build.json` is created only after passing
 tests and records the source commit, compiler version, canonical UTC commit
 date, patch/helper/test digests, metadata-only diagnostics, omitted unary logging,
 the pinned warmup model identity and budget, native warmup proof, same-request
-store/model TypeSystem reuse, native write-test proof, dependency checksum and
+store/model TypeSystem reuse, exact JSON decoder and native parity/transport
+proof, native write-test proof, dependency checksum and
 executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.6`.
+`v1.10.3-browser-startup.7`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

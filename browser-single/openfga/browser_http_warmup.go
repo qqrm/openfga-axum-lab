@@ -1,7 +1,6 @@
 package run
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -9,9 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/openfga/openfga/pkg/typesystem"
@@ -44,15 +41,26 @@ type browserHTTPWarmupProgress struct {
 	failed       bool
 }
 
+type browserHTTPWarmupPrepared struct {
+	validation *typesystem.BrowserModelValidation
+	codec      *browserModelCodec
+}
+
 // Run before datastore construction or any listener. Exercise the real codecs
 // and fully validate the pinned model once. Publish only the immutable fact that
-// this exact model body is valid after every startup stage succeeds; never cache
-// a TypeSystem, datastore state or an authorization decision.
+// this exact model body is valid after every startup stage succeeds. The codec
+// variant also returns a private decoded prototype; neither retains a
+// TypeSystem, datastore state or an authorization decision.
 func warmBrowserHTTPModel(ctx context.Context, path string) error {
+	_, err := warmBrowserHTTPModelCodec(ctx, path)
+	return err
+}
+
+func warmBrowserHTTPModelCodec(ctx context.Context, path string) (*browserModelCodec, error) {
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, browserHTTPWarmupTimeout)
 	defer cancel()
-	var prepared *typesystem.BrowserModelValidation
+	var prepared *browserHTTPWarmupPrepared
 	// Five stage starts and one completion per cycle fit even after the caller
 	// times out. The worker sends value snapshots and never logs after timeout.
 	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
@@ -69,15 +77,24 @@ func warmBrowserHTTPModel(ctx context.Context, path string) error {
 	if err == nil {
 		// The result receive synchronizes access to prepared. On timeout the
 		// caller never reads the worker result and never installs its cache.
-		err = typesystem.InstallBrowserModelValidation(ctx, prepared)
+		err = typesystem.InstallBrowserModelValidation(ctx, prepared.validation)
+	}
+	if err == nil {
+		err = ctx.Err()
 	}
 	logBrowserHTTPWarmupCycles(progress)
 	browserTransportLogger.Printf("warmup_end duration_ms=%d failed=%t", time.Since(started).Milliseconds(), err != nil)
-	return err
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return prepared.codec, nil
 }
 
-func warmBrowserHTTPModelCycles(ctx context.Context, data []byte, progress chan<- browserHTTPWarmupProgress) (*typesystem.BrowserModelValidation, error) {
-	var prepared *typesystem.BrowserModelValidation
+func warmBrowserHTTPModelCycles(ctx context.Context, data []byte, progress chan<- browserHTTPWarmupProgress) (*browserHTTPWarmupPrepared, error) {
+	var prepared *browserHTTPWarmupPrepared
 	for cycle := 1; cycle <= browserHTTPWarmupCycles; cycle++ {
 		var err error
 		prepared, err = warmBrowserHTTPModelCodecs(ctx, data, cycle, progress)
@@ -171,7 +188,7 @@ func readBrowserHTTPModel(path string) ([]byte, error) {
 	return data, nil
 }
 
-func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, progress chan<- browserHTTPWarmupProgress) (prepared *typesystem.BrowserModelValidation, err error) {
+func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, progress chan<- browserHTTPWarmupProgress) (prepared *browserHTTPWarmupPrepared, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -192,18 +209,16 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 	}()
 	// These are grpc-gateway's pinned default JSONPb options. Use the full model,
 	// so nested messages/maps/oneofs take the same codec paths as the real POST.
-	codec := &runtime.JSONPb{
-		MarshalOptions:   protojson.MarshalOptions{EmitUnpopulated: true},
-		UnmarshalOptions: protojson.UnmarshalOptions{DiscardUnknown: true},
-	}
-	request := &openfgav1.WriteAuthorizationModelRequest{}
-	if err := codec.NewDecoder(bytes.NewReader(data)).Decode(request); err != nil {
+	codec, err := newBrowserModelCodec(data)
+	if err != nil {
 		return nil, fmt.Errorf("warmup gateway model decode: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	startStage(browserWarmupProtobuf)
+	// The codec prototype remains private and has no fixture store identity.
+	request := proto.Clone(codec.prototype).(*openfgav1.WriteAuthorizationModelRequest)
 	request.StoreId = browserHTTPWarmupID
 	wire, err := proto.Marshal(request)
 	if err != nil {
@@ -217,7 +232,7 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 		return nil, err
 	}
 	startStage(browserWarmupGeneratedValidation)
-	if err := decoded.Validate(); err != nil {
+	if err := decoded.ValidateAll(); err != nil {
 		return nil, fmt.Errorf("warmup generated request validation: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -230,7 +245,7 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 		TypeDefinitions: decoded.GetTypeDefinitions(),
 		Conditions:      decoded.GetConditions(),
 	}
-	prepared, err = typesystem.PrepareBrowserModelValidation(ctx, model)
+	validation, err := typesystem.PrepareBrowserModelValidation(ctx, model)
 	if err != nil {
 		return nil, fmt.Errorf("warmup type-system validation: %w", err)
 	}
@@ -262,5 +277,5 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 			return nil, fmt.Errorf("warmup gateway response encode: %w", err)
 		}
 	}
-	return prepared, ctx.Err()
+	return &browserHTTPWarmupPrepared{validation: validation, codec: codec}, ctx.Err()
 }

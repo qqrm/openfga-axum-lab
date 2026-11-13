@@ -19,6 +19,10 @@ multiplication in the Wasm emitter. It preserves the retention, diagnostic and
 execution rules above. This is an arithmetic correctness fix, not a demonstrated
 remedy for browser OOM or startup timeouts.
 
+A third patch restores the compiled TCG memory barrier with Wasm `atomic.fence`.
+It is a separate memory-ordering correctness repair. Its effect on execution
+cost and browser acceptance has not been measured.
+
 ## Startup budget interface
 
 `Module._qemu_wasm_set_instance_limit(limit)` is an explicit C export provided
@@ -55,7 +59,7 @@ the upstream emitter produces high word `0x00000001` instead.
 from [upstream PR #54](https://github.com/ktock/qemu-wasm/pull/54); no other
 proposed i32 or POPCNT changes are included. Ordinary guest 32-bit MUL/IMUL
 can reach these emitters without an optional CPUID feature.
-The emitter file's Git blob changes from
+The intermediate emitter file's Git blob changes from
 `3c85588be97b6c53a451e30c0593e8b433ede7b6` to
 `d4078f5adac57d9ccc7d792773fff2ea65a33d6a`.
 
@@ -74,6 +78,70 @@ The build retains full pinned/postimage sources, extracted C, emitted bytes,
 tiny Wasm modules, compiler logs and per-case results in `i32-multiply-proof/`.
 Its hashed summary lists every proof file. This archive is separate from the
 required two-pass browser acceptance gate.
+
+## Memory-barrier correctness
+
+The pinned [compiled `INDEX_op_mb` case](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32/tcg-target.c.inc)
+emits a Wasm `nop`. The [TCI path](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32.c)
+executes `smp_mb()`, whose [definition](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/include/qemu/atomic.h)
+includes a sequentially consistent thread fence. Consequently, compiling the
+same TCG barrier discards the ordering operation supplied by the interpreter.
+
+`memory-barrier.patch` changes only that case: the unchanged TCI instruction
+is followed by the Wasm bytes `FE 03 00` for `atomic.fence`. The final zero is
+the required reserved immediate, not the TCG mask. The [Wasm threads specification](https://github.com/WebAssembly/threads/blob/cc535ada1aa21cfaa3cabf3ac73b89acef78a0a0/proposals/threads/Overview.md)
+defines this fence without stack operands or results and without a particular
+linear-memory target. Its [execution rule](https://github.com/WebAssembly/threads/blob/cc535ada1aa21cfaa3cabf3ac73b89acef78a0a0/document/core/exec/instructions.rst)
+performs a sequentially consistent fence. Applying this full fence to every
+TCG barrier mask matches the existing TCI behavior and can strengthen a weaker
+ordering request. No compiler flags, CPU settings, admission limits, eviction
+rules, service configuration or request deadlines change.
+
+The patch applies **after** `i32-multiply.patch`: the verified intermediate
+blob is `d4078f5adac57d9ccc7d792773fff2ea65a33d6a`, and the composed final
+emitter blob is `4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355`. The multiplication
+proof and its `multiply_emitter_postimage_blob` metadata continue to describe
+the intermediate stage. The separate barrier preimage/postimage fields describe
+the following stage; reversing only the barrier patch reproduces that exact
+intermediate source.
+
+`check-memory-barrier.mjs` reads the real build source tree, verifies full-file
+pins, and extracts the actual emitter case, byte/word helpers, TCG memory-order
+enum and barrier generator. The only native adapters are output buffers, an
+opcode tag and the TCG IR recorder. It checks 64 mask values, preserves the TCI
+word and verifies 16 requests through the real `tcg_gen_req_mo`. The baseline
+emits `nop` for all 64 values; the candidate emits `FE 03 00` for all 64.
+Node validates and executes the emitted Wasm: 512 stack-value cases and 256
+shared-memory write/fence/read cases per version. Three malformed fence
+encodings must fail validation. The exact patch is also applied and reversed
+on an isolated source copy. The 28 source, C, Wasm and result files are listed
+by size and SHA256 in `memory-barrier-proof/summary.json`.
+
+These are deterministic encoding and execution checks. A single-threaded
+shared-memory fixture is not a proof of all inter-thread orderings, a full
+QEMU run, or browser acceptance. The missing fence is not established as the
+cause of OpenFGA's observed HTTP timeout.
+
+A bounded local compatibility check also ran the same three candidate Wasm
+modules in Chromium 157.0.8103.78 and Firefox 159.0: each completed eight
+stack-value cases and four shared-memory write/read cases, rejected the three
+malformed encodings, and reported no page errors. All six input hashes match
+the canonical proof's modules. The evidence is
+`qemu-memory-barrier/browser-smoke-results.json`, SHA256
+`34595e51ac85ced4dd9ab6f12598733ddc932b5dc31922dee69409e357f0339f`.
+This checks browser compatibility of the tiny emitted instructions; it starts
+neither QEMU nor services and provides no acceptance or inter-thread ordering
+result.
+
+There is a material performance risk: the [backend declares no default ordering](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/wasm32/tcg-target.h),
+while the [x86 guest requires mask `0xD`](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/target/i386/cpu.h).
+The real [load/store generator](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/tcg-op-ldst.c)
+therefore requests barriers `0x31` for ordinary loads and `0x3C` for ordinary
+stores, before any later optimization. Fences may occur frequently and add two
+encoded bytes per emitted barrier. No latency or native-code-memory effect has
+been measured. Claiming stronger host ordering merely to remove these fences
+would require a separate correctness justification. QEMU's [system-mode barrier generator](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/tcg/tcg-op.c)
+also retains barriers for a single vCPU because I/O threads can run concurrently.
 
 ## Evidence and limits
 
@@ -207,10 +275,10 @@ bash browser-single/qemu/build.sh /path/to/emulator-output
 
 The script downloads the pinned upstream Dockerfile into a temporary directory
 and verifies its SHA256, fetches the exact QEMU commit, verifies the backend and
-emitter/header preimages, and checks both exact patched C postimages. Only
+emitter/header preimages, and checks the exact patched C postimages at each stage. Only
 `tcg/wasm32.c` and `tcg/wasm32/tcg-target.c.inc` may change.
 A named `qemu-repo` build context supplies the clean checkout. The appended
-target independently verifies and applies both patches. Focused native tests
+target independently verifies and applies all three patches. Focused native tests
 extract the actual patched accounting/eviction functions, exercise competing
 reservations at both limits, configuration/freeze races, the actual yield
 condition, delayed GC accounting and FIFO eviction, and retain
@@ -231,12 +299,16 @@ production threading/Asyncify/ES-module settings with a 64 MiB heap and
 target requires this proof before compiling the full emulator.
 The multiplication checker runs in both host preflight and the build target;
 an unchanged upstream emitter cannot pass as the candidate.
+Its intermediate proof runs before the barrier patch is applied. The barrier
+checker then verifies and exercises the final emitter in both host preflight
+and the build target. Both proof archives and their hashes are required by the
+build-output validator and runtime overlay.
 Emscripten 4.0.10 is pinned
 to the amd64 image digest
 `sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7`.
 The build exports only the emulator pair and provenance to
 `artifacts/browser-emulator`: file sizes/hashes in `build.json`, source patches,
-recipes, accounting, diagnostic and multiplication tests/results, compiler version, build configuration,
+recipes, accounting, diagnostic, multiplication and barrier tests/results, compiler version, build configuration,
 submodule commits and licenses.
 
 The upstream dependency stages still use package repositories and network

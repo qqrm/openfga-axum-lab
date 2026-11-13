@@ -29,7 +29,8 @@ cp -- "$script_dir/build.sh" "$script_dir/Dockerfile.appendix" \
     "$script_dir/instance-budget.patch" "$script_dir/check-instance-budget.mjs" \
     "$script_dir/check-runtime-diagnostics.mjs" "$script_dir/check-instance-budget-bridge.mjs" \
     "$script_dir/i32-multiply.patch" \
-    "$script_dir/check-i32-multiply.mjs" "$context_dir/"
+    "$script_dir/check-i32-multiply.mjs" \
+    "$script_dir/memory-barrier.patch" "$script_dir/check-memory-barrier.mjs" "$context_dir/"
 cat "$context_dir/upstream.Dockerfile" "$context_dir/Dockerfile.appendix" > "$context_dir/Dockerfile"
 
 git -C "$source_dir" init -q
@@ -46,7 +47,7 @@ check_clean_source() {
     git -C "$source_dir" diff --quiet --exit-code HEAD --
 }
 check_clean_source
-# Validate both exact edits before spending work on dependencies, then supply a
+# Validate all three exact patches before spending work on dependencies, then supply a
 # clean checkout. The Docker target independently validates and applies them.
 git -C "$source_dir" apply --unidiff-zero --check --whitespace=error-all "$context_dir/instance-budget.patch"
 git -C "$source_dir" apply --unidiff-zero --whitespace=error-all "$context_dir/instance-budget.patch"
@@ -61,6 +62,13 @@ git -C "$source_dir" diff --check HEAD --
 node "$script_dir/check-instance-budget.mjs" "$source_dir/tcg/wasm32.c"
 node "$script_dir/check-runtime-diagnostics.mjs" "$source_dir/tcg/wasm32.c"
 node "$script_dir/check-i32-multiply.mjs" "$source_dir/tcg/wasm32/tcg-target.c.inc"
+git -C "$source_dir" apply --check --whitespace=error-all "$context_dir/memory-barrier.patch"
+git -C "$source_dir" apply --whitespace=error-all "$context_dir/memory-barrier.patch"
+test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = 4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355
+git -C "$source_dir" diff --check HEAD --
+node "$script_dir/check-memory-barrier.mjs" "$source_dir/tcg/wasm32/tcg-target.c.inc"
+git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/memory-barrier.patch"
+test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a
 git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/i32-multiply.patch"
 git -C "$source_dir" apply --unidiff-zero --reverse --whitespace=error-all "$context_dir/instance-budget.patch"
 check_clean_source
@@ -102,6 +110,10 @@ expected = {
     "multiply_emitter_preimage_blob": "3c85588be97b6c53a451e30c0593e8b433ede7b6",
     "multiply_emitter_postimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
     "i32_multiply_tests": "passed",
+    "memory_barrier_fix": "emit_atomic_fence_for_tcg_mb",
+    "barrier_emitter_preimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "barrier_emitter_postimage_blob": "4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355",
+    "memory_barrier_tests": "passed",
     "instantiate_num": 1500,
     "browser_acceptance": "not_run",
 }
@@ -116,6 +128,8 @@ for key, name in [
     ("budget_bridge_test_sha256", "check-instance-budget-bridge.mjs"),
     ("multiply_patch_sha256", "i32-multiply.patch"),
     ("multiply_test_sha256", "check-i32-multiply.mjs"),
+    ("barrier_patch_sha256", "memory-barrier.patch"),
+    ("barrier_test_sha256", "check-memory-barrier.mjs"),
 ]:
     assert metadata[key] == hashlib.sha256((source / name).read_bytes()).hexdigest(), key
     assert (output / name).read_bytes() == (source / name).read_bytes(), name
@@ -135,6 +149,40 @@ assert {item.name for item in proof_dir.iterdir()} == set(proof["files"]) | {"su
 for name, item in proof["files"].items():
     assert Path(name).name == name and name not in (".", "..", "summary.json")
     data = (proof_dir / name).read_bytes()
+    assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
+barrier_dir = output / "memory-barrier-proof"
+barrier_bytes = (barrier_dir / "summary.json").read_bytes()
+assert hashlib.sha256(barrier_bytes).hexdigest() == metadata["barrier_proof_sha256"]
+barrier = json.loads(barrier_bytes)
+assert barrier["status"] == "passed" and barrier["kind"] == "compiled_c_wasm_memory_barrier"
+assert barrier["qemu_commit"] == metadata["qemu_commit"]
+assert barrier["upstream_blob"] == metadata["multiply_emitter_preimage_blob"]
+assert barrier["source_blob"] == metadata["multiply_emitter_postimage_blob"] == metadata["barrier_emitter_preimage_blob"]
+assert barrier["candidate_blob"] == metadata["barrier_emitter_postimage_blob"]
+assert barrier["header_blob"] == "37ad4b93c8ab721639e4cd8603a5dbbe69c07105"
+assert barrier["backend_blob"] == metadata["backend_postimage_blob"]
+assert barrier["patch_sha256"] == metadata["barrier_patch_sha256"]
+assert barrier["checker_sha256"] == metadata["barrier_test_sha256"]
+assert barrier["patch_apply_reverse"] is True and barrier["malformed_fence_controls"] == 3
+assert barrier["results"] == [
+    {"name": name, "masks": 64, "reqMoCases": 16, "requiredFenceMatches": fences,
+     "stackExecutions": 512, "sharedMemoryExecutions": 256, "tciWordsPreserved": True}
+    for name, fences in [("baseline", 0), ("candidate", 64)]
+]
+barrier_files = {
+    "baseline-tcg-target.c.inc", "patched-tcg-target.c.inc", "upstream-tcg-target.c.inc",
+    "tcg-target.h", "wasm32.c", "tcg-mo.h", "tcg-op.c", "tcg-op-ldst.c", "cpu.h", "atomic.h",
+    "memory-barrier.patch", "check-memory-barrier.mjs", "patch-apply-reverse.json",
+    "invalid-fe03.wasm", "invalid-fe0301.wasm", "invalid-fe0330.wasm",
+} | {
+    f"{variant}-{suffix}" for variant in ["baseline", "candidate"]
+    for suffix in ["emitter.c", "compiler.json", "emitted.txt", "no-memory-stack.wasm",
+                   "shared-stack.wasm", "shared-write-fence-read.wasm"]
+}
+assert set(barrier["files"]) == barrier_files
+assert {item.name for item in barrier_dir.iterdir()} == barrier_files | {"summary.json"}
+for name, item in barrier["files"].items():
+    data = (barrier_dir / name).read_bytes()
     assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
 bridge_dir = output / "instance-budget-bridge-proof"
 bridge_bytes = (bridge_dir / "summary.json").read_bytes()

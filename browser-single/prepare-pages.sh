@@ -16,6 +16,8 @@ mkdir -p "$output/runtime/openfga-build"
 cp "$openfga_build/build.json" "$openfga_build/LICENSE" "$openfga_build/SOURCE.txt" \
     "$openfga_build/startup-dial.patch" "$openfga_build/browser_http_dial.go" \
     "$openfga_build/browser_http_warmup.go" "$openfga_build/browser_model_validation.go" \
+    "$openfga_build/browser_model_codec.go" "$openfga_build/browser_model_codec_test.go" \
+    "$openfga_build/browser_model_codec_integration_test.go" \
     "$openfga_build/dial-tests.log" "$openfga_build/model-validation-tests.log" \
     "$openfga_build/write-typesystem-tests.log" "$openfga_build/browser_write_typesystem_test.go" \
     "$output/runtime/openfga-build/"
@@ -61,9 +63,12 @@ assert.equal(build.startup_dial_tests,'passed');
 assert.equal(build.authorization_request_timeout_default_seconds,3);
 assert.equal(build.startup_model_warmup,'in_process_codec_validation_with_exact_schema_cache');
 assert.equal(build.model_validation_cache,'conditionless_exact_protobuf_body_except_id');
+assert.equal(build.model_json_decoder,'pinned_json_decode_private_clone');
+assert.equal(build.warmup_generated_validation,'ValidateAll');
 assert.equal(build.warmup_timeout_seconds,60);
 assert.equal(build.warmup_cycles,1);
 assert.equal(build.warmup_tests,'passed');
+assert.equal(build.model_codec_tests,'passed');
 assert.equal(build.model_validation_tests,'passed');
 assert.equal(build.tuple_write_typesystem_reuse,'same_request_store_and_model');
 assert.equal(build.write_typesystem_tests,'passed');
@@ -75,6 +80,9 @@ assert.equal(build.helper_sha256,digest('browser-single/openfga/browser_http_dia
 assert.equal(build.tests_sha256,digest('browser-single/openfga/browser_http_dial_test.go'));
 assert.equal(build.warmup_helper_sha256,digest('browser-single/openfga/browser_http_warmup.go'));
 assert.equal(build.warmup_tests_sha256,digest('browser-single/openfga/browser_http_warmup_test.go'));
+assert.equal(build.model_codec_helper_sha256,digest('browser-single/openfga/browser_model_codec.go'));
+assert.equal(build.model_codec_tests_sha256,digest('browser-single/openfga/browser_model_codec_test.go'));
+assert.equal(build.model_codec_integration_tests_sha256,digest('browser-single/openfga/browser_model_codec_integration_test.go'));
 assert.equal(build.model_validation_helper_sha256,digest('browser-single/openfga/browser_model_validation.go'));
 assert.equal(build.model_validation_tests_sha256,digest('browser-single/openfga/browser_model_validation_test.go'));
 assert.equal(build.write_typesystem_tests_sha256,digest('browser-single/openfga/browser_write_typesystem_test.go'));

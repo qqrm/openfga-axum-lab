@@ -20,11 +20,15 @@ sha256sum --check "$patch_dir/upstream.sha256"
 git apply --unidiff-zero --check --whitespace=error-all "$patch_dir/startup-dial.patch"
 git apply --unidiff-zero --whitespace=error-all "$patch_dir/startup-dial.patch"
 cp "$patch_dir/browser_http_dial.go" "$patch_dir/browser_http_dial_test.go" \
-    "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_http_warmup_test.go" cmd/run/
+    "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_http_warmup_test.go" \
+    "$patch_dir/browser_model_codec.go" "$patch_dir/browser_model_codec_test.go" \
+    "$patch_dir/browser_model_codec_integration_test.go" cmd/run/
 cp "$patch_dir/browser_model_validation.go" "$patch_dir/browser_model_validation_test.go" pkg/typesystem/
 cp "$patch_dir/browser_write_typesystem_test.go" pkg/server/commands/
 test -z "$(gofmt -l cmd/run/browser_http_dial.go cmd/run/browser_http_dial_test.go \
     cmd/run/browser_http_warmup.go cmd/run/browser_http_warmup_test.go \
+    cmd/run/browser_model_codec.go cmd/run/browser_model_codec_test.go \
+    cmd/run/browser_model_codec_integration_test.go \
     pkg/typesystem/browser_model_validation.go pkg/typesystem/browser_model_validation_test.go \
     pkg/server/commands/write.go pkg/server/write.go pkg/server/commands/browser_write_typesystem_test.go)"
 
@@ -46,7 +50,7 @@ git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.6 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.7 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -68,6 +72,8 @@ cat >"$output_dir/build.json" <<EOF
   "unary_raw_logging": "disabled_browser_only",
   "startup_model_warmup": "in_process_codec_validation_with_exact_schema_cache",
   "model_validation_cache": "conditionless_exact_protobuf_body_except_id",
+  "model_json_decoder": "pinned_json_decode_private_clone",
+  "warmup_generated_validation": "ValidateAll",
   "tuple_write_typesystem_reuse": "same_request_store_and_model",
   "warmup_model_sha256": "$model_sha256",
   "warmup_model_bytes": 52709,
@@ -79,6 +85,9 @@ cat >"$output_dir/build.json" <<EOF
   "tests_sha256": "$(sha256_of "$patch_dir/browser_http_dial_test.go")",
   "warmup_helper_sha256": "$(sha256_of "$patch_dir/browser_http_warmup.go")",
   "warmup_tests_sha256": "$(sha256_of "$patch_dir/browser_http_warmup_test.go")",
+  "model_codec_helper_sha256": "$(sha256_of "$patch_dir/browser_model_codec.go")",
+  "model_codec_tests_sha256": "$(sha256_of "$patch_dir/browser_model_codec_test.go")",
+  "model_codec_integration_tests_sha256": "$(sha256_of "$patch_dir/browser_model_codec_integration_test.go")",
   "model_validation_helper_sha256": "$(sha256_of "$patch_dir/browser_model_validation.go")",
   "model_validation_tests_sha256": "$(sha256_of "$patch_dir/browser_model_validation_test.go")",
   "write_typesystem_tests_sha256": "$(sha256_of "$patch_dir/browser_write_typesystem_test.go")",
@@ -87,6 +96,7 @@ cat >"$output_dir/build.json" <<EOF
   "startup_dial_tests": "passed",
   "transport_diagnostics_tests": "passed",
   "warmup_tests": "passed",
+  "model_codec_tests": "passed",
   "model_validation_tests": "passed",
   "write_typesystem_tests": "passed"
 }
@@ -94,11 +104,13 @@ EOF
 cp LICENSE "$output_dir/LICENSE"
 cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
     "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_model_validation.go" \
+    "$patch_dir/browser_model_codec.go" "$patch_dir/browser_model_codec_test.go" \
+    "$patch_dir/browser_model_codec_integration_test.go" \
     "$patch_dir/browser_write_typesystem_test.go" "$output_dir/"
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.6 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.7 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -108,7 +120,7 @@ error logs, validation, authentication, timeout and recovery middleware remain.
 Before datastore construction/listeners, one separate 60-second startup phase
 reads FGA_MODEL once and verifies its exact 52709 bytes and SHA-256 $model_sha256.
 Within that same budget, one cycle exercises the real JSONPb/protobuf codecs,
-generated request validation and the full original TypeSystem validator without
+generated ValidateAll request validation and the full original TypeSystem validator without
 any datastore, RPC or Check operation. After every stage succeeds, only the
 validity of the exact conditionless model body is retained in a private clone.
 Matching compares every protobuf field and unknown field except the generated ID.
@@ -117,6 +129,13 @@ Real resolver loads construct a fresh TypeSystem with the real ID; no TypeSystem
 graph, tuple, datastore existence or Check decision is shared by this cache.
 All mismatching models use the original full validator. Failure or cancellation
 prevents cache publication and readiness. Stage timings remain diagnostic only.
+The same successful warmup prepares a private JSON-to-protobuf decoder entry.
+Only an exact pinned raw JSON model body reuses an independent protobuf copy.
+The original streaming JSON parser remains; every mismatching body and other
+request type keeps the original JSONPb decoder. The real URL supplies store_id;
+gRPC, validation, authentication, context and PostgreSQL writes remain mandatory.
+This does not cache a response or a Check decision. Decoder parity and real
+HTTP/gRPC/memory-datastore integration tests run in the native startup test gate.
 After resolving the actual store/model and checking write authorization, the
 server passes that same TypeSystem to its WriteCommand. Only an exact nonempty
 store/model binding can reuse it; nil or mismatching bindings keep the original

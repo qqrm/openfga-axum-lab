@@ -114,6 +114,10 @@ The launcher requests two sockets with one CPU each. With this kernel's ACPI
 disabled, SeaBIOS's legacy MP table otherwise exposes only one CPU from a
 two-CPU single socket. The guest verifies `online=0-1` before starting services;
 requested QEMU arguments alone do not prove that Linux discovered both CPUs.
+Before downloading the VM, the launcher requires a valid browser report of at
+least two logical CPUs and records that report in VM evidence. This pinned
+backend sizes per-CPU vectors from that value, so a smaller report cannot
+safely accommodate the two requested vCPUs.
 The guest also verifies `Cpus_allowed_list=0-1` before starting any service.
 Ordinary scheduling across both CPUs is preserved. The previous candidate
 pinned all services and clients to CPU 0, but
@@ -127,7 +131,7 @@ The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
 self-dial from three seconds to a bounded 60 seconds. A separate bounded
 startup phase exercises the codecs and fully validates the exact pinned
 model once under one total 60-second budget, before opening listeners.
-Only the validity of that conditionless model body is retained. A real model
+The validity of that conditionless model body is retained. A real model
 write compares every protobuf field, including unknown fields, except the
 generated ID; a match reuses the already established schema validity and still
 writes PostgreSQL. On resolver loads, matching models get a fresh TypeSystem
@@ -135,6 +139,11 @@ with their real ID; graphs and mutable state are not shared by this cache.
 Every other model uses the original complete validator. The original bootstrap,
 datastore reads/writes, tuple operations and Check decisions still run. This
 optimization remains a candidate until real browser acceptance passes.
+The successful startup also prepares a private JSON-to-protobuf decoder entry.
+Only the exact pinned JSON body reuses an independent decoded request; the
+original streaming parser and all mismatching inputs keep the default behavior.
+The URL still supplies the real store ID, and the real gRPC/validation/auth
+and PostgreSQL write path remains mandatory. No successful response is cached.
 Tuple Write now passes the TypeSystem already resolved and authorized for that
 request into the write command. It reuses it only for the exact nonempty
 store/model binding, preserving the schema-version guard and every tuple
@@ -182,6 +191,16 @@ including its in-flight batch, is bounded at 4 MiB/65536 chunks. A host timer
 bounds cutoff and drain to ten seconds; a delivery failure retains the guest
 snapshot taken at cutoff and still fails the gate.
 
+The latest retained [run 43378543550](https://github.com/qqrm/openfga-axum-lab/actions/runs/43378543550)
+started PostgreSQL and OpenFGA in both Chromium and Firefox, with complete
+batched captures and no observed Module OOM or page errors. Both failed the
+initial model POST at bootstrap's five-second limit, before acceptance began.
+HTTP start to the unary RPC observer took 4780 ms and 6450 ms respectively;
+that interval includes decoding, protobuf/gRPC transport and scheduling.
+Neither browser completed an acceptance pass. The two-second Axum client,
+three-second OpenFGA request and five-second bootstrap/acceptance deadlines
+remain unchanged. See the [retained timing and provenance](../docs/browser-startup-review.md).
+
 The original full-log implementation failed the Chromium check in
 [run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199):
 10558 of its 10567 retained chunks were single characters, and one serial host
@@ -212,6 +231,13 @@ upper bits and register aliases. This separately demonstrated instruction
 defect is not established as the cause of the preceding browser timeouts, and
 the actual corrected build still encountered the Firefox OOM recorded above.
 See the [emulator source and proof](qemu/README.md).
+
+The compiled QEMU memory-barrier path also emitted a `nop` where its interpreter
+used a full barrier. The correction emits Wasm `atomic.fence` and preserves the
+interpreter path. Extracted C-to-Wasm tests and tiny actual Chromium/Firefox
+fixtures verify the encoding and stack/shared-memory behavior. This separate
+correctness repair can add execution cost; it does not establish the cause of
+the model POST delay or satisfy browser acceptance.
 
 Prepare and check locally (Docker, pinned Rust, Node and Playwright required):
 

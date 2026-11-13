@@ -2,14 +2,94 @@
 
 Status of this review on 13 November 2026: **approved changes under validation;
 browser acceptance has not passed**. The latest completed browser gate below is
-commit `11e4bb0abfe1496b32d94fb0578a77b9f1aa9856`, run `43373341199`.
+commit `6934232bb04036b75aef6383008ceb6db14ad928`, run `43378543550`.
 The Browser preview run for the current PR head is the authority for later
 acceptance results. The initial proposal was prepared against PR #36 head
 `c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
 and additional checks. The PR has not been merged and Pages has not been
 published.
 
-## Latest retained result and next correction
+## Latest retained result: model decoding before the RPC
+
+[Run 43378543550](https://github.com/qqrm/openfga-axum-lab/actions/runs/43378543550)
+started PostgreSQL and OpenFGA in both browsers. One-cycle warmup, blocking
+self-dial, Health and CreateStore succeeded. The initial 52708-byte model POST
+then exceeded bootstrap's unchanged five-second operation limit. **Chromium
+and Firefox each completed zero acceptance passes**; Axum acceptance did not
+begin, and Pages deployment was skipped. All six other workflows passed on
+this head, including native Delivery on its first attempt.
+
+| Guest logger measurement | Chromium 158.0.8127.18 | Firefox 159.0 |
+| --- | ---: | ---: |
+| Warmup duration | 22070 ms | 45370 ms |
+| Self-dial duration | 710 ms | 1630 ms |
+| HTTP start to unary RPC observer start | 4780 ms | 6450 ms |
+| Model HTTP duration | 5380 ms | 5340 ms |
+| Model RPC duration | 1140 ms | 990 ms |
+| RPC code / context state | 2056 / canceled | 2056 / canceled |
+
+Firefox entered the RPC observer 1110 ms after the HTTP handler ended. The
+interval before the observer includes JSON decoding, protobuf/gRPC transport
+and scheduling. Generated request validation and authentication run after
+that observer; they do not explain this earlier interval. Warmup's separate
+JSON decode stage took 3970 ms in Chromium and 7440 ms in Firefox. These are
+separate operations, not a profile that attributes the whole HTTP interval to
+JSON. The canceled context and code 2056 do not demonstrate an invalid model.
+The separately prepared TypeSystem transfer targets a later resolver path
+and is not included.
+
+The full capture remained complete: Chromium retained 28805 original chunks
+in 9368 batches (69304 bytes); Firefox retained 32793 chunks in 8970 batches
+(392679 bytes). Source sequences and exact UTF-8 reconstruction match the
+saved consoles. Actual QEMU admission limits were 15000 and 8192 respectively.
+No page errors, Module OOM or instantiate-throw events were observed in this
+run. This is not a general memory guarantee or a controlled comparison with
+previous runs. Guest timestamps, not host delivery times, produced the table.
+
+[Evidence artifact 14017024263](https://github.com/qqrm/openfga-axum-lab/actions/runs/43378543550/artifacts/14017024263)
+contains 260772146 bytes, with SHA-256
+`f6ec83656a1d4b042623e60fdb2f8f9dd7f1f5e4abc6f0c06d5fca6370538317`.
+Both observed startup manifests exactly match the retained build manifest.
+
+## Prepared correction and native verification
+
+OpenFGA browser build `.7` prepares a private decoder entry during the existing
+successful warmup. The standard streaming JSON parser still reads every
+request; only the exact pinned raw model can reuse an independent protobuf
+copy. The URL supplies the actual store ID and the real gRPC, generated
+validation, authentication, model ID generation and PostgreSQL write remain
+mandatory. Warmup now calls `ValidateAll`, matching the real interceptor.
+
+The complete build from the pinned OpenFGA source passed the startup/transport
+suite (25 top-level tests, 101 including subtests, 68.477 seconds), schema cache
+suite (10/20) and command/server regression suites (44/353). The separate
+codec/gateway race run passed. The retained Rust `lab-tool` actually sent the
+52708-byte key and completed bootstrap against the real memory-backed OpenFGA
+gateway; this is not a PostgreSQL or browser acceptance result. Executable
+SHA-256: `57ef124e5b339dcf1c3dbcbe2c3083c03f5db74a799a1472014e875292cc1066`.
+
+A separate QEMU correction replaces the compiled `INDEX_op_mb` no-op with
+WebAssembly `atomic.fence`, matching the interpreter's full-barrier behavior.
+The actual extracted C emits the correct fence for all 64 tested masks; the
+old path emits none. Generated Wasm preserves stack and shared-memory behavior
+and rejects malformed fence encodings. Tiny emitted-Wasm fixtures also passed
+in actual Chromium 157 and Firefox 159. These checks establish the emitted
+instruction, not inter-thread ordering of the complete emulator or backend
+acceptance. Full fences can add execution cost; no startup-speed claim is made.
+
+The launcher also rejects a browser CPU report below two, or an invalid count,
+before downloading the VM. This backend sizes per-CPU vectors from that report,
+so its two-vCPU configuration requires at least two slots. The accepted count
+is retained in VM evidence. This is a precondition check, not a claim that
+inconsistent reports caused the observed browser failures.
+
+The original authorization model, Rust application, bootstrap and acceptance
+programs are unchanged. The two/three/five-second request deadlines, startup
+budget, emulator instance budgets and both required consecutive passes remain
+unchanged. The next full QEMU build and Chromium/Firefox acceptance are still
+required before any merge or Pages publication.
+
+## Preceding capture and Firefox admission correction
 
 [Run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199)
 passed all build/preparation steps, then failed real browser acceptance.
@@ -48,7 +128,8 @@ Both admission and the existing budget-induced yield condition read that same
 limit. Retention stays 2048 per CPU; CAS reservation, actual callback accounting,
 TCI fallback and compilation/yield thresholds are preserved. Earlier Firefox
 8192 runs reached OpenFGA with the former four-cycle warmup, while the current
-one-cycle/cache combination remains unverified. Earlier Chromium evidence
+one-cycle/cache combination now reaches OpenFGA in the latest run above but
+still fails model initialization. Earlier Chromium evidence
 showed long lower-cap admission stalls, so its cap is unchanged. This is an
 instance-count candidate, not a guaranteed safe byte budget or a proven fix.
 
@@ -122,6 +203,13 @@ and adapted executable to the guest.
   No datastore state, graph, TypeSystem or authorization decision is cached by
   this adaptation. Record stage timings. Omit unary raw-payload logging work
   while retaining compact transport metadata and the security middleware.
+- Reuse JSON-to-protobuf decoding only for the exact pinned raw model body,
+  preparing a private prototype within that same successful startup phase.
+  Keep the standard streaming JSON parser, copy the protobuf independently for
+  each matching request, and retain default decoding for every other input.
+  The generated gateway supplies the real URL store ID; gRPC, validation,
+  authentication, deadlines and the actual model write still run. This codec
+  change targets the latest pre-observer delay, not resolver graph construction.
 - Supply the adapted executable and current entrypoint through the existing
   host mount, with checksums verified before VM initialization. Use the
   converter's `mr` instruction for a read-only bind mount. Its `m`

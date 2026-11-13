@@ -35,6 +35,10 @@ for (const [key,value] of Object.entries({
   multiply_emitter_preimage_blob:'3c85588be97b6c53a451e30c0593e8b433ede7b6',
   multiply_emitter_postimage_blob:'d4078f5adac57d9ccc7d792773fff2ea65a33d6a',
   i32_multiply_tests:'passed',
+  memory_barrier_fix:'emit_atomic_fence_for_tcg_mb',
+  barrier_emitter_preimage_blob:'d4078f5adac57d9ccc7d792773fff2ea65a33d6a',
+  barrier_emitter_postimage_blob:'4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355',
+  memory_barrier_tests:'passed',
   instantiate_num:1500
 })) assert.equal(build[key],value,`Unexpected emulator ${key}`);
 assert.equal(await hashFile(path.join(buildDirectory,'upstream.Dockerfile')),build.converter_dockerfile_sha256,
@@ -47,7 +51,9 @@ for (const [key,name] of [
   ['budget_bridge_test_sha256','check-instance-budget-bridge.mjs'],
   ['diagnostics_test_sha256','check-runtime-diagnostics.mjs'],
   ['multiply_patch_sha256','i32-multiply.patch'],
-  ['multiply_test_sha256','check-i32-multiply.mjs']
+  ['multiply_test_sha256','check-i32-multiply.mjs'],
+  ['barrier_patch_sha256','memory-barrier.patch'],
+  ['barrier_test_sha256','check-memory-barrier.mjs']
 ]) {
   assert.equal(build[key],await hashFile(`browser-single/qemu/${name}`),`Changed emulator source: ${name}`);
   assert.equal(build[key],await hashFile(path.join(buildDirectory,name)),`Missing emulator source: ${name}`);
@@ -70,6 +76,42 @@ for (const [name,expected] of Object.entries(proof.files)) {
   const bytes = await fs.readFile(path.join(proofDirectory,name));
   assert.equal(bytes.length,expected.bytes,`Changed multiplication proof size: ${name}`);
   assert.equal(digest(bytes),expected.sha256,`Changed multiplication proof file: ${name}`);
+}
+const barrierDirectory = path.join(buildDirectory,'memory-barrier-proof');
+const barrierBytes = await fs.readFile(path.join(barrierDirectory,'summary.json'));
+assert.equal(digest(barrierBytes),build.barrier_proof_sha256,'Changed memory barrier proof');
+const barrier = JSON.parse(barrierBytes);
+assert.equal(barrier.status,'passed');
+assert.equal(barrier.kind,'compiled_c_wasm_memory_barrier');
+assert.equal(barrier.qemu_commit,build.qemu_commit);
+assert.equal(barrier.upstream_blob,build.multiply_emitter_preimage_blob);
+assert.equal(barrier.source_blob,build.multiply_emitter_postimage_blob);
+assert.equal(barrier.source_blob,build.barrier_emitter_preimage_blob);
+assert.equal(barrier.candidate_blob,build.barrier_emitter_postimage_blob);
+assert.equal(barrier.header_blob,'37ad4b93c8ab721639e4cd8603a5dbbe69c07105');
+assert.equal(barrier.backend_blob,build.backend_postimage_blob);
+assert.equal(barrier.patch_sha256,build.barrier_patch_sha256);
+assert.equal(barrier.checker_sha256,build.barrier_test_sha256);
+assert.equal(barrier.patch_apply_reverse,true);
+assert.equal(barrier.malformed_fence_controls,3);
+assert.deepEqual(barrier.results,[['baseline',0],['candidate',64]].map(([name,requiredFenceMatches]) => ({
+  name,masks:64,reqMoCases:16,requiredFenceMatches,stackExecutions:512,
+  sharedMemoryExecutions:256,tciWordsPreserved:true
+})));
+const barrierNames = [
+  'baseline-tcg-target.c.inc','patched-tcg-target.c.inc','upstream-tcg-target.c.inc',
+  'tcg-target.h','wasm32.c','tcg-mo.h','tcg-op.c','tcg-op-ldst.c','cpu.h','atomic.h',
+  'memory-barrier.patch','check-memory-barrier.mjs','patch-apply-reverse.json',
+  'invalid-fe03.wasm','invalid-fe0301.wasm','invalid-fe0330.wasm',
+  ...['baseline','candidate'].flatMap(variant => ['emitter.c','compiler.json','emitted.txt',
+    'no-memory-stack.wasm','shared-stack.wasm','shared-write-fence-read.wasm'].map(suffix => `${variant}-${suffix}`))
+].sort();
+assert.deepEqual(Object.keys(barrier.files).sort(),barrierNames,'Unexpected barrier proof members');
+assert.deepEqual((await fs.readdir(barrierDirectory)).sort(),[...barrierNames,'summary.json'].sort());
+for (const [name,expected] of Object.entries(barrier.files)) {
+  const bytes = await fs.readFile(path.join(barrierDirectory,name));
+  assert.equal(bytes.length,expected.bytes,`Changed memory barrier proof size: ${name}`);
+  assert.equal(digest(bytes),expected.sha256,`Changed memory barrier proof file: ${name}`);
 }
 const bridgeDirectory = path.join(buildDirectory,'instance-budget-bridge-proof');
 const bridgeBytes = await fs.readFile(path.join(bridgeDirectory,'summary.json'));
@@ -118,10 +160,12 @@ for (const name of ['build.json','SOURCE.txt','instance-budget.patch','build.sh'
   'check-instance-budget-bridge.mjs','instance-budget-bridge-tests.log',
   'check-runtime-diagnostics.mjs','runtime-diagnostics-tests.log',
   'i32-multiply.patch','check-i32-multiply.mjs','i32-multiply-tests.log',
+  'memory-barrier.patch','check-memory-barrier.mjs','memory-barrier-tests.log',
   'upstream.Dockerfile','emscripten-version.txt','config-host.mak','submodules.txt','COPYING','COPYING.LIB','LICENSE']) {
   await fs.copyFile(path.join(buildDirectory,name),path.join(provenance,name));
 }
 await fs.cp(proofDirectory,path.join(provenance,'i32-multiply-proof'),{recursive:true});
+await fs.cp(barrierDirectory,path.join(provenance,'memory-barrier-proof'),{recursive:true});
 await fs.cp(bridgeDirectory,path.join(provenance,'instance-budget-bridge-proof'),{recursive:true});
 const derivedPath = path.join(runtime,'derived-runtime.json');
 const derived = JSON.parse(await fs.readFile(derivedPath,'utf8'));
@@ -129,5 +173,6 @@ derived.emulator_build = build;
 derived.changes.push('QEMU: evict at 2048 retained instances per CPU; shared startup live cap 8192 for Firefox, 15000 otherwise');
 derived.changes.push('QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged');
 derived.changes.push('QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked');
+derived.changes.push('QEMU: emit atomic.fence for compiled TCG memory barriers; source-derived Wasm encoding and execution checked');
 await fs.writeFile(derivedPath,JSON.stringify(derived,null,2)+'\n');
 console.log('Verified emulator pair overlaid; guest data, loader, arguments and kernel are unchanged');
