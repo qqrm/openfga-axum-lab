@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      COMBINED_SOURCE_COMMIT: 51420962cf4a8d9057c13c55f86f5ff497b6f643
-      BOOTSTRAP_CORE_COMMIT: 64d6fb4614b6674284a32cee2f4f84179dfb2a2f
-      BOOTSTRAP_FIXTURE_COMMIT: 325b650f4c9e5a7611d3773dc599e06e7ef133fc
-      NATIVE_PROOF_BLOB: e2d46597ac9ca10a77674b8d80fa27a24814ec07
+      COMBINED_SOURCE_COMMIT: e381339f80dd76777ef526b0073dc5eb34739f26
+      BOOTSTRAP_CORE_COMMIT: 207d15fab685d3adb9c5d51a048982c2236ae75c
+      BOOTSTRAP_FIXTURE_COMMIT: 4b7a1e1933083232fb8305a60a47bdd3c32e6689
+      NATIVE_PROOF_BLOB: b9f889e63f6fd6c3fc1bfa146e59c160958eae92
       NATIVE_DENY_PROBE_CONTRACT: real_empty_store_check_v1
     steps:
       - name: Require a reviewed immutable source before checkout or build
