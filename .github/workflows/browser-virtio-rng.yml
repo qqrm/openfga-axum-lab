@@ -1,21 +1,21 @@
-name: Real browser acceptance with coalesced UI and capture
+name: Real browser acceptance with VirtIO entropy and verified capture
 on:
   push:
-    branches: [diag/browser-coalesced-037a]
+    branches: [diag/browser-virtio-rng-716b]
     paths:
-      - .github/workflows/browser-coalesced.yml
-      - diagnostics/prepare-coalesced-browser.mjs
-      - diagnostics/check-coalesced-browser.mjs
+      - .github/workflows/browser-virtio-rng.yml
+      - diagnostics/prepare-virtio-rng-browser.mjs
+      - diagnostics/check-virtio-rng-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-coalesced-037a
+  group: browser-virtio-rng-716b
   cancel-in-progress: false
 jobs:
   browser:
-    name: Coalesced UI/capture browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-coalesced-037a'
+    name: VirtIO RNG browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-virtio-rng-716b'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,8 +29,8 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 037a3c22a5fab45a735a6bfea9792c68049a4b62
-          fetch-depth: 3
+          ref: 716b77356dd4aab2747d4e37c5da723f3b7a764f
+          fetch-depth: 4
           path: source-candidate
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -101,8 +101,8 @@ jobs:
              lightweight["bytes"], lightweight["sha256"], "success", "push"),
             ("retained", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", 14029511154,
              "pages-browser-vm-evidence", 260830150, "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e", "failure", "pull_request"),
-            ("kernel", 43421624199, "1a1d55f0b02519ff0c3eb1ed3f86b2852f2f8e85", 14033713071,
-             "browser-acpi-kernel-candidate", 3669750, "51b42d5fb8894930f9344f39754968fd8ed73b103d0a818c45ab4d2bb22edf64", "success", "push"),
+            ("kernel", 43473084506, "84af5832aed519e7f0628e36afd8d2fc3e4cc270", 14061334425,
+             "browser-virtio-rng-kernel-candidate", 3689588, "c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad", "success", "push"),
             ("native", native["run"], native["head"], native["evidence"]["artifact"], native["evidence"]["name"],
              native["evidence"]["bytes"], native["evidence"]["sha256"], "success", "push"),
             ("bootstrap", native["run"], native["head"], native["bootstrap"]["artifact"], native["bootstrap"]["name"],
@@ -149,7 +149,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "Coalesced UI/capture browser gate (" + engine + ")"
+          job_name = "VirtIO RNG browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -231,6 +231,8 @@ jobs:
                         ("kernel/upstream.config", "upstream.config", 2*M),
                         ("kernel/ipc-baseline.config", "ipc-baseline.config", 2*M),
                         ("kernel/acpi.config.diff", "acpi.config.diff", 65536),
+                        ("kernel/acpi-baseline.config", "acpi-baseline.config", 2*M),
+                        ("kernel/rng.config.diff", "rng.config.diff", 65536),
                         ("kernel/COPYING", "COPYING", M), ("kernel/GPL-2.0", "GPL-2.0", M),
                         ("kernel/SOURCE.txt", "SOURCE.txt", 65536), ("kernel/build.sha256", "build.sha256", 65536),
                         ("metadata.json", "metadata.json", M), ("Kernel.Dockerfile", "Kernel.Dockerfile", 65536),
@@ -275,7 +277,7 @@ jobs:
                           actual = extract(package, member, root / "original-runtime" / member, expected["bytes"])
                           require(actual == expected, "Original converter runtime SHA/size mismatch: " + member)
               elif label == "kernel":
-                  candidate = "af9c5555e312ffaec3785154f5be83be7469c95f"
+                  candidate = "716b77356dd4aab2747d4e37c5da723f3b7a764f"
                   destination = source_root / "artifacts/browser-kernel"
                   require((destination / "source-commit.txt").read_text().strip() == candidate and
                           (destination / "workflow-commit.txt").read_text().strip() == head,
@@ -283,7 +285,14 @@ jobs:
                   built = json.loads((destination / "metadata.json").read_text())
                   require(built["source_commit"] == candidate and built["workflow_commit"] == head and
                           built["run_id"] == str(run_id) and built["run_attempt"] == "1" and
-                          built["kernel_candidate_built"] is True and built["browser_acceptance_verified"] is False,
+                          built["kernel_candidate_built"] is True and built["browser_acceptance_verified"] is False and
+                          built["entropy_delivery_verified"] is False and
+                          built["baseline_matches_previous_kernel_config"] is True and
+                          built["exactly_one_config_change"] is True and built["exact_rng_config_diff"] is True and
+                          built["previous_acpi_diff_preserved"] is True and built["kernel_hash_manifest_matches"] is True and
+                          built["source_checks_outcome"] == "success" and built["build_outcome"] == "success" and
+                          built["missing_config"] == [] and built["missing_files"] == [] and
+                          built["recipe_git_blob"] == "aeb75dc1f17528939559ffe8f8dd15746c0c2a0e",
                           "Kernel build metadata identity mismatch")
               elif label == "native":
                   inputs = json.loads((root / "native-evidence/openfga8-verifier-input.json").read_text())
@@ -317,9 +326,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-coalesced-browser.mjs
-          node --check diagnostics/check-coalesced-browser.mjs
-          node diagnostics/prepare-coalesced-browser.mjs
+          node --check diagnostics/prepare-virtio-rng-browser.mjs
+          node --check diagnostics/check-virtio-rng-browser.mjs
+          node diagnostics/prepare-virtio-rng-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -332,14 +341,14 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-coalesced-browser.mjs
+        run: node diagnostics/check-virtio-rng-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-coalesced-${{ matrix.engine }}
+          name: browser-virtio-rng-${{ matrix.engine }}
           path: |
-            artifacts/coalesced-browser-gate/
+            artifacts/virtio-rng-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/
@@ -350,5 +359,9 @@ jobs:
             source-candidate/artifacts/browser-bootstrap/
             source-candidate/browser-output/wasm/runtime/startup-manifest.json
             source-candidate/browser-output/wasm/runtime/derived-runtime.json
+            source-candidate/artifacts/browser-kernel/metadata.json
+            source-candidate/artifacts/browser-kernel/linux.config
+            source-candidate/artifacts/browser-kernel/acpi-baseline.config
+            source-candidate/artifacts/browser-kernel/rng.config.diff
           if-no-files-found: warn
           retention-days: 7

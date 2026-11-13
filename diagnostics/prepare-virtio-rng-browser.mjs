@@ -5,12 +5,13 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '037a3c22a5fab45a735a6bfea9792c68049a4b62';
+const sourceCommit = '716b77356dd4aab2747d4e37c5da723f3b7a764f';
+const transportSourceCommit = '037a3c22a5fab45a735a6bfea9792c68049a4b62';
 const nativeProducerCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
 const bootstrapCoreCommit = '207d15fab685d3adb9c5d51a048982c2236ae75c';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/coalesced-browser-gate');
+const evidence = path.resolve('artifacts/virtio-rng-browser-gate');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -91,8 +92,9 @@ const fixtureFiles = {
   }
 };
 const uiCommit = 'a438aedc8b3abd7abd1a5038ebeda7e20c63fd70';
-assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),uiCommit);
-assert.equal(command('git',['rev-parse','HEAD^^'],{stdio:'pipe'}).trim(),nativeProducerCommit);
+assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),transportSourceCommit);
+assert.equal(command('git',['rev-parse','HEAD^^'],{stdio:'pipe'}).trim(),uiCommit);
+assert.equal(command('git',['rev-parse','HEAD^^^'],{stdio:'pipe'}).trim(),nativeProducerCommit);
 const changedFiles = {
   "browser-single/pages/log-stream.mjs": {
     "gitBlob": "ef118064b006fbc41a32b98f177ed0f8f2302b4f",
@@ -101,10 +103,10 @@ const changedFiles = {
     "sha256": "90941538e1c26c7d657591c840b08f168bdc93db8a56d07921e3a9dc02d31bc3"
   },
   "browser-single/pages/launcher.js": {
-    "gitBlob": "50212b2234a04550086a9834c1fbe820073826ca",
+    "gitBlob": "918ce05c789b2f2990b6451255934f14de42650e",
     "mode": "100644",
-    "bytes": 10898,
-    "sha256": "e369bc067e1bcc1f932d7aeedffa1cb34bb63903093501791a722f88577343ee"
+    "bytes": 11765,
+    "sha256": "d20a8d95166a2d58d15c69d529b504e608dbfb42705aa6fb51fe23c55af2108d"
   },
   "browser-single/log-stream.test.mjs": {
     "gitBlob": "5287b425a3bd130de6547285e42eca4529ab1281",
@@ -117,11 +119,33 @@ const changedFiles = {
     "mode": "100755",
     "bytes": 6354,
     "sha256": "213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649"
+  },
+  "browser-single/Kernel.Dockerfile": {
+    "gitBlob": "aeb75dc1f17528939559ffe8f8dd15746c0c2a0e",
+    "mode": "100644",
+    "bytes": 3946,
+    "sha256": "9232b9e18ddf0df757fe5b57c6db9c953f1fde06ae68537dfc7d78039454a7a7"
+  },
+  "browser-single/prepare-kernel.sh": {
+    "gitBlob": "224d033e81309c2f40653ea12e4e580f4e3152d7",
+    "mode": "100755",
+    "bytes": 1253,
+    "sha256": "4e572784410d1a70a8f8dcd43a45bdbc3f3e494511f663cf64dec2a6c91e7ead"
+  },
+  "browser-single/repack-runtime.mjs": {
+    "gitBlob": "1f51882a3183bdfd86f0102451706f0daff0d7a2",
+    "mode": "100644",
+    "bytes": 3975,
+    "sha256": "3ccd25511c9bf2d3e824c75eae633a995ff61151522c4923c351094a4226759f"
   }
 };
 assert.deepEqual(command('git',['diff','--name-only',nativeProducerCommit,'HEAD'],{stdio:'pipe'})
-  .trim().split('\n').sort(),Object.keys(changedFiles).sort(),'Candidate scope exceeds the four reviewed files');
-assert.deepEqual(command('git',['diff','--name-only','HEAD^','HEAD'],{stdio:'pipe'})
+  .trim().split('\n').sort(),Object.keys(changedFiles).sort(),'Candidate scope exceeds the seven reviewed UI/diagnostic/RNG files');
+assert.deepEqual(command('git',['diff','--name-only',transportSourceCommit,'HEAD'],{stdio:'pipe'})
+  .trim().split('\n').sort(),['browser-single/Kernel.Dockerfile','browser-single/pages/launcher.js',
+    'browser-single/prepare-kernel.sh','browser-single/repack-runtime.mjs'].sort(),
+  'RNG source changed outside the four reviewed files');
+assert.deepEqual(command('git',['diff','--name-only',uiCommit,transportSourceCommit],{stdio:'pipe'})
   .trim().split('\n'),['browser-single/pages/guest.sh'],'Failure-only diagnostic commit changed other files');
 for (const [name,expected] of Object.entries(changedFiles)) {
   assert.equal(command('git',['rev-parse','HEAD:'+name],{stdio:'pipe'}).trim(),expected.gitBlob);
@@ -146,6 +170,16 @@ const expectedLauncher = {
   bytes:10715,sha256:'055204abad48a78914c7322b9692b972f68fc06522578d7994f3b3fa38d83bd0'
 };
 const launcher = await fs.readFile(path.join(source,launcherPath),'utf8');
+const rngLauncherAddition = "    // Emscripten's host /dev/urandom reads Web Crypto bytes. Linux's VirtIO\n    // RNG driver credits them; getrandom retains its normal readiness checks.\n    if (typeof globalThis.crypto?.getRandomValues !== 'function') throw new Error('Web Crypto is required for guest entropy');\n    if (args.some(arg => typeof arg === 'string' &&\n        (arg === '-seed' || arg.startsWith('-seed=') || arg.includes('browser_rng') ||\n         /^(?:rng-(?:random|builtin|egd)|virtio-rng)/.test(arg)))) {\n      throw new Error('Unexpected existing or deterministic guest entropy configuration');\n    }\n    args.push('-object', 'rng-random,filename=/dev/urandom,id=browser_rng',\n      '-device', 'virtio-rng-pci,rng=browser_rng');\n    window.labEvidence.vm.entropyConfiguration = {backend:'rng-random',hostDevice:'/dev/urandom',guestDevice:'virtio-rng-pci',webCryptoRequired:true};\n";
+assert.equal(launcher.split(rngLauncherAddition).length,2,'Expected exactly one reviewed RNG addition');
+const transportLauncher = launcher.replace(rngLauncherAddition,()=> '');
+assert.deepEqual(Buffer.from(transportLauncher),
+  Buffer.from(command('git',['show',transportSourceCommit+':'+launcherPath],{stdio:'pipe'})),
+  'Removing only the RNG addition must restore the exact browser-tested launcher');
+assert.deepEqual(bytesRecord(Buffer.from(transportLauncher)),
+  {bytes:10898,sha256:'e369bc067e1bcc1f932d7aeedffa1cb34bb63903093501791a722f88577343ee'});
+const entropyConfiguration = {backend:'rng-random',hostDevice:'/dev/urandom',
+  guestDevice:'virtio-rng-pci',webCryptoRequired:true};
 const originalLauncher = command('git',['show',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'});
 assert.equal(command('git',['rev-parse',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
 assert.deepEqual(bytesRecord(Buffer.from(originalLauncher)),{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256});
@@ -155,12 +189,12 @@ const launcherChanges = [
   ["const transcriptRender = createCoalescedTranscriptRender(text => { element('log').textContent = text; }, fail);\nwindow.__flushBrowserLabTranscript = transcriptRender.flush;\nconst log = createTranscriptLog(transcriptRender.render, chunk => {",
    "const log = createTranscriptLog(text => { element('log').textContent = text; }, chunk => {"]
 ];
-let restoredLauncher = launcher;
+let restoredLauncher = transportLauncher;
 for (const [candidate,original] of launcherChanges) {
   assert.equal(restoredLauncher.split(candidate).length,2,'Expected exactly one reviewed launcher change');
   restoredLauncher = restoredLauncher.replace(candidate,()=>original);
 }
-assert.deepEqual(Buffer.from(restoredLauncher),Buffer.from(originalLauncher),'Launcher changed outside render coalescing');
+assert.deepEqual(Buffer.from(restoredLauncher),Buffer.from(originalLauncher),'Launcher changed outside render coalescing and the exact RNG addition');
 const launcherRecord = await fileRecord(path.join(source,launcherPath));
 for (const [name,expected] of Object.entries(fixtureFiles)) {
   if (name===originalGuestPath) continue;
@@ -186,9 +220,12 @@ const configurationExperiment = {
   guest:await fileRecord(path.join(source,originalGuestPath)),
   nativeGuest:bytesRecord(Buffer.from(originalGuest)),
   reviewedChangedFiles:changedFiles,guestDiagnosticInverseVerified:true,launcherInverseVerified:true,
+  launcherRngInverseVerified:true,transportSourceCommit,
+  testedLauncher:bytesRecord(Buffer.from(transportLauncher)),entropyConfiguration,
+  entropyDeliveryVerified:false,
   renderDelayMilliseconds:16,partialBatchDelayMilliseconds:16,
   synchronousProtocolUnchanged:true,unchangedAuthorizationDeadlines:true,unchangedModelAndRootfs:true,
-  scope:'UI render/capture scheduling and failure-only syscall snapshot; backend native proof remains bound to e381'
+  scope:'Verified UI/capture and failure-only snapshot plus one kernel RNG driver and explicit secure RNG device; native backend proof remains bound to e381'
 };
 
 const archives = {};
@@ -215,14 +252,17 @@ for (const name of lightMembers) {
 }
 const light = await readJSON(path.join(lightRoot,lightPrefix+'summary.json'));
 for (const [key,value] of Object.entries({
-  schemaVersion:1,sourceCommit,productionAcceptance:false,vmStarts:0,runtimeDownloads:0,
+  schemaVersion:1,sourceCommit:transportSourceCommit,productionAcceptance:false,vmStarts:0,runtimeDownloads:0,
   expectedCases:14,completedCases:14,passed:true
 })) assert.equal(light[key],value,'Lightweight proof differs: '+key);
 assert.deepEqual(light.failures,[]);
 assert.deepEqual(light.unexpectedRequests,[]);
 assert.deepEqual(Object.keys(light.inputs).sort(),lightInputs.slice().sort());
 for (const name of lightInputs) {
-  const actual = await fileRecord(path.join(source,name));
+  // The only changed lightweight input is launcher: its exact RNG inverse
+  // must equal the previously tested bytes. Every other input is unchanged.
+  const actual = name===launcherPath ? bytesRecord(Buffer.from(transportLauncher))
+    : await fileRecord(path.join(source,name));
   assert.deepEqual(light.inputs[name],actual,'Transport proof input differs: '+name);
   if (lightInputs.indexOf(name)<3) {
     assert.deepEqual(await fileRecord(path.join(lightRoot,'source-candidate',name)),actual);
@@ -253,7 +293,8 @@ assert.equal(nodeCounts.pass,nodeCounts.tests);
 for (const name of ['fail','cancelled','skipped','todo']) assert.equal(nodeCounts[name],0);
 const lightweightVerification = {
   run:lightArchive.run,head:lightArchive.head,artifact:lightArchive.artifact,
-  archive:lightArchive.archive,sourceCommit,passed:true,cases:light.cases,nodeCounts,
+  archive:lightArchive.archive,sourceCommit:transportSourceCommit,appliedRuntimeSource:sourceCommit,
+  launcherRngInverseVerified:true,passed:true,cases:light.cases,nodeCounts,
   memberRecords:lightArchive.members,productionAcceptance:false,vmStarts:0,runtimeDownloads:0
 };
 const originalManifest = await readJSON(path.join(source,'browser-single/pages/runtime-manifest.json'));
@@ -501,24 +542,133 @@ for (const [name,expected] of Object.entries(pair)) {
   assert.deepEqual(await fileRecord(path.join(source,'artifacts/browser-emulator',name)),expected);
 }
 const kernelFiles = {
-  'bzImage':{bytes:3628928,sha256:'4d2088c41c19fa04d6ac93f97105d8541831acfcc2e96feb07e581fcd2a3db48'},
-  'linux.config':{bytes:75338,sha256:'fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8'},
-  'ipc-baseline.config':{bytes:72396,sha256:'b109d75227af31a6128280fd192bc06aa1e3d290075a2cf1c2e4fe148df00fcc'},
-  'acpi.config.diff':{bytes:1707,sha256:'84520b160eab472b1db6d6b028bd3f0bae19dfda5498d0d914699d514dfd388c'},
-  'SOURCE.txt':{bytes:313,sha256:'c21dda73d592ffe967c6a6b663ac6d02b116564cb93cad96f0e17c94266778eb'},
-  'build.sha256':{bytes:342,sha256:'a2886a81e725f7599d964b94d6aabb26ac1fb1a289fc3f6ceed8d518f4cdc525'}
+  "COPYING": {
+    "bytes": 496,
+    "sha256": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0"
+  },
+  "GPL-2.0": {
+    "bytes": 18729,
+    "sha256": "f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79"
+  },
+  "SOURCE.txt": {
+    "bytes": 443,
+    "sha256": "9893a165618938a167fd389067e6140c273c1878fde681131ef8bd2675396f62"
+  },
+  "acpi-baseline.config": {
+    "bytes": 75338,
+    "sha256": "fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8"
+  },
+  "acpi.config.diff": {
+    "bytes": 1707,
+    "sha256": "84520b160eab472b1db6d6b028bd3f0bae19dfda5498d0d914699d514dfd388c"
+  },
+  "build.sha256": {
+    "bytes": 521,
+    "sha256": "28ffe830b37725cdbcd5618fdae6009f7603f3272c2a503dc87eef19a3bf7067"
+  },
+  "bzImage": {
+    "bytes": 3629632,
+    "sha256": "17abd1165f3b228457d809adf5f4eb9163c282b6ab5b4828e1c9803a257e5421"
+  },
+  "ipc-baseline.config": {
+    "bytes": 72396,
+    "sha256": "b109d75227af31a6128280fd192bc06aa1e3d290075a2cf1c2e4fe148df00fcc"
+  },
+  "linux.config": {
+    "bytes": 75327,
+    "sha256": "4ba9caa843f2e00738b1892a3d5cb5ce8e976debdaa3629ce584614bd8f9345d"
+  },
+  "rng.config.diff": {
+    "bytes": 25,
+    "sha256": "c538bd039d205bd0951c068607f8240cf3baf31d69d744434a802cd9e5876358"
+  },
+  "upstream.config": {
+    "bytes": 72360,
+    "sha256": "000b13b14f4ae8f4c2ef6f7a8b5df126d7557ee2cc804e5ed620d4ffdd10bd92"
+  }
 };
+const kernelDirectory = path.join(source,'artifacts/browser-kernel');
+const kernelArchive = archives.kernel;
+assert.equal(kernelArchive.run,43473084506);
+assert.equal(kernelArchive.head,'84af5832aed519e7f0628e36afd8d2fc3e4cc270');
+assert.equal(kernelArchive.artifact,14061334425);
+assert.equal(kernelArchive.artifact_name,'browser-virtio-rng-kernel-candidate');
+assert.deepEqual(kernelArchive.archive,
+  {bytes:3689588,sha256:'c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad'});
+const kernelBuild = await readJSON(path.join(kernelDirectory,'metadata.json'));
+for (const [key,value] of Object.entries({
+  source_commit:sourceCommit,workflow_commit:kernelArchive.head,run_id:String(kernelArchive.run),run_attempt:'1',
+  recipe_git_blob:changedFiles['browser-single/Kernel.Dockerfile'].gitBlob,
+  linux_source:'830b3c68c1fb1e9176028d02ef86f3cf76aa2476',
+  upstream_config_blob:'48dd1bf6191dd8d0d220358167f52dce36c69c45',
+  source_checks_outcome:'success',build_outcome:'success',kernel_candidate_built:true,
+  baseline_matches_previous_kernel_config:true,exactly_one_config_change:true,
+  exact_rng_config_diff:true,previous_acpi_diff_preserved:true,kernel_hash_manifest_matches:true,
+  complete_diff_within_output_budget:true,entropy_delivery_verified:false,browser_acceptance_verified:false
+})) assert.equal(kernelBuild[key],value,'Kernel producer metadata differs: '+key);
+assert.deepEqual(kernelBuild.missing_files,[]);
+assert.deepEqual(kernelBuild.missing_config,[]);
+assert.equal((await fs.readFile(path.join(kernelDirectory,'source-commit.txt'),'utf8')).trim(),sourceCommit);
+assert.equal((await fs.readFile(path.join(kernelDirectory,'workflow-commit.txt'),'utf8')).trim(),kernelArchive.head);
+const recipeRecord = await fileRecord(path.join(source,'browser-single/Kernel.Dockerfile'));
+assert.deepEqual(await fileRecord(path.join(kernelDirectory,'Kernel.Dockerfile')),recipeRecord);
+assert.deepEqual(kernelBuild.files['Kernel.Dockerfile'],recipeRecord);
+assert.deepEqual(Object.keys(kernelArchive.members).sort(),
+  [...Object.keys(kernelFiles).map(name=>'kernel/'+name),
+    'metadata.json','Kernel.Dockerfile','source-commit.txt','workflow-commit.txt'].sort());
 for (const [name,expected] of Object.entries(kernelFiles)) {
-  assert.deepEqual(await fileRecord(path.join(source,'artifacts/browser-kernel',name)),expected);
+  assert.deepEqual(await fileRecord(path.join(kernelDirectory,name)),expected,'Pinned kernel member changed: '+name);
+  assert.deepEqual(kernelArchive.members['kernel/'+name],expected);
+  assert.deepEqual(kernelBuild.files['kernel/'+name],expected);
 }
-const kernelConfig = await fs.readFile(path.join(source,'artifacts/browser-kernel/linux.config'),'utf8');
-const requiredConfig = ['CONFIG_SYSVIPC=y','CONFIG_IPC_NS=y','CONFIG_SMP=y',
+const kernelConfigBytes = await fs.readFile(path.join(kernelDirectory,'linux.config'));
+const baselineBytes = await fs.readFile(path.join(kernelDirectory,'acpi-baseline.config'));
+const baselineText = baselineBytes.toString('utf8');
+const oldFlag = '# CONFIG_HW_RANDOM_VIRTIO is not set\n';
+const newFlag = 'CONFIG_HW_RANDOM_VIRTIO=y\n';
+assert.equal(baselineText.split(oldFlag).length,2,'Expected one disabled RNG driver in pinned ACPI baseline');
+assert.deepEqual(Buffer.from(baselineText.replace(oldFlag,()=>newFlag)),kernelConfigBytes,
+  'Kernel configuration changed beyond enabling the VirtIO RNG driver');
+assert.deepEqual(await fs.readFile(path.join(kernelDirectory,'rng.config.diff')),
+  Buffer.from(' HW_RANDOM_VIRTIO n -> y\n'));
+const kernelConfig = kernelConfigBytes.toString('utf8');
+const requiredConfig = ['CONFIG_SYSVIPC=y','CONFIG_SYSVIPC_SYSCTL=y','CONFIG_IPC_NS=y','CONFIG_SMP=y',
   'CONFIG_X86_LOCAL_APIC=y','CONFIG_X86_IO_APIC=y','CONFIG_HPET_TIMER=y',
-  'CONFIG_ACPI=y','CONFIG_X86_PM_TIMER=y','CONFIG_HZ_100=y',
-  'CONFIG_X86_MPPARSE=y','# CONFIG_PCI_MSI is not set'];
+  'CONFIG_ACPI=y','CONFIG_X86_PM_TIMER=y','CONFIG_HZ_PERIODIC=y','CONFIG_HZ_100=y','CONFIG_HZ=100',
+  'CONFIG_HW_RANDOM=y','CONFIG_HW_RANDOM_VIRTIO=y','CONFIG_VIRTIO=y','CONFIG_VIRTIO_PCI=y',
+  'CONFIG_X86_MPPARSE=y','# CONFIG_PCI_MSI is not set',
+  '# CONFIG_HIGH_RES_TIMERS is not set','# CONFIG_NO_HZ_IDLE is not set','# CONFIG_NO_HZ_FULL is not set'];
 for (const line of requiredConfig) {
   assert.equal(kernelConfig.split('\n').filter(value=>value===line).length,1,'Required actual kernel config differs: '+line);
 }
+const hashNames = ['bzImage','linux.config','ipc-baseline.config','acpi.config.diff',
+  'acpi-baseline.config','rng.config.diff'];
+const hashLines = (await fs.readFile(path.join(kernelDirectory,'build.sha256'),'utf8')).trimEnd().split('\n');
+const recordedKernelHashes = {};
+for (const line of hashLines) {
+  const match = /^([0-9a-f]{64})  (\/out\/[^\s]+)$/.exec(line);
+  assert(match,'Malformed kernel hash manifest');
+  assert.equal(recordedKernelHashes[match[2]],undefined,'Duplicate kernel hash record');
+  recordedKernelHashes[match[2]] = match[1];
+}
+assert.deepEqual(Object.keys(recordedKernelHashes).sort(),hashNames.map(name=>'/out/'+name).sort());
+for (const name of hashNames) assert.equal(recordedKernelHashes['/out/'+name],kernelFiles[name].sha256);
+const wasmTypeNames = ['rng-random','virtio-rng-pci'];
+{
+  const wasm = await fs.readFile(path.join(source,'artifacts/browser-emulator/qemu-system-x86_64.wasm'));
+  for (const name of wasmTypeNames) assert(wasm.includes(Buffer.from(name+'\0')),
+    'Pinned emulator lacks the expected RNG type name: '+name);
+}
+// String presence supports the build configuration; it does not prove realization,
+// IRQ delivery, entropy credit or PostgreSQL progress. Those require the real VM.
+const kernelVerification = {
+  run:kernelArchive.run,head:kernelArchive.head,artifact:kernelArchive.artifact,
+  archive:kernelArchive.archive,sourceCommit,recipe:recipeRecord,files:kernelFiles,
+  baselineConfig:kernelFiles['acpi-baseline.config'],exactlyOneConfigChange:true,
+  exactChange:'HW_RANDOM_VIRTIO n -> y',requiredConfig,
+  embeddedEmulatorTypeNames:wasmTypeNames,entropyDeliveryVerified:false
+};
+configurationExperiment.kernelConfigOneFlagVerified = true;
 const originalDirectory = path.join(prepared,'original-runtime');
 for (const [name,expected] of Object.entries(originalManifest.files)) {
   assert.deepEqual(await fileRecord(path.join(originalDirectory,name)),expected);
@@ -536,6 +686,35 @@ assert.equal(rootfsEntries[0][1].sha256,'beb2efc092ed90e5e9919ff4f1f33f7d239aeca
 assert.deepEqual(await fileRecord(path.join(source,'fga/model.json')),
   {bytes:52709,sha256:'a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d'});
 
+// Compute the expected package from independently verified source ranges and
+// the exact kernel bytes before invoking the production materializer.
+assert.equal(originalMetadata.files.filter(file=>file.filename==='/pack/bzImage').length,1);
+assert.equal(originalMetadata.files.filter(file=>file.filename==='/pack/vm.state').length,1);
+let expectedPosition = 0;
+const expectedPackageHash = createHash('sha256');
+const expectedSegments = [];
+for (const segment of originalMetadata.files) {
+  if (segment.filename==='/pack/vm.state') continue;
+  const firstByte = expectedPosition;
+  const input = segment.filename==='/pack/bzImage'
+    ? createReadStream(path.join(kernelDirectory,'bzImage'))
+    : createReadStream(path.join(originalDirectory,'qemu-system-x86_64.data'),
+        {start:segment.start,end:segment.end-1});
+  for await (const bytes of input) { expectedPackageHash.update(bytes); expectedPosition+=bytes.length; }
+  assert.equal(expectedPosition-firstByte,segment.filename==='/pack/bzImage'
+    ? kernelFiles.bzImage.bytes : segment.end-segment.start);
+  expectedSegments.push({...segment,start:firstByte,end:expectedPosition});
+}
+const expectedData = {bytes:expectedPosition,sha256:expectedPackageHash.digest('hex')};
+const expectedMetadata = {...originalMetadata,files:expectedSegments,remote_package_size:expectedPosition};
+const originalLoader = await fs.readFile(path.join(originalDirectory,'load.js'),'utf8');
+const sourceTables = [...originalLoader.matchAll(/loadPackage\((\{"files":.*\})\);/g)];
+assert.equal(sourceTables.length,1);
+assert.deepEqual(JSON.parse(sourceTables[0][1]),originalMetadata);
+const expectedLoaderText = originalLoader.replace(sourceTables[0][0],
+  ()=> 'loadPackage('+JSON.stringify(expectedMetadata)+');');
+const expectedLoader = bytesRecord(Buffer.from(expectedLoaderText));
+
 // The production materializer requires its model-explorer HTML input. Copy
 // the reviewed source HTML; this experiment does not build or test that demo.
 await fs.mkdir(path.join(source,'browser-output'),{recursive:true});
@@ -546,8 +725,6 @@ command('bash',['browser-single/prepare-pages.sh'],{
 command('git',['diff','--exit-code']);
 
 const derived = await readJSON(path.join(runtime,'derived-runtime.json'));
-const expectedData = {bytes:550772608,sha256:'0260827c6a39e526dd180f76b754220892ac7d0799ed8503d2ab564795bb90a5'};
-const expectedLoader = {bytes:7521,sha256:'24388c26e7fd354d937b0c8bc66f2f0a8e2ac0bcfd1b17e7f8771862399ce3b0'};
 assert.deepEqual(await fileRecord(path.join(runtime,'qemu-system-x86_64.data')),expectedData);
 assert.deepEqual(await fileRecord(path.join(runtime,'load.js')),expectedLoader);
 assert.deepEqual(derived.data,expectedData);
@@ -559,6 +736,9 @@ for (const [name,expected] of Object.entries(pair)) {
   assert.deepEqual(await fileRecord(path.join(runtime,name)),expected);
 }
 const derivedMetadata = await metadata(runtime);
+assert.deepEqual(derivedMetadata,expectedMetadata,'Derived segment table differs from the verified source ranges');
+assert.deepEqual(await fs.readFile(path.join(runtime,'load.js')),Buffer.from(expectedLoaderText),
+  'Loader changed outside the reviewed segment-table replacement');
 assert.equal(derivedMetadata.files.some(file=>file.filename==='/pack/vm.state'),false);
 assert.equal(derivedMetadata.files.length,originalMetadata.files.length-1);
 const preservedSegments = {};
@@ -592,16 +772,17 @@ for (const name of ['browser-single/prepare-pages.sh','browser-single/check-page
   'browser-single/pages/launcher.js','browser-single/pages/log-stream.mjs','browser-single/log-stream.test.mjs',
   'browser-single/pages/startup-payload.mjs',
   'browser-single/pages/guest.sh','browser-single/entrypoint.sh',
+  'browser-single/Kernel.Dockerfile','browser-single/prepare-kernel.sh','browser-single/repack-runtime.mjs',
   'e2e/package-lock.json','fga/model.json']) {
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
 const proof = {
-  schemaVersion:1,experiment:'coalesced_ui_and_log_capture',diagnosticOnly:true,
+  schemaVersion:1,experiment:'virtio_rng_with_verified_capture',diagnosticOnly:true,
   modelExplorerBuildVerified:false,sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
   sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,lightweightVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
   originalRuntimeSource:originalManifest.source_commit,
-  kernelSource:'af9c5555e312ffaec3785154f5be83be7469c95f',
+  kernelSource:sourceCommit,kernelVerification,
   rootfsUnchanged:true,preservedSegments,data:expectedData,loader:expectedLoader,
   args:originalManifest.files['arg-module.js'],kernel:kernelFiles.bzImage,
   kernelConfig:kernelFiles['linux.config'],requiredConfig,emulator:pair,
@@ -609,13 +790,14 @@ const proof = {
   openfgaBuild:openfga,openfgaBinary,bootstrapBuild:startup.bootstrap_build,
   executions:{initialBootstrap:'/tmp/browser-lab-runtime/bootstrap',
     probe:'/usr/local/bin/lab-tool',acceptance:'/usr/local/bin/lab-tool'},
-  expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi',kernelIRQ:'default_acpi'},
+  expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi',
+    kernelIRQ:'default_acpi',entropyConfiguration},
   authorizationDeadlinesChanged:false
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
-console.log('COALESCED_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
+console.log('VIRTIO_RNG_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
   rootfsUnchanged:true,data:expectedData,loader:expectedLoader,kernel:kernelFiles.bzImage,
-  nativeVerification,lightweightVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
+  nativeVerification,lightweightVerification,kernelVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
   resolverTypesystemReuse:openfga.first_resolver_typesystem_reuse,
   bootstrapSource:startup.bootstrap_build.source_commit,bootstrapSha256:startup.bootstrap_build.binary_sha256,
   modelExplorerBuildVerified:false}));
