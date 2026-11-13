@@ -1,4 +1,4 @@
-// Diagnostic only: one retained real VM per engine, one vCPU, unchanged request budgets.
+// Diagnostic only: one retained real VM per engine, two vCPUs and pinned ACPI kernel; unchanged request budgets.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createReadStream,promises as fs} from 'node:fs';
@@ -14,29 +14,40 @@ const {chromium,firefox}=require('@playwright/test');
 assert.equal(require('@playwright/test/package.json').version,'1.65.0');
 const selectedEngine=process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(selectedEngine),'BROWSER_DIAGNOSTIC_ENGINE must select exactly one engine');
-const output=path.resolve('artifacts/browser-clocks-one-vcpu');
+const output=path.resolve('artifacts/browser-clocks-acpi');
 const preparedBytes=await fs.readFile(path.join(output,'prepared.json'));
 const prepared=JSON.parse(preparedBytes);
 assert.equal(prepared.diagnosticOnly,true);
 assert.equal(prepared.productionAcceptance,false);
 assert.deepEqual(prepared.prepared.map(x=>x.label),['current']);
-assert.equal(prepared.hostSourceHead,'379e3280c2a1c789071292af141648eb2fc3ffbc');
+assert.equal(prepared.hostSourceHead,'af9c5555e312ffaec3785154f5be83be7469c95f');
+assert.equal(prepared.runtimeSourceHead,'379e3280c2a1c789071292af141648eb2fc3ffbc');
+assert(prepared.kernelPin&&prepared.rootfsProof?.equal,'Missing reviewed kernel/rootfs materialization proof');
+assert.deepEqual(prepared.rootfsProof.original,prepared.rootfsProof.retained);
+assert.deepEqual(prepared.rootfsProof.original,prepared.rootfsProof.derived);
 const bundle=prepared.prepared[0];
-assert.equal(bundle.head,prepared.hostSourceHead);
+assert.equal(bundle.head,prepared.runtimeSourceHead);
+assert.equal(bundle.hostHead,prepared.hostSourceHead);
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const runnerSha256=digest(await fs.readFile(new URL(import.meta.url)));
 assert.equal(prepared.runner.sha256,runnerSha256);
 assert.equal(prepared.sourceLogModule.sha256,
   digest(await fs.readFile('source-current/browser-single/pages/log-stream.mjs')));
 const expectedStartup=JSON.parse(await fs.readFile(path.join(bundle.root,'wasm/runtime/startup-manifest.json'),'utf8'));
-assert.equal(expectedStartup.diagnostic.requested_vcpus,1);
+assert.equal(expectedStartup.diagnostic.requested_vcpus,2);
+assert.equal(expectedStartup.diagnostic.acpi_discovery_enabled,true);
+assert.equal(expectedStartup.diagnostic.host_source_commit,prepared.hostSourceHead);
+assert.equal(expectedStartup.diagnostic.runtime_source_commit,prepared.runtimeSourceHead);
+assert.deepEqual(expectedStartup.diagnostic.kernel,{artifact:prepared.kernelPin.artifact,
+  archive_sha256:prepared.kernelPin.archive.sha256,bzImage:prepared.kernelPin.files.bzImage});
 assert.equal(expectedStartup.diagnostic.productionAcceptance,false);
 const limitMs=1200000;
 const summary={diagnosticOnly:true,productionAcceptance:false,
-  scope:'one-vCPU retained runtime clock observation; original two real authorization sequences if ready',
+  scope:'two-vCPU ACPI kernel clock observation; original two real authorization sequences if ready',
   order:[selectedEngine],hostLimitMsPerEngine:limitMs,maxVMStarts:1,
   workflowEngineMatrix:['chromium','firefox'],independentRunnerJobs:true,
-  bundleMode:prepared.bundleMode,hostSourceHead:prepared.hostSourceHead,
+  bundleMode:prepared.bundleMode,hostSourceHead:prepared.hostSourceHead,runtimeSourceHead:prepared.runtimeSourceHead,
+  kernelArtifact:prepared.kernelPin.artifact,kernelArchiveSha256:prepared.kernelPin.archive.sha256,
   preparedSha256:digest(preparedBytes),runnerSha256,attempts:[]};
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css',
   '.wasm':'application/wasm','.json':'application/json','.sh':'text/plain'};
@@ -104,7 +115,7 @@ function clockReport(observer,timeline,expectedSequence) {
       assert(Number.isFinite(row.pageMonotonicMs));
       assert.equal(typeof row.text,'string');assert(row.text.length<=512);
       const received=hostReceipt(timeline,row.endSequence);
-      const match=/^\[browser-clock\] (begin|time|source|event|irq|end) id=(\d+)(?: (.*))?$/.exec(row.text);
+      const match=/^\[browser-clock\] (begin|time|source|available|event|intr|softirq|irq_status|end) id=(\d+)(?: (.*))?$/.exec(row.text);
       assert(match,'Malformed clean clock line');
       const [,kind,idText,fields='']=match,id=Number(idText);
       assert(Number.isSafeInteger(id)&&((id>=0&&id<=115)||(id>=1001&&id<=1004)),'Unexpected clock ID');
@@ -113,7 +124,7 @@ function clockReport(observer,timeline,expectedSequence) {
         assert(!seen.has(id),'Duplicate clock ID');seen.add(id);
         assert(/^point=[a-z-]+$/.test(fields),'Invalid clock point');
         active={id,point:fields.slice(6),beginSequence:row.endSequence,
-          beginHostReceiptMs:received,events:[],interruptRows:[]};
+          beginHostReceiptMs:received,events:[],softirqs:{}};
       } else {
         assert(active&&active.id===id,'Clock frame order mismatch');
         if(kind==='time') {
@@ -127,13 +138,35 @@ function clockReport(observer,timeline,expectedSequence) {
           assert(active.source===undefined,'Duplicate clocksource');assert(fields.startsWith('value='));
           active.source=fields.slice(6);
           if(!active.source||active.source==='unavailable') result.issues.push('Clocksource unavailable for id='+id);
+        } else if(kind==='available') {
+          assert(active.available===undefined,'Duplicate available clocksources');assert(fields.startsWith('value='));
+          active.available=fields.slice(6);
+          if(!active.available||active.available==='unavailable') result.issues.push('Available clocksources missing for id='+id);
         } else if(kind==='event') {assert(active.events.length<4);active.events.push(fields);}
-        else if(kind==='irq') {assert(active.interruptRows.length<12);active.interruptRows.push(fields);}
-        else {
-          const counts=/^irq_rows=(\d+) event_rows=(\d+)$/.exec(fields);
-          assert(counts&&active.time&&active.source!==undefined,'Incomplete clock frame');
-          assert.equal(Number(counts[1]),active.interruptRows.length);
-          assert.equal(Number(counts[2]),active.events.length);
+        else if(kind==='intr') {
+          assert(active.intr===undefined,'Duplicate aggregate interrupt counter');
+          const value=/^total=(\d+|unavailable)$/.exec(fields);assert(value,'Invalid aggregate interrupt row');
+          const total=value[1]==='unavailable'?null:Number(value[1]);
+          assert(total===null||Number.isSafeInteger(total));
+          if(total===null) result.issues.push('Aggregate interrupt counter unavailable for id='+id);
+          active.intr={total,hostReceiptMs:received,endSequence:row.endSequence};
+        } else if(kind==='softirq') {
+          const value=/^name=(TIMER|SCHED|RCU) value=(.*)$/.exec(fields);
+          assert(value&&!Object.hasOwn(active.softirqs,value[1]),'Invalid or duplicate softirq row');
+          const parsed=new RegExp('^\\s*'+value[1]+':\\s+(\\d+)\\s+(\\d+)\\s*$').exec(value[2]);
+          const counts=parsed?[Number(parsed[1]),Number(parsed[2])]:null;
+          assert(counts===null||counts.every(Number.isSafeInteger));
+          if(counts===null) result.issues.push('Softirq counter unavailable or malformed for id='+id+' name='+value[1]);
+          active.softirqs[value[1]]={raw:value[2],counts,hostReceiptMs:received,endSequence:row.endSequence};
+        } else if(kind==='irq_status') {
+          assert.equal(fields,'value=oci_masked_proc_interrupts');assert(active.irqStatus===undefined);
+          active.irqStatus='oci_masked_proc_interrupts';
+        } else {
+          const counts=/^event_rows=(\d+) softirq_rows=3$/.exec(fields);
+          assert(counts&&active.time&&active.source!==undefined&&active.available!==undefined&&
+            active.intr!==undefined&&active.irqStatus==='oci_masked_proc_interrupts','Incomplete clock frame');
+          assert.deepEqual(Object.keys(active.softirqs).sort(),['RCU','SCHED','TIMER']);
+          assert.equal(Number(counts[1]),active.events.length);
           active.endSequence=row.endSequence;active.endHostReceiptMs=received;
           active.hostReceiptSpanMs=received-active.beginHostReceiptMs;
           result.samples.push(active);active=null;
@@ -149,11 +182,15 @@ function clockReport(observer,timeline,expectedSequence) {
       guestUptimeDeltaSeconds:b.time.uptimeSeconds-a.time.uptimeSeconds,
       guestEpochDeltaSeconds:b.time.epochSeconds-a.time.epochSeconds,
       shellDeltaSeconds:b.time.shellSeconds-a.time.shellSeconds,
-      hostReceiptDeltaMs:b.time.hostReceiptMs-a.time.hostReceiptMs});
+      hostReceiptDeltaMs:b.time.hostReceiptMs-a.time.hostReceiptMs,
+      sourceCounterDeltas:{intrTotal:a.intr.total===null||b.intr.total===null?null:b.intr.total-a.intr.total,
+        softirqs:Object.fromEntries(['TIMER','SCHED','RCU'].map(name=>[name,
+          a.softirqs[name].counts===null||b.softirqs[name].counts===null?null:
+            b.softirqs[name].counts.map((value,cpu)=>value-a.softirqs[name].counts[cpu])]))}});
   }
   result.framingComplete=result.issues.length===0;
   result.totalRows=rows.length;
-  result.interruptInterpretation='Raw selected /proc/interrupts rows only; no matching/readable rows is not evidence of zero interrupts.';
+  result.interruptInterpretation='/proc/interrupts is OCI-masked; /proc/stat intr is an aggregate source counter, and TIMER/SCHED/RCU count softirq invocations. None directly counts awakened sleepers or proves clock correctness.';
   return result;
 }
 function assertPass(value,count,firstPass) {
@@ -170,7 +207,7 @@ function assertPass(value,count,firstPass) {
 }
 function assertRuntime(guest,engine) {
   assert.deepEqual(guest.startupManifest,expectedStartup);
-  assert.equal(guest.vm.cpus,1);assert.equal(guest.vm.cpuTopology,'1,sockets=1,cores=1,threads=1');
+  assert.equal(guest.vm.cpus,2);assert.equal(guest.vm.cpuTopology,'2,sockets=2,cores=1,threads=1');
   assert.equal(guest.vm.memoryMiB,512);assert.equal(guest.vm.kernelLogLevel,7);
   assert(Number.isSafeInteger(guest.vm.reportedLogicalCPUs)&&guest.vm.reportedLogicalCPUs>=2);
   assert.equal(guest.vm.qemuLiveInstanceLimit,engine==='firefox'?8192:15000);
@@ -179,7 +216,8 @@ let cleanupFailed=false,expectedArgs;
 try {
   for(const [engineName,engine] of [[selectedEngine,{chromium,firefox}[selectedEngine]]]) {
     const name=engineName,evidence={diagnosticOnly:true,productionAcceptance:false,engine:engineName,
-      sourceHead:bundle.head,sourceArtifact:bundle.archived.artifact,expectedRuntime:bundle.files,
+      sourceHead:bundle.head,hostSourceHead:bundle.hostHead,sourceArtifact:bundle.archived.artifact,
+      kernelArtifact:prepared.kernelPin.artifact,expectedRuntime:bundle.files,
       startedAt:new Date().toISOString(),hostLimitMs:limitMs,vmStartRequested:false,
       twoRealSequencesObserved:false,passes:[],pageErrors:[]};
     const log=createGuestLogCollector(),timeline=[],server=serverFor(bundle.root);
@@ -233,7 +271,7 @@ try {
       assert.equal(initial.sequence,0);assert.equal(initial.evidence.booted,false);
       assert.equal(initial.evidence.accepted,false);assert.equal(initial.evidence.checks,0);
       evidence.vmStartRequested=true;evidence.vmStartRequestedAt=new Date().toISOString();
-      console.log('DIAGNOSTIC_ONLY starting '+engineName+' with one vCPU; host deadline includes loading');
+      console.log('DIAGNOSTIC_ONLY starting '+engineName+' with two vCPUs and pinned ACPI kernel; host deadline includes loading');
       await wait(page.locator('#start').click());
       await wait(page.waitForFunction(()=>window.labEvidence.accepted||window.labEvidence.error,null,{timeout:1200000}));
       const first=await wait(page.evaluate(()=>window.labEvidence));
@@ -292,7 +330,10 @@ try {
           const args=evidence.actualArguments;
           for(const flag of ['-accel','-smp','-m']) assert.equal(args.filter(x=>x===flag).length,1);
           assert.equal(args[args.indexOf('-accel')+1],'tcg,tb-size=500,thread=multi');
-          assert.equal(args[args.indexOf('-smp')+1],'1,sockets=1,cores=1,threads=1');
+          assert.equal(args[args.indexOf('-smp')+1],'2,sockets=2,cores=1,threads=1');
+          assert.equal(args.filter(x=>x==='-append').length,1);
+          assert(!args[args.indexOf('-append')+1].split(/\s+/).includes('acpi=off'));
+          assert(!args.includes('-no-acpi')&&!args.includes('-no-hpet'));
           assert.equal(args[args.indexOf('-m')+1],'512M');
           assert(!args.some(x=>['-machine','-M','-cpu','-icount','-rtc','-incoming'].includes(x)));
           if(expectedArgs===undefined) expectedArgs=args;else assert.deepEqual(args,expectedArgs);
@@ -325,8 +366,10 @@ try {
         evidence.finishedAt=new Date().toISOString();await write(name+'.json',evidence);
         const clockSamples=evidence.clocks?.samples??[],intervals=evidence.clocks?.intervals??[];
         const selectSample=sample=>({id:sample.id,point:sample.point,source:sample.source,time:sample.time,
-          hostReceiptSpanMs:sample.hostReceiptSpanMs,events:sample.events,interruptRows:sample.interruptRows});
+          hostReceiptSpanMs:sample.hostReceiptSpanMs,available:sample.available,events:sample.events,
+          intr:sample.intr,softirqs:sample.softirqs,irqStatus:sample.irqStatus});
         const compact={engine:engineName,browser:evidence.browser,outcome:evidence.outcome,
+          runtimeSourceHead:prepared.runtimeSourceHead,hostSourceHead:prepared.hostSourceHead,kernelArtifact:prepared.kernelPin.artifact,
           vmStartRequested:evidence.vmStartRequested,observationElapsedMs:evidence.observationElapsedMs,
           phase:evidence.phase?.slice(0,512),detail:evidence.detail?.slice(0,1024),
           consoleTail:evidence.consoleTail,consoleTailTruncated:evidence.consoleTailTruncated,
@@ -337,7 +380,7 @@ try {
           captureIntegrity:evidence.captureIntegrity,pageErrors:evidence.pageErrors.slice(0,8).map(value=>value.slice(0,1024)),
           failure:evidence.failure?.slice(0,2048),captureFailure:evidence.captureFailure?.slice(0,2048),
           cleanupFailure:evidence.cleanupFailure?.slice(0,1024),summaryTextBounded:true,
-          clocks:{correctness:'not_established',framingComplete:evidence.clocks?.framingComplete??false,
+          clocks:{correctness:'not_established',sourceCounterInterpretation:evidence.clocks?.interruptInterpretation,framingComplete:evidence.clocks?.framingComplete??false,
             samples:clockSamples.length,issues:evidence.clocks?.issues?.slice(0,8),
             first:clockSamples.slice(0,2).map(selectSample),last:clockSamples.slice(-2).map(selectSample),
             longestReceiptIntervals:[...intervals].sort((a,b)=>b.hostReceiptDeltaMs-a.hostReceiptDeltaMs).slice(0,4),
