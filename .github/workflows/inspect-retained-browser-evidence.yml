@@ -15,13 +15,13 @@ jobs:
         shell: bash
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
-          EVIDENCE_ARTIFACT_ID: '0' # Fill only from the completed run.
-          EVIDENCE_ZIP_BYTES: '0'
-          EVIDENCE_ZIP_SHA256: 'PENDING_COMPLETED_ARTIFACT'
-          EVIDENCE_RUN_CONCLUSION: 'PENDING_COMPLETED_RUN'
+          EVIDENCE_ARTIFACT_ID: '14029511154' # Fill only from the completed run.
+          EVIDENCE_ZIP_BYTES: '260830150'
+          EVIDENCE_ZIP_SHA256: '73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e'
+          EVIDENCE_RUN_CONCLUSION: 'failure'
         run: |
           python3 - <<'PY'
-          import collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
+          import base64, collections, hashlib, json, os, re, tempfile, urllib.error, urllib.request, uuid, zipfile
           from urllib.parse import urlsplit
 
           REPO = "qqrm/openfga-axum-lab"
@@ -226,6 +226,18 @@ jobs:
                                   "recorded_cutoff_matches": capture.get("expectedSequence") == count,
                                   "recorded_complete": capture.get("complete"), "recorded_error": capture.get("error")}
                               emit(engine + ".stream_integrity", integrity)
+                          # Emit exact small consoles for kernel/startup diagnosis only.
+                          # Large captures are still fully validated above; do not dump them.
+                          if len(raw) <= 16 * 1024:
+                              encoded = base64.b64encode(raw).decode("ascii")
+                              emit(engine + ".small_console", {"bytes": len(raw), "encoding": "base64",
+                                  "sha256": hashlib.sha256(raw).hexdigest(), "encoded_characters": len(encoded)})
+                              for offset in range(0, len(encoded), 4096):
+                                  emit(engine + ".small_console_chunk", {"offset": offset,
+                                      "base64": encoded[offset:offset + 4096]})
+                          else:
+                              emit(engine + ".small_console_omitted", {"bytes": len(raw),
+                                  "reason": "full raw console exceeds 16 KiB display limit"})
                           text = raw.decode("utf-8")
                           # Validate full records. Mixed console LAB lines are corroboration only:
                           # the pinned page parser consumes PTY bytes separately from emulator stderr.
@@ -319,7 +331,7 @@ jobs:
                           error_first, error_tail = [], collections.deque(maxlen=4)
                           matches = fault_count = 0
                           pattern = re.compile(r"LAB[|_]|model_decode|payload|ReadAuthorizationModel|resolver|phase|rpc|duration|bootstrap|postgres|openfga|axum|gateway|ready|listen|migration|fatal|panic|deadline|timed out|error", re.I)
-                          fault = re.compile(r"LAB\|(?:boot-failed|verification-failed|service-failed)|\b(?:ERROR|FATAL|panic|[A-Za-z]*Error)\b|instantiate_throw|out of memory|Elapsed\(\(\)\)|context canceled|deadline exceeded|timed out|TimeoutError|failed=true|context_state=\"(?:canceled|deadline_exceeded)\"|error_kind=\"(?!none\")[^\"]+\"|rpc_end.*status=\"(?!OK\")[^\"]+\"", re.I)
+                          fault = re.compile(r"LAB\|(?:boot-failed|verification-failed|service-failed)|\b(?:ERROR|FATAL|panic|[A-Za-z]*Error)\b|instantiate_throw|out of memory|Elapsed\(\(\)\)|context canceled|deadline exceeded|timed out|TimeoutError|failed=true|context_state=\"(?:canceled|deadline|deadline_exceeded)\"|error_kind=\"(?!none\")[^\"]+\"|rpc_end.*status=\"(?!OK\")[^\"]+\"", re.I)
                           for number, line in enumerate(lines, 1):
                               if "model_decode" in line:
                                   item = (number, line)
