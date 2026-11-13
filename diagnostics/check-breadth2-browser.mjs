@@ -117,6 +117,7 @@ try {
   assert.deepEqual(result.guest.startupManifest.bootstrap_build,materialization.bootstrapBuild);
   assert.deepEqual(result.guest.startupManifest.files['runtime/openfga'],materialization.openfgaBinary);
   assert.deepEqual(result.guest.startupManifest.files['runtime/bootstrap'],materialization.nativeVerification.bootstrapBinary);
+  assert.deepEqual(result.guest.startupManifest.files['guest.sh'],materialization.configurationExperiment.candidateGuest);
   assert.deepEqual(result.passes,result.guest.passes);
   assert.equal(result.passes.length,2);
   for (let i=0;i<2;i++) {
