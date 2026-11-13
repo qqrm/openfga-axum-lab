@@ -25,12 +25,28 @@ cp "$patch_dir/browser_http_dial.go" "$patch_dir/browser_http_dial_test.go" \
     "$patch_dir/browser_model_codec_integration_test.go" cmd/run/
 cp "$patch_dir/browser_model_validation.go" "$patch_dir/browser_model_validation_test.go" pkg/typesystem/
 cp "$patch_dir/browser_write_typesystem_test.go" pkg/server/commands/
-test -z "$(gofmt -l cmd/run/browser_http_dial.go cmd/run/browser_http_dial_test.go \
-    cmd/run/browser_http_warmup.go cmd/run/browser_http_warmup_test.go \
-    cmd/run/browser_model_codec.go cmd/run/browser_model_codec_test.go \
-    cmd/run/browser_model_codec_integration_test.go \
-    pkg/typesystem/browser_model_validation.go pkg/typesystem/browser_model_validation_test.go \
-    pkg/server/commands/write.go pkg/server/write.go pkg/server/commands/browser_write_typesystem_test.go)"
+cp "$patch_dir/browser_resolver_transfer_integration_test.go" pkg/server/
+format_files=(
+    cmd/run/browser_http_dial.go
+    cmd/run/browser_http_dial_test.go
+    cmd/run/browser_http_warmup.go
+    cmd/run/browser_http_warmup_test.go
+    cmd/run/browser_model_codec.go
+    cmd/run/browser_model_codec_test.go
+    cmd/run/browser_model_codec_integration_test.go
+    pkg/typesystem/browser_model_validation.go
+    pkg/typesystem/browser_model_validation_test.go
+    pkg/server/commands/write.go
+    pkg/server/write.go
+    pkg/server/commands/browser_write_typesystem_test.go
+    pkg/typesystem/resolver.go
+    pkg/server/browser_resolver_transfer_integration_test.go
+)
+unformatted=$(gofmt -l "${format_files[@]}")
+if [[ -n "$unformatted" ]]; then
+    gofmt -d "${format_files[@]}"
+    exit 1
+fi
 
 # Resolve only the pinned upstream dependency graph and verify its checksums.
 go mod download
@@ -43,14 +59,18 @@ go test -mod=readonly -count=1 -timeout=120s -v ./pkg/typesystem -run '^TestBrow
 go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server/commands \
     2>&1 | tee "$output_dir/write-typesystem-tests.log"
 go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server \
-    -run '^(TestWrite|TestCheckWriteAuthz|TestAuthorizationModelInvalidSchemaVersion)$' \
+    -run '^(TestWrite|TestCheckWriteAuthz|TestAuthorizationModelInvalidSchemaVersion|TestBrowserResolverTransfer.*)$' \
     2>&1 | tee -a "$output_dir/write-typesystem-tests.log"
+# Exercise shared ownership and response-cache publication under the race detector.
+CGO_ENABLED=1 go test -race -mod=readonly -p 1 -count=1 -timeout=300s -v \
+    ./cmd/run ./pkg/typesystem ./pkg/server -run '^TestBrowser(HTTP|Model|ResolverTransfer)' \
+    2>&1 | tee "$output_dir/model-reuse-race-tests.log"
 git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.7 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.8 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -73,6 +93,8 @@ cat >"$output_dir/build.json" <<EOF
   "startup_model_warmup": "in_process_codec_validation_with_exact_schema_cache",
   "model_validation_cache": "conditionless_exact_protobuf_body_except_id",
   "model_json_decoder": "pinned_json_decode_private_clone",
+  "model_json_encoder": "single_exact_real_model_response",
+  "first_resolver_typesystem_reuse": "one_shot_after_real_model_read",
   "warmup_generated_validation": "ValidateAll",
   "tuple_write_typesystem_reuse": "same_request_store_and_model",
   "warmup_model_sha256": "$model_sha256",
@@ -91,6 +113,8 @@ cat >"$output_dir/build.json" <<EOF
   "model_validation_helper_sha256": "$(sha256_of "$patch_dir/browser_model_validation.go")",
   "model_validation_tests_sha256": "$(sha256_of "$patch_dir/browser_model_validation_test.go")",
   "write_typesystem_tests_sha256": "$(sha256_of "$patch_dir/browser_write_typesystem_test.go")",
+  "resolver_transfer_integration_tests_sha256": "$(sha256_of "$patch_dir/browser_resolver_transfer_integration_test.go")",
+  "model_reuse_race_tests_sha256": "$(sha256_of "$output_dir/model-reuse-race-tests.log")",
   "go_sum_sha256": "$(sha256_of go.sum)",
   "binary_sha256": "$(sha256_of "$output_dir/openfga")",
   "startup_dial_tests": "passed",
@@ -98,7 +122,8 @@ cat >"$output_dir/build.json" <<EOF
   "warmup_tests": "passed",
   "model_codec_tests": "passed",
   "model_validation_tests": "passed",
-  "write_typesystem_tests": "passed"
+  "write_typesystem_tests": "passed",
+  "model_reuse_race_tests": "passed"
 }
 EOF
 cp LICENSE "$output_dir/LICENSE"
@@ -106,11 +131,12 @@ cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
     "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_model_validation.go" \
     "$patch_dir/browser_model_codec.go" "$patch_dir/browser_model_codec_test.go" \
     "$patch_dir/browser_model_codec_integration_test.go" \
-    "$patch_dir/browser_write_typesystem_test.go" "$output_dir/"
+    "$patch_dir/browser_write_typesystem_test.go" "$patch_dir/browser_resolver_transfer_integration_test.go" \
+    "$patch_dir/browser_model_validation_test.go" "$output_dir/"
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.7 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.8 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -121,30 +147,41 @@ Before datastore construction/listeners, one separate 60-second startup phase
 reads FGA_MODEL once and verifies its exact 52709 bytes and SHA-256 $model_sha256.
 Within that same budget, one cycle exercises the real JSONPb/protobuf codecs,
 generated ValidateAll request validation and the full original TypeSystem validator without
-any datastore, RPC or Check operation. After every stage succeeds, only the
-validity of the exact conditionless model body is retained in a private clone.
+any datastore, RPC or Check operation. After every stage succeeds, validity of
+the exact conditionless model body is retained in a separate private clone.
 Matching compares every protobuf field and unknown field except the generated ID.
 The write-model command reuses this proven validity and still writes PostgreSQL.
-Real resolver loads construct a fresh TypeSystem with the real ID; no TypeSystem,
-graph, tuple, datastore existence or Check decision is shared by this cache.
-All mismatching models use the original full validator. Failure or cancellation
-prevents cache publication and readiness. Stage timings remain diagnostic only.
+One independently owned, fully validated TypeSystem is retained for the first
+matching real resolver cache miss, after the actual datastore model read.
+Only a nonempty matching real model ID can claim that object once; the original
+store/model-keyed resolver cache and every original datastore operation remain.
+Other callers and later claims construct the usual fresh TypeSystem. Cancellation
+prevents returning or caching a claimed object. No tuple, datastore existence or
+Check decision is cached by this adaptation. Stage timings are diagnostic only.
 The same successful warmup prepares a private JSON-to-protobuf decoder entry.
 Only an exact pinned raw JSON model body reuses an independent protobuf copy.
 The original streaming JSON parser remains; every mismatching body and other
 request type keeps the original JSONPb decoder. The real URL supplies store_id;
 gRPC, validation, authentication, context and PostgreSQL writes remain mandatory.
-This does not cache a response or a Check decision. Decoder parity and real
-HTTP/gRPC/memory-datastore integration tests run in the native startup test gate.
+The response encoder can retain one bounded successful serialization of a real
+ReadAuthorizationModelResponse for the pinned policy. Every hit requires exact
+protobuf equality of the entire real response, including its actual model ID and
+unknown fields, with unchanged JSONPb options. Private key and byte copies prevent
+aliasing. Every real datastore/RPC read still runs; errors and other models, IDs,
+response types or options keep the original path. Warmup cannot populate this
+entry. Encoding timing is measured separately; it does not measure the entire
+post-RPC HTTP interval and is not a promise of meeting browser deadlines.
+Decoder/encoder parity and real HTTP/gRPC/memory-datastore integration tests run
+in the native startup test gate, together with race-detector checks.
 After resolving the actual store/model and checking write authorization, the
 server passes that same TypeSystem to its WriteCommand. Only an exact nonempty
 store/model binding can reuse it; nil or mismatching bindings keep the original
 model read and construction. Supported schema, tuple/condition validation,
 duplicate/size/deletion checks, context and actual datastore.Write are preserved.
-This removes the second construction within one Write request; it adds no
-global TypeSystem cache and does not cache any tuple or authorization result.
-Full command tests and server Write/authorization/schema tests passed; their
-combined log and new test source are included in this output.
+This removes the second construction within one Write request; normal tuple
+validation and every actual datastore write and authorization result remain.
+Full command tests, server Write/authorization/schema/resolver-transfer tests
+and focused race-detector tests passed; logs and test sources are included.
 The startup caller is bounded and observes parent cancellation; a synchronous
 worker may finish later, but cannot publish readiness and the CLI exits on error.
 The blocking connection, TLS, request timeouts and authorization engine remain.

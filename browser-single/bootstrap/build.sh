@@ -118,6 +118,9 @@ for (const [key, value] of Object.entries({
     warmup_timeout_seconds: 60, warmup_cycles: 1,
     startup_dial_tests: 'passed', warmup_tests: 'passed',
     model_codec_tests: 'passed', model_validation_tests: 'passed',
+    model_json_encoder: 'single_exact_real_model_response',
+    first_resolver_typesystem_reuse: 'one_shot_after_real_model_read',
+    model_reuse_race_tests: 'passed',
     write_typesystem_tests: 'passed',
     warmup_model_sha256: 'a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d'
 })) assert.equal(build[key], value, 'Unexpected verified OpenFGA field: ' + key);
@@ -132,12 +135,15 @@ for (const [key, name] of Object.entries({
     model_codec_integration_tests_sha256: 'browser_model_codec_integration_test.go',
     model_validation_helper_sha256: 'browser_model_validation.go',
     model_validation_tests_sha256: 'browser_model_validation_test.go',
-    write_typesystem_tests_sha256: 'browser_write_typesystem_test.go'
+    write_typesystem_tests_sha256: 'browser_write_typesystem_test.go',
+    resolver_transfer_integration_tests_sha256: 'browser_resolver_transfer_integration_test.go'
 })) {
     assert.equal(build[key], digest(path.join(repo, 'browser-single/openfga', name)),
         'OpenFGA source/proof identity differs: ' + key);
 }
 assert.equal(digest(path.join(repo, 'fga/model.json')), build.warmup_model_sha256, 'Pinned model changed');
+assert.equal(build.model_reuse_race_tests_sha256,
+    digest(path.join(directory, 'model-reuse-race-tests.log')), 'OpenFGA race-test log identity differs');
 writeFileSync(path.join(evidence, 'openfga.sha256'), actual + '\n');
 writeFileSync(path.join(evidence, 'openfga-build.json'), JSON.stringify(build, null, 2) + '\n');
 console.log(JSON.stringify({scope: 'reuse verified OpenFGA build', binary_sha256: actual,
