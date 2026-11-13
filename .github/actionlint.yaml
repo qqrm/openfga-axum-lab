@@ -1,4 +1,0 @@
-# Deployment uses this explicitly provisioned trusted runner, never PR jobs.
-self-hosted-runner:
-  labels:
-    - authzlab-deploy
