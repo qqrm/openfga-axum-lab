@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1f0954257956bda7c3c2715456ac8385cff32055
+          ref: 501cfc2535f09826550aae97225fa5cbda86f08d
           path: source-candidate
           persist-credentials: false
       - name: Verify pinned archives and extract only the required runtime/proof members
@@ -235,7 +235,7 @@ jobs:
                           "Kernel build metadata identity mismatch")
               elif label == "native":
                   inputs = json.loads((root / "native-evidence/openfga8-verifier-input.json").read_text())
-                  require(inputs["producerSource"] == "1f0954257956bda7c3c2715456ac8385cff32055" and
+                  require(inputs["producerSource"] == "501cfc2535f09826550aae97225fa5cbda86f08d" and
                           inputs["workflowCommit"] == head and inputs["runId"] == str(run_id) and inputs["runAttempt"] == "1" and
                           inputs["repositoryRuntimeContract"] == "passed" and inputs["scriptSyntaxAndShellCheck"] == "passed" and
                           inputs["browserAcceptanceVerified"] is False, "Combined native source/input provenance mismatch")

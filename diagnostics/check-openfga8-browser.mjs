@@ -6,7 +6,7 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 
-const sourceCommit = '1f0954257956bda7c3c2715456ac8385cff32055';
+const sourceCommit = '501cfc2535f09826550aae97225fa5cbda86f08d';
 const engine = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(engine),'Expected one allowlisted engine');
 const source = path.resolve('source-candidate');

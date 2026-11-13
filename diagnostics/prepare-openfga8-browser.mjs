@@ -5,7 +5,7 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '1f0954257956bda7c3c2715456ac8385cff32055';
+const sourceCommit = '501cfc2535f09826550aae97225fa5cbda86f08d';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
 const evidence = path.resolve('artifacts/openfga8-browser-gate');
