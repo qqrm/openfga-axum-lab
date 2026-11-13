@@ -83,12 +83,12 @@ jobs:
               raise SystemExit("The two named native artifacts must be distinct")
           # Immutable successful transport-only proof; unresolved pins fail before downloads.
           lightweight = {
-            "run": None,
+            "run": 43470193142,
             "head": "0a8d7dc4ba611fe7071b34005410f4dc832d7b71",
-            "artifact": None,
+            "artifact": 14060071538,
             "name": "browser-log-transport-candidate",
-            "bytes": None,
-            "sha256": None
+            "bytes": 46909,
+            "sha256": "2845492a3a08a09f4fc957b7907b920362cf521d96545e5569afc9918182cb34"
           }
           if (type(lightweight["run"]) is not int or lightweight["run"] <= 0
               or type(lightweight["artifact"]) is not int or lightweight["artifact"] <= 0
