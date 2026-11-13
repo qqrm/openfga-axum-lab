@@ -34,6 +34,7 @@ format_files=(
     cmd/run/browser_model_codec.go
     cmd/run/browser_model_codec_test.go
     cmd/run/browser_model_codec_integration_test.go
+    pkg/typesystem/typesystem.go
     pkg/typesystem/browser_model_validation.go
     pkg/typesystem/browser_model_validation_test.go
     pkg/server/commands/write.go
@@ -54,14 +55,14 @@ go mod verify
 mkdir -p "$output_dir"
 go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTP' \
     2>&1 | tee "$output_dir/dial-tests.log"
-go test -mod=readonly -count=1 -timeout=120s -v ./pkg/typesystem -run '^TestBrowserModel' \
+go test -mod=readonly -count=1 -timeout=120s -v ./pkg/typesystem \
     2>&1 | tee "$output_dir/model-validation-tests.log"
 go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server/commands \
     2>&1 | tee "$output_dir/write-typesystem-tests.log"
 go test -mod=readonly -count=1 -timeout=120s -v ./pkg/server \
     -run '^(TestWrite|TestCheckWriteAuthz|TestAuthorizationModelInvalidSchemaVersion|TestBrowserResolverTransfer.*)$' \
     2>&1 | tee -a "$output_dir/write-typesystem-tests.log"
-# Exercise shared ownership and response-cache publication under the race detector.
+# Exercise shared ownership, readonly schema paths and response-cache publication under the race detector.
 CGO_ENABLED=1 go test -race -mod=readonly -p 1 -count=1 -timeout=300s -v \
     ./cmd/run ./pkg/typesystem ./pkg/server -run '^TestBrowser(HTTP|Model|ResolverTransfer)' \
     2>&1 | tee "$output_dir/model-reuse-race-tests.log"
@@ -70,7 +71,7 @@ git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.8 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.9 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -95,6 +96,8 @@ cat >"$output_dir/build.json" <<EOF
   "model_json_decoder": "pinned_json_decode_private_clone",
   "model_json_encoder": "single_exact_real_model_response",
   "first_resolver_typesystem_reuse": "one_shot_after_real_model_read",
+  "schema_reachability_reuse": "readonly_plain_user_paths_on_startup_typesystem",
+  "schema_reachability_max_relations": 512,
   "warmup_generated_validation": "ValidateAll",
   "tuple_write_typesystem_reuse": "same_request_store_and_model",
   "warmup_model_sha256": "$model_sha256",
@@ -122,6 +125,7 @@ cat >"$output_dir/build.json" <<EOF
   "warmup_tests": "passed",
   "model_codec_tests": "passed",
   "model_validation_tests": "passed",
+  "schema_reachability_tests": "passed",
   "write_typesystem_tests": "passed",
   "model_reuse_race_tests": "passed"
 }
@@ -136,7 +140,7 @@ cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.8 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.9 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -158,6 +162,18 @@ store/model-keyed resolver cache and every original datastore operation remain.
 Other callers and later claims construct the usual fresh TypeSystem. Cancellation
 prevents returning or caching a claimed object. No tuple, datastore existence or
 Check decision is cached by this adaptation. Stage timings are diagnostic only.
+Within that same 60-second phase, the private startup TypeSystem can retain up to
+512 original PathExists results for the plain user type and known schema
+object-type/relation pairs. The pinned model has 316 pairs. The map is filled
+privately and published only after all computations and cancellation checks
+succeed; it is never updated by requests. Missing user types, oversized schemas,
+other subject types, usersets and unknown target keys retain the original path.
+This is schema reachability only: every real tuple read, rewrite, condition and
+Check decision still runs. No entity IDs, store data or authorization decisions
+are retained. A failed seed cannot publish a partially prepared TypeSystem.
+Full upstream TypeSystem tests, pinned predicate parity and concurrent read tests
+run before this build metadata is emitted. Browser performance is not established
+by these native tests.
 The same successful warmup prepares a private JSON-to-protobuf decoder entry.
 Only an exact pinned raw JSON model body reuses an independent protobuf copy.
 The original streaming JSON parser remains; every mismatching body and other

@@ -23,8 +23,8 @@ Chromium reaches the original application's migration, where a real Check
 also exceeds that deadline.
 
 [Fresh native verification of the structural-path candidate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
-has passed its Go/race stages and is running the real native backend proof.
-That candidate preserves real tuple reads and authorization
+completed successfully, including the real native backend proof and two original
+acceptance sequences. That candidate preserves real tuple reads and authorization
 decisions; browser performance and acceptance remain unverified. The exact
 sources, hashes, evidence and limitations are in
 [the startup review](../docs/browser-startup-review.md). Pages remains gated on

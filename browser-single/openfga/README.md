@@ -42,6 +42,45 @@ Panics continue to upstream recovery and do not emit a false completion event.
 Diagnostic logging itself adds work; it is not a performance improvement or a
 replacement for successful browser acceptance.
 
+## Bounded structural-path reuse in build .9
+
+Build `v1.10.3-browser-startup.9` prepares a private read-only map of the
+original `PathExists` predicate for the plain `user` type and known schema
+object-type/relation pairs. The pinned model contains 316 such pairs; preparation
+has a 512-pair bound and remains inside the existing 60-second startup phase.
+Each entry is computed by the original method, including its wildcard handling.
+Cancellation or an error prevents publication of a partially filled map.
+
+The map belongs only to the privately prepared startup TypeSystem. Its existing
+one-shot transfer still requires an actual persisted model read and an exact
+body match. All real Check rewrites, tuple reads, conditions and authorization
+decisions remain. Entity IDs and authorization answers are not retained.
+Usersets, other subject types and unknown target keys use the original method
+and errors. Models without a `user` type or above the bound keep that path too.
+The existing resolver-cache lifetime and fallback construction are unchanged.
+
+[Fresh native verification 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
+passed the complete TypeSystem tests, the existing command/server regressions,
+and focused race checks. Four new tests cover all 316 predicate pairs against
+the original method, eligibility and bounds, failure/cancellation without
+partial publication, and concurrent read-only access. The versioned producer
+also passed eight Node and 25 Rust tests, a real PostgreSQL/OpenFGA/Axum proof
+and two original `[403,204,200,204,403]` sequences.
+
+The actual empty-store Check returned HTTP 200 with `allowed:false` and
+`HIGHER_CONSISTENCY`. Holding its genuine response for six seconds produced
+exit 1 after 5089 ms with no published configuration. Default model POST and GET
+likewise failed closed after 5068/5072 ms while their real responses remained
+withheld. PostgreSQL contained four models and no tuples before app startup.
+
+The tested OpenFGA is 63074488 bytes, SHA256
+`7841a91b524fc1be097f2f816a8ed39f502e1372bbf96300dc9008b3336f98c3`.
+The bootstrap is byte-identical to the previous tested binary.
+Native warmup took 57 ms, with 49 ms in TypeSystem validation and path
+preparation. These timings do not establish WASM performance. Browser acceptance
+for .9 is still pending; the last completed .8/RNG run failed real Check
+deadlines in both engines. See the [current browser review](../../docs/browser-startup-review.md).
+
 ## Bounded startup and exact-schema validation cache
 
 [Run 43306901697, attempt 2](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/attempts/2)
@@ -82,7 +121,7 @@ actual PostgreSQL write remain in place. All body mismatches, absent cache
 entries and conditional models use the complete original validator. No
 authorization answer, tuple or datastore existence is memoized.
 
-Browser build `.8` also retains the fully validated warmup TypeSystem in a
+Browser builds since `.8` also retain the fully validated warmup TypeSystem in a
 private atomic slot, separately from the cloned comparison key. The first
 matching resolver cache miss can claim it only **after the existing resolver
 accessor has returned the actual model**. The claim requires a nonempty store
@@ -262,7 +301,7 @@ individual operation timings and their limits.
 
 The generated gateway still calls the real gRPC client and handles its errors
 before forwarding a successful response. Its `ForwardResponseMessage` calls
-the HTTP marshaler's `Marshal` method. Browser build `.8` intercepts only
+the HTTP marshaler's `Marshal` method. Browser builds since `.8` intercept only
 `ReadAuthorizationModelResponse` at that point and can retain **one eligible
 successful serialization, at most 1 MiB**, per codec instance. Admission requires
 the pinned conditionless model, its actual nonempty valid model ID, no
@@ -426,7 +465,7 @@ store/model TypeSystem reuse, exact JSON decoder, one-shot resolver transfer,
 one full real-response encoding, native parity/transport and race-test proof,
 dependency checksum and executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.8`.
+`v1.10.3-browser-startup.9`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

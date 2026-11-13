@@ -55,16 +55,35 @@ the 7521-byte loader has SHA256
 ### Next bounded adaptation and production compatibility
 
 The [structural-path .9 source](https://github.com/qqrm/openfga-axum-lab/commit/b04bad4ac109a5fdab185a9025b1ae3982953629)
-is undergoing [fresh native verification 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
+completed [fresh native verification 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
 at workflow `16266f3990af32a375039ce945322c26fa44b58c`. It can privately
 precompute at most 512 original schema predicates (316 for this pinned model)
 inside the existing 60-second startup phase. Only plain-user structural paths
 are reused; real model existence, tuple reads, rewrites and decisions remain.
 Cancellation or an error prevents partial publication. Other subject types,
 usersets and unknown target keys retain the original method and errors.
-Fresh Go build, the ordinary regressions and focused race checks have passed,
-including all four new structural-path tests. The real native stack proof is
-still running; any browser performance benefit remains pending.
+Fresh Go build, the ordinary regressions and focused race checks passed,
+including all four new structural-path tests. The complete real native producer
+then passed eight Node and 25 Rust tests, a genuine empty-store deny Check and
+two original native acceptance sequences. Its six-second hold of an actual
+Check response produced exit 1 after 5089 ms with no configuration published.
+Default model POST/GET likewise failed closed after 5068/5072 ms.
+
+The tested OpenFGA binary is 63074488 bytes, SHA256
+`7841a91b524fc1be097f2f816a8ed39f502e1372bbf96300dc9008b3336f98c3`.
+Its 2910-byte build record has SHA256
+`d430aad43f10805ee655b8180fd2c25cc0a65eaaff1da57b37d3f556ad19f983`;
+the 37910-byte race log has SHA256
+`57d2b1550eb49cf2cd0d2113277dae1dec0750eee888b4a68bc0c059d9991a82`.
+The bootstrap remains the exact 7444640-byte `e1143b7d...` output tested earlier.
+Native evidence artifact 14065112277 is 24001397 ZIP bytes, SHA256
+`a34151ad1bac812410c57d42ee93b50c5f50ca96c70299b43431ab9539bcca61`;
+bootstrap artifact 14065566791 is 3321947 bytes, SHA256
+`ae6ff35cec4281e13343f9f2b9def30200a803fcdaba0380e816e55b5402ab19`.
+
+Native warmup took 57 ms; TypeSystem validation plus path preparation accounted
+for 49 ms. No inference about WASM speed or meeting its 60-second startup budget
+is made from those native numbers. Browser verification remains pending.
 
 The separate [production compatibility source d5638bcd](https://github.com/qqrm/openfga-axum-lab/commit/d5638bcdc9ef51fded0b711bcd979ff306eaa938)
 removes exactly the three temporary syscall diagnostic lines, restoring the
