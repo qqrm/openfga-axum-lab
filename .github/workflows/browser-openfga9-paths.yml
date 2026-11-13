@@ -1,7 +1,7 @@
-name: Real browser acceptance with fresh OpenFGA schema reachability
+name: Firefox preflight follow-up for fresh OpenFGA schema reachability
 on:
   push:
-    branches: [diag/browser-openfga9-paths-b04b]
+    branches: [diag/browser-openfga9-firefox-preflight]
     paths:
       - .github/workflows/browser-openfga9-paths.yml
       - diagnostics/prepare-openfga9-paths-browser.mjs
@@ -10,19 +10,19 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-openfga9-paths-b04b
+  group: browser-openfga9-firefox-preflight
   cancel-in-progress: false
 jobs:
   browser:
     name: OpenFGA .9 schema paths browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga9-paths-b04b'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga9-firefox-preflight'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        engine: [chromium, firefox]
+        engine: [firefox]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, re, stat, urllib.error, urllib.request, zipfile
+          import hashlib, json, os, pathlib, re, stat, time, urllib.error, urllib.request, zipfile
           from urllib.parse import urlsplit
           from datetime import datetime, timezone
           M = 1024**2
@@ -143,8 +143,15 @@ jobs:
                 "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                 "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "bounded-browser-openfga9-gate"})
-          def api(suffix):
-              with opener.open(request(suffix), timeout=20) as response: raw = response.read(M + 1)
+          def api(suffix, deadline=None):
+              timeout = 20
+              if deadline is not None:
+                  remaining = deadline - time.monotonic()
+                  require(remaining > 0, "Current job metadata observation budget expired")
+                  timeout = min(timeout, remaining)
+              with opener.open(request(suffix), timeout=timeout) as response: raw = response.read(M + 1)
+              if deadline is not None:
+                  require(time.monotonic() <= deadline, "Current job metadata observation budget expired")
               require(len(raw) <= M, "Metadata response exceeded budget")
               return json.loads(raw)
           def check_members(package):
@@ -172,17 +179,50 @@ jobs:
           current_run = int(os.environ["GITHUB_RUN_ID"])
           current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
-          jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
-          require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
+          observation_started = time.monotonic()
+          observation_deadline = observation_started + 30
+          observations = root / "job-start-observations.jsonl"
+          def observe(record):
+              record["elapsed_ms"] = round((time.monotonic() - observation_started) * 1000)
+              record["observed_at"] = datetime.now(timezone.utc).isoformat()
+              encoded = json.dumps(record, ensure_ascii=True)
+              with observations.open("a", encoding="utf-8") as output: output.write(encoded + "\n")
+              print(encoded, flush=True)
+          current_info = api("/actions/runs/" + str(current_run), observation_deadline)
+          observe({"kind": "current_run", **{key: current_info.get(key) for key in [
+              "id", "head_sha", "head_branch", "run_attempt", "event", "status"]}})
+          require(current_info["id"] == current_run and current_info["head_sha"] == os.environ["GITHUB_SHA"]
+                  and current_info["head_branch"] == "diag/browser-openfga9-firefox-preflight"
+                  and current_info["run_attempt"] == current_attempt and current_info["event"] == "push",
+                  "Current run immutable identity mismatch")
           job_name = "OpenFGA .9 schema paths browser gate (" + engine + ")"
-          matching = [job for job in jobs["jobs"] if job["name"] == job_name]
-          require(len(matching) == 1, "Expected exactly one current matrix job")
-          job = matching[0]
-          require(job["run_id"] == current_run and job["run_attempt"] == current_attempt and
-                  job["head_sha"] == os.environ["GITHUB_SHA"] and job["status"] == "in_progress" and
-                  isinstance(job["started_at"], str) and job["started_at"].endswith("Z"),
-                  "Current job start metadata identity mismatch")
-          job_timing = {key: job[key] for key in ["id", "name", "run_id", "run_attempt", "head_sha", "started_at"]}
+          expected_job_id = None
+          for observation in range(1, 7):
+              jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100", observation_deadline)
+              require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
+              matching = [job for job in jobs["jobs"] if job["name"] == job_name]
+              require(len(matching) == 1, "Expected exactly one current matrix job")
+              job = matching[0]
+              observe({"kind": "current_job", "observation": observation,
+                  **{key: job.get(key) for key in ["id", "name", "run_id", "head_sha", "status", "started_at"]},
+                  "reported_job_run_attempt": job.get("run_attempt")})
+              require(type(job["id"]) is int and job["id"] > 0 and job["run_id"] == current_run
+                      and job["head_sha"] == current_info["head_sha"],
+                      "Current job immutable identity mismatch")
+              if expected_job_id is None: expected_job_id = job["id"]
+              require(job["id"] == expected_job_id, "Current job identity changed between observations")
+              require(job["status"] in ["queued", "in_progress"], "Current job is no longer eligible to start")
+              started_at = job.get("started_at")
+              require(started_at is None or (isinstance(started_at, str) and started_at.endswith("Z")),
+                      "Current job start metadata is malformed")
+              if job["status"] == "in_progress" and started_at is not None:
+                  break
+              require(observation < 6 and time.monotonic() + 2 < observation_deadline,
+                      "Current job start metadata did not become available within its observation budget")
+              time.sleep(2)
+          require(time.monotonic() <= observation_deadline, "Current job metadata observation budget expired")
+          job_timing = {key: job[key] for key in ["id", "name", "run_id", "head_sha", "started_at"]}
+          job_timing["run_attempt"] = current_info["run_attempt"]
           job_timing["source"] = "GitHub Actions current job API"
           job_timing["observed_at"] = datetime.now(timezone.utc).isoformat()
           (root / "job-timing.json").write_text(json.dumps(job_timing, indent=2) + "\n")
@@ -401,6 +441,7 @@ jobs:
             artifacts/openfga9-paths-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
+            prepared/job-start-observations.jsonl
             prepared/native-evidence/
             prepared/lightweight-evidence/
             source-candidate/artifacts/browser-openfga/build.json
