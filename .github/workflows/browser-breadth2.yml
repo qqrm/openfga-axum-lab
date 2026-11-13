@@ -1,35 +1,36 @@
-name: Real browser OpenFGA .8 model reuse gate
+name: Chromium diagnostic for OpenFGA resolver breadth 2
 on:
   push:
-    branches: [diag/browser-openfga8-379e]
+    branches: [diag/browser-breadth2-55fb]
     paths:
-      - .github/workflows/browser-openfga8.yml
-      - diagnostics/prepare-openfga8-browser.mjs
-      - diagnostics/check-openfga8-browser.mjs
+      - .github/workflows/browser-breadth2.yml
+      - diagnostics/prepare-breadth2-browser.mjs
+      - diagnostics/check-breadth2-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-openfga8-379e
+  group: browser-breadth2-55fb
   cancel-in-progress: false
 jobs:
   browser:
-    name: OpenFGA .8 browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga8-379e'
+    name: Breadth 2 browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-breadth2-55fb'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
-        engine: [chromium, firefox]
+        engine: [chromium]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b267fefdba375395d496e6d89413786c048c70d2
+          ref: ff69d1eaa8e5f9bb51bc396355f4cdf3accec822
+          fetch-depth: 2
           path: source-candidate
           persist-credentials: false
       - name: Verify pinned archives and extract only the required runtime/proof members
@@ -120,13 +121,13 @@ jobs:
               require(size == info.file_size, "Truncated selected ZIP member")
               return {"bytes": size, "sha256": digest.hexdigest()}
           engine = os.environ["BROWSER_DIAGNOSTIC_ENGINE"]
-          require(engine in ["chromium", "firefox"], "Unexpected matrix engine")
+          require(engine == "chromium", "This diagnostic permits Chromium only")
           current_run = int(os.environ["GITHUB_RUN_ID"])
           current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "OpenFGA .8 browser gate (" + engine + ")"
+          job_name = "Breadth 2 browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -274,9 +275,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-openfga8-browser.mjs
-          node --check diagnostics/check-openfga8-browser.mjs
-          node diagnostics/prepare-openfga8-browser.mjs
+          node --check diagnostics/prepare-breadth2-browser.mjs
+          node --check diagnostics/check-breadth2-browser.mjs
+          node diagnostics/prepare-breadth2-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -289,14 +290,14 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-openfga8-browser.mjs
+        run: node diagnostics/check-breadth2-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-openfga8-${{ matrix.engine }}
+          name: browser-breadth2-${{ matrix.engine }}
           path: |
-            artifacts/openfga8-browser-gate/
+            artifacts/breadth2-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/
