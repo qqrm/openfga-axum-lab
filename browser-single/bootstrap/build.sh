@@ -46,7 +46,7 @@ git -C "$core_dir" diff --exit-code HEAD --
 git -C "$fixture_dir" diff --exit-code HEAD --
 test "$(git -C "$core_dir" hash-object tools/bootstrap.rs)" = a38ba1e8f792e7c0ed019c92f0ffd08a5d74a7a3
 test "$(git -C "$core_dir" hash-object tools/bootstrap_tests.rs)" = f5b5e56b04f9d8dd518228f84b7470b9949c65ca
-for relative in tools/bootstrap.rs tools/bootstrap_tests.rs Cargo.lock browser-single/Dockerfile fga/model.json; do
+for relative in tools/bootstrap.rs tools/bootstrap_tests.rs Cargo.toml Cargo.lock browser-single/Dockerfile fga/model.json; do
     cmp "$core_dir/$relative" "$repo_root/$relative"
     cmp "$core_dir/$relative" "$fixture_dir/$relative"
 done
@@ -146,19 +146,20 @@ print(json.dumps({"scope": "reuse verified OpenFGA build", "binary_sha256": actu
 PY
 IFS= read -r openfga_sha <"$proof_dir/openfga.sha256"
 python3 -m py_compile "$proof_dir/native-proof.py"
-{
-    node --check "$repo_root/browser-single/pages/startup-payload.mjs"
-    node --check "$repo_root/browser-single/startup-payload.test.mjs"
-    node --check "$repo_root/browser-single/check-pages.mjs"
-    node --test "$repo_root/browser-single/startup-payload.test.mjs"
-    for script in "$repo_root/browser-single/entrypoint.sh" \
-                  "$repo_root/browser-single/pages/guest.sh" \
-                  "$repo_root/browser-single/prepare-pages.sh" \
-                  "$repo_root/browser-single/bootstrap/build.sh"; do
-        bash -n "$script"
-        shellcheck "$script"
-    done
-} 2>&1 | tee "$proof_dir/wrapper-tests.log"
+bash -euo pipefail -s -- "$repo_root" <<'CHECK' 2>&1 | tee "$proof_dir/wrapper-tests.log"
+repo_root=$1
+node --check "$repo_root/browser-single/pages/startup-payload.mjs"
+node --check "$repo_root/browser-single/startup-payload.test.mjs"
+node --check "$repo_root/browser-single/check-pages.mjs"
+node --test "$repo_root/browser-single/startup-payload.test.mjs"
+for script in "$repo_root/browser-single/entrypoint.sh" \
+              "$repo_root/browser-single/pages/guest.sh" \
+              "$repo_root/browser-single/prepare-pages.sh" \
+              "$repo_root/browser-single/bootstrap/build.sh"; do
+    bash -n "$script"
+    shellcheck "$script"
+done
+CHECK
 
 timeout --kill-after=15s 300s docker run --rm --name native-bootstrap-rustfmt \
     --label "io.authzlab.native-bootstrap-run=$bootstrap_run_id" \
@@ -185,11 +186,11 @@ timeout --kill-after=15s 900s docker run --rm --name native-bootstrap-rust-tests
     2>&1 | tee "$proof_dir/unit-tests.log"
 grep -Fq 'test result: ok. 19 passed; 0 failed;' "$proof_dir/unit-tests.log"
 
-(
-    cd "$bootstrap_workdir"
-    BROWSER_BOOTSTRAP_OPENFGA_SHA256="$openfga_sha" \
-        timeout --kill-after=15s 720s python3 artifacts/native-bootstrap/native-proof.py
-) 2>&1 | tee "$proof_dir/native-proof.log"
+cd "$bootstrap_workdir"
+BROWSER_BOOTSTRAP_OPENFGA_SHA256="$openfga_sha" \
+    timeout --kill-after=15s 720s python3 artifacts/native-bootstrap/native-proof.py \
+    2>&1 | tee "$proof_dir/native-proof.log"
+cd "$repo_root"
 
 mkdir "$output_dir"
 docker create --name native-bootstrap-export \
