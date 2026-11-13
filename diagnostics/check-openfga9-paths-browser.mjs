@@ -6,11 +6,11 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 
-const sourceCommit = '716b77356dd4aab2747d4e37c5da723f3b7a764f';
+const sourceCommit = 'b04bad4ac109a5fdab185a9025b1ae3982953629';
 const engine = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert(['chromium','firefox'].includes(engine),'Expected one allowlisted engine');
 const source = path.resolve('source-candidate');
-const evidenceDirectory = path.resolve('artifacts/virtio-rng-browser-gate');
+const evidenceDirectory = path.resolve('artifacts/openfga9-paths-browser-gate');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const materialization = JSON.parse(await fs.readFile(path.join(evidenceDirectory,'materialization.json'),'utf8'));
 assert.equal(materialization.sourceCommit,sourceCommit);
@@ -18,17 +18,26 @@ assert.equal(materialization.configurationExperiment.bootstrap,'one_real_higher_
 assert.equal(materialization.configurationExperiment.kernelIRQ,'default_acpi');
 assert.equal(materialization.configurationExperiment.runtimeSourceMatchesNativeProducer,false);
 assert.equal(materialization.configurationExperiment.launcherIdentityVerified,true);
-assert.equal(materialization.configurationExperiment.nativeProducerCommit,'e381339f80dd76777ef526b0073dc5eb34739f26');
+assert.equal(materialization.configurationExperiment.nativeProducerCommit,'fe42a6bcb91b0702b38836dbec51fa1549cc97be');
 assert.equal(materialization.configurationExperiment.guestDiagnosticInverseVerified,true);
 assert.equal(materialization.configurationExperiment.launcherInverseVerified,true);
 assert.equal(materialization.configurationExperiment.synchronousProtocolUnchanged,true);
+assert.equal(materialization.configurationExperiment.nativeRuntimeDifferencePathsVerified,true);
+assert.equal(materialization.nativeVerification.freshGoBuild.kind,'fresh_go_build');
+assert.equal(materialization.nativeVerification.freshGoBuild.runtimeSource,sourceCommit);
+assert.equal(materialization.nativeVerification.freshGoBuild.producerSource,'fe42a6bcb91b0702b38836dbec51fa1549cc97be');
+assert.equal(materialization.nativeVerification.freshGoBuild.run,43478795296);
+assert.equal(materialization.nativeVerification.freshGoBuild.existingGoRegressionPackagesPassed,true);
+assert.equal(materialization.openfgaBuild.schema_reachability_reuse,'readonly_plain_user_paths_on_startup_typesystem');
+assert.equal(materialization.openfgaBuild.schema_reachability_max_relations,512);
+assert.equal(materialization.openfgaBuild.schema_reachability_tests,'passed');
 assert.equal(materialization.lightweightVerification.sourceCommit,'037a3c22a5fab45a735a6bfea9792c68049a4b62');
 assert.equal(materialization.lightweightVerification.appliedRuntimeSource,sourceCommit);
 assert.equal(materialization.lightweightVerification.launcherRngInverseVerified,true);
 assert.equal(materialization.configurationExperiment.launcherRngInverseVerified,true);
 assert.equal(materialization.configurationExperiment.kernelConfigOneFlagVerified,true);
 assert.equal(materialization.configurationExperiment.entropyDeliveryVerified,false);
-assert.equal(materialization.kernelVerification.sourceCommit,sourceCommit);
+assert.equal(materialization.kernelVerification.sourceCommit,'716b77356dd4aab2747d4e37c5da723f3b7a764f');
 assert.equal(materialization.kernelVerification.exactlyOneConfigChange,true);
 assert.equal(materialization.kernelVerification.entropyDeliveryVerified,false);
 assert.equal(materialization.lightweightVerification.passed,true);
@@ -66,7 +75,7 @@ await fs.writeFile(path.join(evidenceDirectory,engine+'-checker-transform.json')
 // A late local timestamp must never manufacture another 30-minute budget.
 const jobTiming = JSON.parse(await fs.readFile(path.resolve('prepared/job-timing.json'),'utf8'));
 assert.equal(jobTiming.source,'GitHub Actions current job API');
-assert.equal(jobTiming.name,'VirtIO RNG browser gate ('+engine+')');
+assert.equal(jobTiming.name,'OpenFGA .9 schema paths browser gate ('+engine+')');
 assert.equal(jobTiming.run_id,Number(process.env.GITHUB_RUN_ID));
 assert.equal(jobTiming.run_attempt,1);
 assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');
@@ -86,10 +95,10 @@ if (!jobBudget.launchPermitted) {
   const stopped = {phase:'preflight_stop',engine,sourceCommit,checkerLaunched:false,
     passes:null,reason:'Insufficient or unverified remaining Actions job budget',jobBudget};
   await fs.writeFile(path.join(evidenceDirectory,engine+'-preflight-stop.json'),JSON.stringify(stopped,null,2)+'\n');
-  console.log('VIRTIO_RNG_BROWSER_GATE '+JSON.stringify(stopped));
+  console.log('OPENFGA9_PATHS_BROWSER_GATE '+JSON.stringify(stopped));
   throw new Error('Refusing to start a VM more than four minutes after the Actions job began');
 }
-console.log('VIRTIO_RNG_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
+console.log('OPENFGA9_PATHS_BROWSER_GATE '+JSON.stringify({phase:'checker_launch',...transformProof,jobBudget}));
 const startedAt = new Date().toISOString();
 const child = spawn(process.execPath,[copiedPath],{cwd:source,env:process.env,stdio:'inherit'});
 const outcome = await new Promise(resolve=>{
@@ -155,7 +164,7 @@ const observations = consoleText.split(/\r?\n/).filter(line=>
   /LAB\||\[browser-(guest|single|openfga)\]|Listening on|database system is ready|TimedOut|Elapsed\(\(\)\)|context canceled|error_kind|Error:|FATAL|PANIC/.test(line));
 const excerpt = observations.slice(-40).map(line=>line.length>1500?line.slice(0,1500)+' [truncated; see full console]':line);
 const summary = {
-  schemaVersion:1,experiment:'virtio_rng_with_verified_capture',diagnosticOnly:true,
+  schemaVersion:1,experiment:'openfga9_schema_reachability_with_rng',diagnosticOnly:true,
   sourceCommit,workflowCommit:process.env.GITHUB_SHA ?? null,engine,
   maxVmStarts:1,startedAt,finishedAt:new Date().toISOString(),outcome,
   browser:result?.browser ?? null,
@@ -179,5 +188,5 @@ const summary = {
   matchedObservationLines:files[engine+'-console.txt']?.error ? null : observations.length,excerpt
 };
 await fs.writeFile(path.join(evidenceDirectory,engine+'-summary.json'),JSON.stringify(summary,null,2)+'\n');
-console.log('VIRTIO_RNG_BROWSER_GATE '+JSON.stringify(summary));
+console.log('OPENFGA9_PATHS_BROWSER_GATE '+JSON.stringify(summary));
 if (validationError!==undefined) process.exitCode=1;

@@ -1,21 +1,21 @@
-name: Real browser acceptance with VirtIO entropy and verified capture
+name: Real browser acceptance with fresh OpenFGA schema reachability
 on:
   push:
-    branches: [diag/browser-virtio-rng-716b]
+    branches: [diag/browser-openfga9-paths-b04b]
     paths:
-      - .github/workflows/browser-virtio-rng.yml
-      - diagnostics/prepare-virtio-rng-browser.mjs
-      - diagnostics/check-virtio-rng-browser.mjs
+      - .github/workflows/browser-openfga9-paths.yml
+      - diagnostics/prepare-openfga9-paths-browser.mjs
+      - diagnostics/check-openfga9-paths-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-virtio-rng-716b
+  group: browser-openfga9-paths-b04b
   cancel-in-progress: false
 jobs:
   browser:
-    name: VirtIO RNG browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-virtio-rng-716b'
+    name: OpenFGA .9 schema paths browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-openfga9-paths-b04b'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,9 +29,15 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 716b77356dd4aab2747d4e37c5da723f3b7a764f
-          fetch-depth: 4
+          ref: b04bad4ac109a5fdab185a9025b1ae3982953629
+          fetch-depth: 5
           path: source-candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fe42a6bcb91b0702b38836dbec51fa1549cc97be
+          fetch-depth: 2
+          path: source-native
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -57,19 +63,30 @@ jobs:
           # Fill both artifacts only from one completed successful combined native run.
           # Missing pins stop before artifact reads, browser installation or VM startup.
           native = {
-            "run": 43456493622,
-            "head": "4a757f3d8f194d9e3137611be97e01fc23edd67f",
+            "run": 43478795296,
+            "head": "16266f3990af32a375039ce945322c26fa44b58c",
+            "job": 132069573580,
             "bootstrap": {
-              "artifact": 14053708919,
-              "name": "browser-bootstrap-deny-probe",
-              "bytes": 3321933,
-              "sha256": "9f8cb1db426985b3cd111aaa3ca109aca5c8fb0aed33407f0604d6597f9e6674"
+              "artifact": 14065566791,
+              "name": "browser-bootstrap-openfga9-paths",
+              "bytes": 3321947,
+              "sha256": "ae6ff35cec4281e13343f9f2b9def30200a803fcdaba0380e816e55b5402ab19"
             },
             "evidence": {
-              "artifact": 14052644609,
-              "name": "browser-bootstrap-deny-probe-native-evidence",
-              "bytes": 23986894,
-              "sha256": "6c333d6af6e23574f50669c8f2fdb2df3f7b483a78f81585f964c3f3d90b30a5"
+              "artifact": 14065112277,
+              "name": "browser-openfga9-paths-native-evidence",
+              "bytes": 24001397,
+              "sha256": "a34151ad1bac812410c57d42ee93b50c5f50ca96c70299b43431ab9539bcca61"
+            },
+            "binaries": {
+              "openfga": {
+                "bytes": 63074488,
+                "sha256": "7841a91b524fc1be097f2f816a8ed39f502e1372bbf96300dc9008b3336f98c3"
+              },
+              "bootstrap": {
+                "bytes": 7444640,
+                "sha256": "e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275"
+              }
             }
           }
           if (type(native["run"]) is not int or native["run"] <= 0
@@ -79,6 +96,14 @@ jobs:
                      or not isinstance(item["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None
                      for item in [native["bootstrap"], native["evidence"]])):
               raise SystemExit("Combined native OpenFGA/bootstrap artifact pins are not verified yet")
+          if type(native["job"]) is not int or native["job"] <= 0:
+              raise SystemExit("The exact completed native job pin is missing")
+          for role in ["openfga", "bootstrap"]:
+              record = native["binaries"][role]
+              if (not isinstance(record, dict) or type(record.get("bytes")) is not int
+                  or not 0 < record["bytes"] <= 128*M or not isinstance(record.get("sha256"), str)
+                  or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None):
+                  raise SystemExit("The actual successfully verified native binary pin is missing: " + role)
           if native["bootstrap"]["artifact"] == native["evidence"]["artifact"]:
               raise SystemExit("The two named native artifacts must be distinct")
           # Immutable successful transport-only proof; unresolved pins fail before downloads.
@@ -117,7 +142,7 @@ jobs:
               return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
                 "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                 "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "bounded-browser-openfga8-gate"})
+                "User-Agent": "bounded-browser-openfga9-gate"})
           def api(suffix):
               with opener.open(request(suffix), timeout=20) as response: raw = response.read(M + 1)
               require(len(raw) <= M, "Metadata response exceeded budget")
@@ -149,7 +174,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "VirtIO RNG browser gate (" + engine + ")"
+          job_name = "OpenFGA .9 schema paths browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -171,6 +196,23 @@ jobs:
                       artifact["workflow_run"]["id"] == run_id and artifact["workflow_run"]["head_sha"] == head and
                       artifact["size_in_bytes"] == size and artifact["digest"] == "sha256:" + sha,
                       "Pinned artifact identity mismatch")
+              native_job = None
+              if label == "native":
+                  native_job = api("/actions/jobs/" + str(native["job"]))
+                  require(native_job["id"] == native["job"] and native_job["run_id"] == run_id
+                          and native_job["head_sha"] == head and native_job["run_attempt"] == 1
+                          and native_job["name"] == "native" and native_job["status"] == "completed"
+                          and native_job["conclusion"] == "success", "The fresh native job did not succeed")
+                  for expected_step in [
+                      "Check source identity, repository contract and both producer scripts",
+                      "Build and regression-test the fresh OpenFGA .9 producer",
+                      "Bind the fresh binary to exact inputs and actual regular and race tests",
+                      "Execute the versioned native bootstrap producer with this exact OpenFGA output",
+                      "Verify all four outputs and their real native OpenFGA provenance"
+                  ]:
+                      completed = [step for step in native_job["steps"] if step["name"] == expected_step]
+                      require(len(completed) == 1 and completed[0]["status"] == "completed"
+                              and completed[0]["conclusion"] == "success", "Missing successful native proof step")
               try:
                   opener.open(request("/actions/artifacts/" + str(aid) + "/zip"), timeout=20)
                   raise SystemExit("Expected artifact redirect")
@@ -245,9 +287,10 @@ jobs:
                       require(0 < len(subtree) <= 256, "Unexpected new OpenFGA proof subtree size")
                       selected = [(item.filename, source_root / "artifacts" / item.filename, 128*M) for item in subtree]
                       selected.extend((member, root / "native-evidence" / member, limit) for member, limit in [
-                        ("openfga8-verifier-input.json", M),
-                        ("openfga8-retained-origin.json", 4*M),
-                        ("openfga8-retained-verifier-input.json", M),
+                        ("openfga9-verifier-input.json", 4*M),
+                        ("openfga9-build-verification.json", 4*M),
+                        ("browser-openfga-build.log", 64*M),
+                        ("openfga9-native-startup-timing.json", M),
                         ("browser-bootstrap-proof/native-result.json", 4*M),
                         ("browser-bootstrap-proof/openfga-build.json", 4*M)
                       ])
@@ -295,12 +338,15 @@ jobs:
                           built["recipe_git_blob"] == "aeb75dc1f17528939559ffe8f8dd15746c0c2a0e",
                           "Kernel build metadata identity mismatch")
               elif label == "native":
-                  inputs = json.loads((root / "native-evidence/openfga8-verifier-input.json").read_text())
-                  require(inputs["schemaVersion"] == 2 and inputs["experiment"] == "bootstrap_real_empty_store_check" and
-                          inputs["producerSource"] == "e381339f80dd76777ef526b0073dc5eb34739f26" and
+                  inputs = json.loads((root / "native-evidence/openfga9-verifier-input.json").read_text())
+                  require(inputs["schemaVersion"] == 3 and inputs["experiment"] == "fresh_openfga9_schema_reachability_and_bootstrap_deny" and
+                          inputs["producerSource"] == "fe42a6bcb91b0702b38836dbec51fa1549cc97be" and
+                          inputs["runtimeSource"] == "b04bad4ac109a5fdab185a9025b1ae3982953629" and
                           inputs["workflowCommit"] == head and inputs["runId"] == str(run_id) and inputs["runAttempt"] == "1" and
                           inputs["repositoryRuntimeContract"] == "passed" and inputs["scriptSyntaxAndShellCheck"] == "passed" and
-                          inputs["browserAcceptanceVerified"] is False, "Combined native source/input provenance mismatch")
+                          inputs["browserAcceptanceVerified"] is False, "Fresh native source/input provenance mismatch")
+                  require(members["browser-openfga/openfga"] == native["binaries"]["openfga"],
+                          "The fresh OpenFGA binary bytes differ")
               elif label == "bootstrap":
                   built = json.loads((source_root / "artifacts/browser-bootstrap/build.json").read_text())
                   require(built["source_commit"] == "207d15fab685d3adb9c5d51a048982c2236ae75c" and
@@ -310,14 +356,17 @@ jobs:
                           built["empty_store_check"] == "one_real_higher_consistency_ownership_deny" and
                           built["empty_store_check_default"] is False and built["browser_empty_store_check"] is True and
                           built["empty_store_check_timeout_seconds"] == 5 and built["empty_store_check_tests"] == "passed" and
-                          built["binary_bytes"] == 7444640 and
-                          built["binary_sha256"] == "e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275" and
+                          {"bytes": built["binary_bytes"], "sha256": built["binary_sha256"]} == native["binaries"]["bootstrap"] and
                           built["binary_bytes"] == members["bootstrap"]["bytes"] and
                           built["binary_sha256"] == members["bootstrap"]["sha256"] and
                           built["native_test_log_sha256"] == members["native-tests.log"]["sha256"],
                           "Native bootstrap proof/binary identity mismatch")
               provenance = {"label": label, "run": run_id, "head": head, "artifact": aid, "artifact_name": name,
                             "archive": {"bytes": count, "sha256": sha}, "members": members}
+              if native_job is not None:
+                  provenance["native_job"] = {key: native_job[key] for key in [
+                      "id", "run_id", "head_sha", "run_attempt", "name", "status", "conclusion",
+                      "started_at", "completed_at", "steps"]}
               (root / (label + "-archive-provenance.json")).write_text(json.dumps(provenance, indent=2) + "\n")
               archive_path.unlink()
               print(json.dumps({"verified_archive": label, "artifact": aid, "bytes": count, "sha256": sha}), flush=True)
@@ -326,9 +375,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-virtio-rng-browser.mjs
-          node --check diagnostics/check-virtio-rng-browser.mjs
-          node diagnostics/prepare-virtio-rng-browser.mjs
+          node --check diagnostics/prepare-openfga9-paths-browser.mjs
+          node --check diagnostics/check-openfga9-paths-browser.mjs
+          node diagnostics/prepare-openfga9-paths-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -341,14 +390,14 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-virtio-rng-browser.mjs
+        run: node diagnostics/check-openfga9-paths-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-virtio-rng-${{ matrix.engine }}
+          name: browser-openfga9-paths-${{ matrix.engine }}
           path: |
-            artifacts/virtio-rng-browser-gate/
+            artifacts/openfga9-paths-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/

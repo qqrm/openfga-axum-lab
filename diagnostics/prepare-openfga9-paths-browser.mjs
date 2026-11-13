@@ -5,13 +5,16 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '716b77356dd4aab2747d4e37c5da723f3b7a764f';
+const sourceCommit = 'b04bad4ac109a5fdab185a9025b1ae3982953629';
+const kernelSourceCommit = '716b77356dd4aab2747d4e37c5da723f3b7a764f';
 const transportSourceCommit = '037a3c22a5fab45a735a6bfea9792c68049a4b62';
-const nativeProducerCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
+const nativeProducerCommit = 'fe42a6bcb91b0702b38836dbec51fa1549cc97be';
+const nativeBaseCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
 const bootstrapCoreCommit = '207d15fab685d3adb9c5d51a048982c2236ae75c';
 const source = path.resolve('source-candidate');
+const nativeSource = path.resolve('source-native');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/virtio-rng-browser-gate');
+const evidence = path.resolve('artifacts/openfga9-paths-browser-gate');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -92,9 +95,39 @@ const fixtureFiles = {
   }
 };
 const uiCommit = 'a438aedc8b3abd7abd1a5038ebeda7e20c63fd70';
-assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),transportSourceCommit);
-assert.equal(command('git',['rev-parse','HEAD^^'],{stdio:'pipe'}).trim(),uiCommit);
-assert.equal(command('git',['rev-parse','HEAD^^^'],{stdio:'pipe'}).trim(),nativeProducerCommit);
+assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),kernelSourceCommit);
+assert.equal(command('git',['rev-parse','HEAD^^'],{stdio:'pipe'}).trim(),transportSourceCommit);
+assert.equal(command('git',['rev-parse','HEAD^^^'],{stdio:'pipe'}).trim(),uiCommit);
+assert.equal(command('git',['rev-parse','HEAD^^^^'],{stdio:'pipe'}).trim(),nativeBaseCommit);
+assert.equal(command('git',['rev-parse','HEAD'],{cwd:nativeSource,stdio:'pipe'}).trim(),nativeProducerCommit);
+assert.equal(command('git',['rev-parse','HEAD^'],{cwd:nativeSource,stdio:'pipe'}).trim(),nativeBaseCommit);
+command('git',['diff','--exit-code','HEAD','--'],{cwd:nativeSource});
+const trackedTree = directory => Object.fromEntries(command('git',['ls-tree','-r','-z','HEAD'],
+  {cwd:directory,stdio:'pipe'}).split('\0').filter(Boolean).map(row=>{
+    const match=/^([0-7]{6}) blob ([0-9a-f]{40})\t(.+)$/.exec(row);
+    assert(match,'Expected only tracked regular-source blobs');
+    return [match[3],{mode:match[1],git_blob:match[2]}];
+  }));
+const runtimeTree = trackedTree(source);
+const producerTree = trackedTree(nativeSource);
+assert.deepEqual(Object.keys(runtimeTree).sort(),Object.keys(producerTree).sort());
+const reachabilityFiles = {
+  'browser-single/openfga/README.md':'2411eb30e6a3b9f1b2e1ef3fd7bf2d88b386897e',
+  'browser-single/openfga/browser_model_validation.go':'caf992f9463541cc91d5e747ee00e68a626620b6',
+  'browser-single/openfga/browser_model_validation_test.go':'8d3e77fde9b86ec9de0f94c5d51bb143abc63cde',
+  'browser-single/openfga/build.sh':'5371a7106196292868da52b3df1476071627ffbc',
+  'browser-single/openfga/startup-dial.patch':'3389ef60754e86ac7738f3932bfe7c86b8923562'
+};
+for (const [directory,parent] of [[source,kernelSourceCommit],[nativeSource,nativeBaseCommit]]) {
+  assert.deepEqual(command('git',['diff','--name-only',parent,'HEAD'],{cwd:directory,stdio:'pipe'})
+    .trim().split('\n').sort(),Object.keys(reachabilityFiles).sort(),
+    'The .9 source changed outside the reviewed schema-reachability adaptation');
+}
+for (const [name,blob] of Object.entries(reachabilityFiles)) {
+  assert.equal(runtimeTree[name].git_blob,blob);
+  assert.deepEqual(runtimeTree[name],producerTree[name]);
+  assert.deepEqual(await fs.readFile(path.join(source,name)),await fs.readFile(path.join(nativeSource,name)));
+}
 const changedFiles = {
   "browser-single/pages/log-stream.mjs": {
     "gitBlob": "ef118064b006fbc41a32b98f177ed0f8f2302b4f",
@@ -139,9 +172,10 @@ const changedFiles = {
     "sha256": "3ccd25511c9bf2d3e824c75eae633a995ff61151522c4923c351094a4226759f"
   }
 };
-assert.deepEqual(command('git',['diff','--name-only',nativeProducerCommit,'HEAD'],{stdio:'pipe'})
-  .trim().split('\n').sort(),Object.keys(changedFiles).sort(),'Candidate scope exceeds the seven reviewed UI/diagnostic/RNG files');
-assert.deepEqual(command('git',['diff','--name-only',transportSourceCommit,'HEAD'],{stdio:'pipe'})
+assert.deepEqual(Object.keys(runtimeTree).filter(name=>
+  runtimeTree[name].git_blob!==producerTree[name].git_blob || runtimeTree[name].mode!==producerTree[name].mode).sort(),
+  Object.keys(changedFiles).sort(),'Native/runtime differences exceed the seven reviewed UI/diagnostic/RNG files');
+assert.deepEqual(command('git',['diff','--name-only',transportSourceCommit,kernelSourceCommit],{stdio:'pipe'})
   .trim().split('\n').sort(),['browser-single/Kernel.Dockerfile','browser-single/pages/launcher.js',
     'browser-single/prepare-kernel.sh','browser-single/repack-runtime.mjs'].sort(),
   'RNG source changed outside the four reviewed files');
@@ -156,13 +190,13 @@ for (const [name,expected] of Object.entries(changedFiles)) {
 const bytesRecord = bytes => ({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 const originalGuestPath = 'browser-single/pages/guest.sh';
 const guest = await fs.readFile(path.join(source,originalGuestPath),'utf8');
-const originalGuest = command('git',['show',nativeProducerCommit+':'+originalGuestPath],{stdio:'pipe'});
+const originalGuest = command('git',['show',nativeBaseCommit+':'+originalGuestPath],{stdio:'pipe'});
 const guestDiagnosticAddition = "    printf 'syscall: '\n    cat \"$proc/syscall\" 2>/dev/null || true\n    printf '\\n'\n";
 assert.equal(guest.split(guestDiagnosticAddition).length,2,'Expected exactly one failure-only syscall snapshot');
 assert.deepEqual(Buffer.from(guest.replace(guestDiagnosticAddition,()=>'')),Buffer.from(originalGuest));
 assert.deepEqual(bytesRecord(Buffer.from(originalGuest)),
   {bytes:6271,sha256:'4b2eda00f0af736ac02ec4992ea150e9337242512cb3595cbe8a3330609010ab'});
-assert.equal(command('git',['rev-parse',nativeProducerCommit+':'+originalGuestPath],{stdio:'pipe'}).trim(),
+assert.equal(command('git',['rev-parse',nativeBaseCommit+':'+originalGuestPath],{stdio:'pipe'}).trim(),
   fixtureFiles[originalGuestPath].gitBlob);
 const launcherPath = 'browser-single/pages/launcher.js';
 const expectedLauncher = {
@@ -180,8 +214,8 @@ assert.deepEqual(bytesRecord(Buffer.from(transportLauncher)),
   {bytes:10898,sha256:'e369bc067e1bcc1f932d7aeedffa1cb34bb63903093501791a722f88577343ee'});
 const entropyConfiguration = {backend:'rng-random',hostDevice:'/dev/urandom',
   guestDevice:'virtio-rng-pci',webCryptoRequired:true};
-const originalLauncher = command('git',['show',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'});
-assert.equal(command('git',['rev-parse',nativeProducerCommit+':'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
+const originalLauncher = command('git',['show',nativeBaseCommit+':'+launcherPath],{stdio:'pipe'});
+assert.equal(command('git',['rev-parse',nativeBaseCommit+':'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
 assert.deepEqual(bytesRecord(Buffer.from(originalLauncher)),{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256});
 const launcherChanges = [
   ["import {createTranscriptLog, createCoalescedTranscriptRender, guestLogEvent} from './log-stream.mjs';",
@@ -213,7 +247,8 @@ for (const [name,blob] of Object.entries({
 })) assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),blob);
 const configurationExperiment = {
   bootstrap:'one_real_higher_consistency_ownership_deny',kernelIRQ:'default_acpi',
-  runtimeSource:sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
+  runtimeSource:sourceCommit,nativeProducerCommit,nativeBaseCommit,bootstrapCoreCommit,
+  schemaReachabilityFiles:reachabilityFiles,nativeRuntimeDifferencePathsVerified:true,
   runtimeSourceMatchesNativeProducer:false,launcherIdentityVerified:true,
   launcher:launcherRecord,launcherGitBlob:changedFiles[launcherPath].gitBlob,launcherMode:expectedLauncher.mode,
   nativeLauncher:{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256},
@@ -225,7 +260,7 @@ const configurationExperiment = {
   entropyDeliveryVerified:false,
   renderDelayMilliseconds:16,partialBatchDelayMilliseconds:16,
   synchronousProtocolUnchanged:true,unchangedAuthorizationDeadlines:true,unchangedModelAndRootfs:true,
-  scope:'Verified UI/capture and failure-only snapshot plus one kernel RNG driver and explicit secure RNG device; native backend proof remains bound to e381'
+  scope:'Fresh native-tested .9 schema reachability; seven reviewed UI/diagnostic/RNG differences remain separate from native producer fe42'
 };
 
 const archives = {};
@@ -308,20 +343,28 @@ assert.equal(retained.rootfs_changed,false);
 const previousStartup = await readJSON(path.join(prepared,'retained/startup-manifest.json'));
 const openfga = await readJSON(path.join(source,'artifacts/browser-openfga/build.json'));
 const emulator = await readJSON(path.join(source,'artifacts/browser-emulator/build.json'));
-// The old .7 OpenFGA is provenance only. This run must use the new native-tested .8.
+// The retained .7 model/emulator provenance is separate from the fresh native-tested .9 binary.
 const nativeArchive = archives.native;
 const bootstrapArchive = archives.bootstrap;
 assert(Number.isSafeInteger(nativeArchive.run) && nativeArchive.run>0);
 assert.match(nativeArchive.head,/^[0-9a-f]{40}$/);
+assert.equal(nativeArchive.run,43478795296);
+assert.equal(nativeArchive.head,'16266f3990af32a375039ce945322c26fa44b58c');
+assert.equal(nativeArchive.artifact,14065112277);
+assert.deepEqual(nativeArchive.archive,{"bytes":24001397,"sha256":"a34151ad1bac812410c57d42ee93b50c5f50ca96c70299b43431ab9539bcca61"});
+assert.equal(bootstrapArchive.artifact,14065566791);
+assert.deepEqual(bootstrapArchive.archive,{"bytes":3321947,"sha256":"ae6ff35cec4281e13343f9f2b9def30200a803fcdaba0380e816e55b5402ab19"});
 assert.equal(nativeArchive.run,bootstrapArchive.run);
 assert.equal(nativeArchive.head,bootstrapArchive.head);
 assert.notEqual(nativeArchive.artifact,bootstrapArchive.artifact);
-assert.equal(nativeArchive.artifact_name,'browser-bootstrap-deny-probe-native-evidence');
-assert.equal(bootstrapArchive.artifact_name,'browser-bootstrap-deny-probe');
+assert.equal(nativeArchive.artifact_name,'browser-openfga9-paths-native-evidence');
+assert.equal(bootstrapArchive.artifact_name,'browser-bootstrap-openfga9-paths');
 const nativeRoot = path.join(prepared,'native-evidence');
-const inputs = await readJSON(path.join(nativeRoot,'openfga8-verifier-input.json'));
+const inputs = await readJSON(path.join(nativeRoot,'openfga9-verifier-input.json'));
 for (const [key,value] of Object.entries({
-  schemaVersion:2,experiment:'bootstrap_real_empty_store_check',
+  schemaVersion:3,experiment:'fresh_openfga9_schema_reachability_and_bootstrap_deny',
+  runtimeSource:sourceCommit,openfgaInputScope:'exact_openfga_build_inputs_and_tests',
+  runtimeOpenfgaInputsMatchProducer:true,otherRuntimeFilesCompared:false,
   producerSource:nativeProducerCommit,rustSource:'207d15fab685d3adb9c5d51a048982c2236ae75c',
   packagingSource:'4b7a1e1933083232fb8305a60a47bdd3c32e6689',
   workflowCommit:nativeArchive.head,runId:String(nativeArchive.run),runAttempt:'1',
@@ -341,6 +384,8 @@ for (const [key,value] of Object.entries({
   source_commit:'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4',upstream_version:'1.10.3',
   target:'linux/amd64',model_json_encoder:'single_exact_real_model_response',
   first_resolver_typesystem_reuse:'one_shot_after_real_model_read',
+  schema_reachability_reuse:'readonly_plain_user_paths_on_startup_typesystem',
+  schema_reachability_max_relations:512,schema_reachability_tests:'passed',
   model_reuse_race_tests:'passed',model_codec_tests:'passed',model_validation_tests:'passed',
   startup_dial_timeout_seconds:60,warmup_timeout_seconds:60,warmup_cycles:1,
   authorization_request_timeout_default_seconds:3
@@ -370,95 +415,118 @@ for (const [key,name] of Object.entries(sourceBindings)) {
 const raceLog = await fileRecord(path.join(openfgaDirectory,'model-reuse-race-tests.log'));
 assert(raceLog.bytes>0);
 assert.equal(openfga.model_reuse_race_tests_sha256,raceLog.sha256,'Race log hash differs');
-// The successful native retry reuses the exact Go-tested output from step 7.
-const originPath = path.join(nativeRoot,'openfga8-retained-origin.json');
-const originRecord = await fileRecord(originPath);
-assert.equal(inputs.retainedOpenfgaOriginSha256,originRecord.sha256,'Retained origin is not bound to current native input');
-const origin = await readJSON(originPath);
-for (const [key,value] of Object.entries({
-  schema_version:2,source_run:43440821229,source_job:131937646033,
-  source_workflow_commit:'84112f7373df40dc767d7f10fbea453720651f0e',
-  source_commit:'501cfc2535f09826550aae97225fa5cbda86f08d',
-  source_run_attempt:1,source_run_conclusion:'failure',
-  artifact:14047585163,artifact_name:'browser-openfga8-native-evidence',
-  browser_acceptance_verified:false
-})) assert.equal(origin[key],value,'Retained Go origin differs: '+key);
-assert.deepEqual(origin.archive,{bytes:20612111,sha256:'45fda236fb2dc536d0c437e38230a18f8a19fc09b8b7fca6807cc76f65fc094f'});
-assert.equal(origin.openfga_build_step.number,7);
-assert.equal(origin.openfga_build_step.name,'Build and regression-test the actual combined OpenFGA producer');
-assert.equal(origin.openfga_build_step.conclusion,'success');
-const goStarted = Date.parse(origin.openfga_build_step.started_at);
-const goCompleted = Date.parse(origin.openfga_build_step.completed_at);
-assert(Number.isFinite(goStarted) && Number.isFinite(goCompleted) && goCompleted>=goStarted);
-assert.equal(originRecord.sha256,'c75445b23c4154694ca2657d15bed526f604cc76008ca1781d7080c8e987e6b6');
+// This proof is a fresh .9 Go build, not retained .8 output.
+assert.equal(Object.hasOwn(inputs,'retainedOpenfgaOriginSha256'),false);
+assert.deepEqual(inputs.excludedDocumentation,['browser-single/openfga/README.md']);
 const openfgaInputPaths = [".dockerignore","browser-single/OpenFGA.Dockerfile","browser-single/openfga/browser_http_dial.go","browser-single/openfga/browser_http_dial_test.go","browser-single/openfga/browser_http_warmup.go","browser-single/openfga/browser_http_warmup_test.go","browser-single/openfga/browser_model_codec.go","browser-single/openfga/browser_model_codec_integration_test.go","browser-single/openfga/browser_model_codec_test.go","browser-single/openfga/browser_model_validation.go","browser-single/openfga/browser_model_validation_test.go","browser-single/openfga/browser_resolver_transfer_integration_test.go","browser-single/openfga/browser_write_typesystem_test.go","browser-single/openfga/build.sh","browser-single/openfga/startup-dial.patch","browser-single/openfga/upstream.sha256","fga/model.json"];
 const relevantInput = name => name === '.dockerignore' || name === 'fga/model.json' ||
   name === 'browser-single/OpenFGA.Dockerfile' || name === 'browser-single/OpenFGA.Dockerfile.dockerignore' ||
   (name.startsWith('browser-single/openfga/') && name !== 'browser-single/openfga/README.md');
-const listedInputs = Object.fromEntries(command('git',['ls-files','--stage','-z'],{stdio:'pipe'})
-  .split('\0').filter(Boolean).map(row=>{
-    const match=/^([0-7]{6}) ([0-9a-f]{40}) 0\t(.+)$/.exec(row);
-    assert(match,'Unexpected staged input identity');
-    return [match[3],{mode:match[1],git_blob:match[2]}];
-  }).filter(([name])=>relevantInput(name)));
+const listedInputs = Object.fromEntries(Object.entries(runtimeTree).filter(([name])=>relevantInput(name)));
+const producerInputs = Object.fromEntries(Object.entries(producerTree).filter(([name])=>relevantInput(name)));
 assert.deepEqual(Object.keys(listedInputs).sort(),openfgaInputPaths.slice().sort());
+assert.deepEqual(listedInputs,producerInputs,'Fresh native/runtime OpenFGA source identities differ');
 const verifiedInputs = {};
 for (const name of openfgaInputPaths) {
-  verifiedInputs[name] = {...listedInputs[name],...await fileRecord(path.join(source,name))};
+  const runtimeRecord = await fileRecord(path.join(source,name));
+  assert.deepEqual(await fileRecord(path.join(nativeSource,name)),runtimeRecord);
+  verifiedInputs[name] = {...listedInputs[name],...runtimeRecord};
 }
 const inputSetSha256 = createHash('sha256').update(JSON.stringify(verifiedInputs)).digest('hex');
-assert.deepEqual(origin.source_verification,{
-  schema_version:2,scope:'exact_openfga_build_inputs_and_tests',
-  producer_commit:nativeProducerCommit,retained_source_commit:origin.source_commit,
-  upstream_commit:'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4',
-  openfga_build_inputs_unchanged:true,verified_inputs:verifiedInputs,
-  input_set_sha256:inputSetSha256,
-  excluded_documentation:['browser-single/openfga/README.md'],other_repository_files_compared:false
-});
-assert.equal(origin.permissions_regression_fixture.directory_mode,'0700');
-assert.equal(origin.permissions_regression_fixture.binary_mode,'0555');
-assert.equal(origin.permissions_regression_fixture.historical_mode_not_inferred,true);
-assert(Number.isSafeInteger(origin.permissions_regression_fixture.owner_uid) && origin.permissions_regression_fixture.owner_uid>=0);
-const oldInputPath = path.join(nativeRoot,'openfga8-retained-verifier-input.json');
-const oldInputRecord = await fileRecord(oldInputPath);
-assert.deepEqual(oldInputRecord,{bytes:998,sha256:'fcb7a8aa0db087f6489c691d982dd1fb205244e4e99965654fcc3a41e6093e1c'});
-assert.deepEqual(origin.verifier_input,oldInputRecord);
-assert.deepEqual(origin.members['openfga8-verifier-input.json'],oldInputRecord);
-const oldInputs = await readJSON(oldInputPath);
-assert.equal(oldInputs.producerSource,origin.source_commit);
-assert.equal(oldInputs.workflowCommit,origin.source_workflow_commit);
-assert.equal(oldInputs.runId,String(origin.source_run));
-assert.equal(oldInputs.runAttempt,'1');
-for (const name of ['browser-single/OpenFGA.Dockerfile','browser-single/openfga/build.sh']) {
-  assert.equal(oldInputs.sourceSha256[name],inputs.sourceSha256[name],'Retained service/proof source changed: '+name);
-}
-const retainedFiles = ['LICENSE','SOURCE.txt','build.json','openfga','startup-dial.patch',
+assert.deepEqual(inputs.verifiedInputs,verifiedInputs);
+assert.equal(inputs.inputSetSha256,inputSetSha256);
+assert.equal(inputSetSha256,'eea1a1b6545355da366fab9c1d7de3d3bb71f8a2b7581d3db3c4c49be9aa0634');
+const verifierInputRecord = await fileRecord(path.join(nativeRoot,'openfga9-verifier-input.json'));
+const freshVerificationPath = path.join(nativeRoot,'openfga9-build-verification.json');
+const freshVerification = await readJSON(freshVerificationPath);
+assert.equal((await fileRecord(freshVerificationPath)).sha256,'54ab092ecfc0accaff03323fb43e64e462ea355eeb269d4bdb3c247337042cef');
+for (const [key,value] of Object.entries({
+  schemaVersion:1,kind:'fresh_go_build',producerSource:nativeProducerCommit,runtimeSource:sourceCommit,
+  workflowCommit:nativeArchive.head,runId:String(nativeArchive.run),runAttempt:'1',
+  inputRecordSha256:verifierInputRecord.sha256,inputSetSha256,
+  directoryPermissionFixture:'0700',browserAcceptanceVerified:false
+})) assert.equal(freshVerification[key],value,'Fresh Go verification differs: '+key);
+const freshFiles = ['LICENSE','SOURCE.txt','build.json','openfga','startup-dial.patch',
   'browser_http_dial.go','browser_http_warmup.go','browser_model_validation.go','browser_model_validation_test.go',
   'browser_model_codec.go','browser_model_codec_test.go','browser_model_codec_integration_test.go',
   'browser_write_typesystem_test.go','browser_resolver_transfer_integration_test.go',
   'dial-tests.log','model-validation-tests.log','write-typesystem-tests.log','model-reuse-race-tests.log'];
-assert.deepEqual((await fs.readdir(openfgaDirectory)).sort(),retainedFiles.slice().sort());
-assert.deepEqual(Object.keys(origin.members).filter(name=>name.startsWith('browser-openfga/')).sort(),
-  retainedFiles.map(name=>'browser-openfga/'+name).sort());
-for (const name of retainedFiles) {
+assert.deepEqual((await fs.readdir(openfgaDirectory)).sort(),freshFiles.slice().sort());
+assert.deepEqual(Object.keys(freshVerification.members).sort(),freshFiles.slice().sort());
+assert.deepEqual(Object.keys(nativeArchive.members).filter(name=>name.startsWith('browser-openfga/')).sort(),
+  freshFiles.map(name=>'browser-openfga/'+name).sort());
+for (const name of freshFiles) {
   const actual = name==='openfga' ? openfgaBinary : name==='model-reuse-race-tests.log' ? raceLog
     : await fileRecord(path.join(openfgaDirectory,name));
-  assert.deepEqual(origin.members['browser-openfga/'+name],actual,'Retained Go output/log changed: '+name);
+  assert(actual.bytes>0);
+  assert.deepEqual(freshVerification.members[name],actual,'Fresh Go output/log changed: '+name);
+  assert.deepEqual(nativeArchive.members['browser-openfga/'+name],actual);
 }
-assert.deepEqual(openfgaBinary,{bytes:63066296,sha256:'5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f'});
-assert.deepEqual(origin.members['browser-openfga/build.json'],
-  {bytes:2743,sha256:'d7f903c286657d193eddee5b4bf98ccdc2a56431f1924d7b456555fd506d6315'});
-assert.equal(raceLog.sha256,'6ff7585a2ca3f1d6d8df82009e906b3e01b14db23a1296697fba4bb2d5705253');
-const retainedOpenfgaOrigin = {
-  file:originRecord,sourceRun:origin.source_run,sourceJob:origin.source_job,
-  sourceCommit:origin.source_commit,workflowCommit:origin.source_workflow_commit,
-  artifact:origin.artifact,archive:origin.archive,goBuildStep:origin.openfga_build_step,
-  actualOutputsAndLogsUnchanged:true,historicalDirectoryModeInferred:false
+const expectedFreshOpenfga = {"bytes":63074488,"sha256":"7841a91b524fc1be097f2f816a8ed39f502e1372bbf96300dc9008b3336f98c3"};
+assert(expectedFreshOpenfga,'The fresh .9 binary pin has not been reviewed');
+assert.deepEqual(openfgaBinary,expectedFreshOpenfga);
+assert.deepEqual(freshVerification.members['build.json'],{"bytes":2910,"sha256":"d430aad43f10805ee655b8180fd2c25cc0a65eaaff1da57b37d3f556ad19f983"});
+assert.deepEqual(raceLog,{"bytes":37910,"sha256":"57d2b1550eb49cf2cd0d2113277dae1dec0750eee888b4a68bc0c059d9991a82"});
+assert.notEqual(openfgaBinary.sha256,'5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f',
+  'Retained .8 output cannot be used as the fresh .9 binary');
+assert((await fs.readFile(path.join(openfgaDirectory,'SOURCE.txt'),'utf8'))
+  .includes('Browser build v1.10.3-browser-startup.9 '));
+const goBuildLog = await fileRecord(path.join(nativeRoot,'browser-openfga-build.log'));
+assert(goBuildLog.bytes>0 && goBuildLog.bytes<=64*1024*1024);
+assert.equal(freshVerification.buildLogSha256,goBuildLog.sha256);
+assert.deepEqual(nativeArchive.members['browser-openfga-build.log'],goBuildLog);
+const pathTests = ['TestBrowserModelUserPathsPinnedParity','TestBrowserModelUserPathsEligibilityAndBound',
+  'TestBrowserModelUserPathsFailureDoesNotPublish','TestBrowserModelUserPathsConcurrentReadonly'];
+assert.deepEqual(freshVerification.completedPathTests,pathTests);
+for (const name of ['model-validation-tests.log','model-reuse-race-tests.log']) {
+  const log = await fs.readFile(path.join(openfgaDirectory,name),'utf8');
+  assert(!/^(?:--- FAIL:|FAIL(?:\s|$))/m.test(log),'Go failure in '+name);
+  for (const test of pathTests) assert(new RegExp('^--- PASS: '+test+' \\(','m').test(log),
+    'Missing completed .9 test in '+name+': '+test);
+  assert(/^ok\s+github\.com\/openfga\/openfga\/pkg\/typesystem\s+/m.test(log));
+}
+for (const [name,packages] of [
+  ['dial-tests.log',['cmd/run']],
+  ['write-typesystem-tests.log',['pkg/server/commands','pkg/server']],
+  ['model-reuse-race-tests.log',['cmd/run','pkg/typesystem','pkg/server']]
+]) {
+  const log = await fs.readFile(path.join(openfgaDirectory,name),'utf8');
+  assert(!/^(?:--- FAIL:|FAIL(?:\s|$))/m.test(log),'Go failure in '+name);
+  for (const pkg of packages) assert(new RegExp('^ok\\s+github\\.com/openfga/openfga/'+pkg+'\\s+','m').test(log),
+    'Existing Go regression package did not pass: '+name+' '+pkg);
+}
+const job = nativeArchive.native_job;
+for (const [key,value] of Object.entries({
+  id:132069573580,run_id:nativeArchive.run,head_sha:nativeArchive.head,run_attempt:1,
+  name:'native',status:'completed',conclusion:'success'
+})) assert.equal(job[key],value,'Fresh native job identity differs: '+key);
+const requiredNativeSteps = [
+  'Check source identity, repository contract and both producer scripts',
+  'Build and regression-test the fresh OpenFGA .9 producer',
+  'Bind the fresh binary to exact inputs and actual regular and race tests',
+  'Execute the versioned native bootstrap producer with this exact OpenFGA output',
+  'Verify all four outputs and their real native OpenFGA provenance'
+];
+for (const name of requiredNativeSteps) {
+  const matches = job.steps.filter(step=>step.name===name);
+  assert.equal(matches.length,1,'Missing exact native proof step: '+name);
+  assert.equal(matches[0].status,'completed');
+  assert.equal(matches[0].conclusion,'success');
+}
+const freshGoBuild = {
+  input:verifierInputRecord,verification:await fileRecord(freshVerificationPath),
+  kind:freshVerification.kind,producerSource:nativeProducerCommit,runtimeSource:sourceCommit,
+  run:nativeArchive.run,head:nativeArchive.head,job:job.id,
+  inputSetSha256,verifiedInputs,members:freshVerification.members,buildLog:goBuildLog,
+  completedPathTests:pathTests,directoryPermissionFixture:'0700',
+  existingGoRegressionPackagesPassed:true,browserAcceptanceVerified:false
 };
 const bootstrapDirectory = path.join(source,'artifacts/browser-bootstrap');
 const bootstrapBuild = await readJSON(path.join(bootstrapDirectory,'build.json'));
 const bootstrapBinary = await fileRecord(path.join(bootstrapDirectory,'bootstrap'));
-assert.deepEqual(bootstrapBinary,{bytes:7444640,sha256:'e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275'});
+const expectedFreshBootstrap = {"bytes":7444640,"sha256":"e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275"};
+assert(expectedFreshBootstrap,'The newly proved bootstrap binary pin has not been reviewed');
+assert.deepEqual(bootstrapBinary,expectedFreshBootstrap);
 for (const [key,value] of Object.entries({
   source_commit:'207d15fab685d3adb9c5d51a048982c2236ae75c',
   packaging_commit:'4b7a1e1933083232fb8305a60a47bdd3c32e6689',
@@ -482,6 +550,8 @@ assert.equal(bootstrapBuild.openfga_build_sha256,(await fileRecord(nativeBuildPa
 assert.equal(bootstrapBuild.openfga_build_sha256,(await fileRecord(path.join(openfgaDirectory,'build.json'))).sha256);
 const nativeProofPath = path.join(nativeRoot,'browser-bootstrap-proof/native-result.json');
 assert.equal(bootstrapBuild.native_proof_sha256,(await fileRecord(nativeProofPath)).sha256);
+assert.equal(bootstrapBuild.native_proof_sha256,'fa63509dedf0298f8e95595451f2662f5d51118e57f81e33889bd0afbbd2d314');
+assert.equal(bootstrapBuild.native_test_log_sha256,'ada7f5c656c4d119199787abd5152d1dd3e35b5bf0ca2290127dfa975efc82c3');
 const nativeProof = await readJSON(nativeProofPath);
 for (const [key,value] of Object.entries({
   passed:true,source_commit:bootstrapBuild.source_commit,packaging_commit:bootstrapBuild.packaging_commit,
@@ -526,7 +596,7 @@ const nativeVerification = {
   run:nativeArchive.run,head:nativeArchive.head,producerSource:nativeProducerCommit,
   evidenceArtifact:nativeArchive.artifact,bootstrapArtifact:bootstrapArchive.artifact,
   openfgaBinary,openfgaBuild:await fileRecord(path.join(openfgaDirectory,'build.json')),
-  raceLog,retainedOpenfgaOrigin,nativeProof:await fileRecord(nativeProofPath),bootstrapBinary,
+  raceLog,freshGoBuild,nativeProof:await fileRecord(nativeProofPath),bootstrapBinary,
   sourceBindings,emptyStoreCheck:nativeProof.empty_store_check,
   emptyStoreCheckDeadlineFailure:nativeProof.empty_store_check_deadline_failure,
   postgresModelCount:4,postgresTupleCountBeforeApp:0,browserAcceptanceVerified:false
@@ -597,7 +667,7 @@ assert.deepEqual(kernelArchive.archive,
   {bytes:3689588,sha256:'c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad'});
 const kernelBuild = await readJSON(path.join(kernelDirectory,'metadata.json'));
 for (const [key,value] of Object.entries({
-  source_commit:sourceCommit,workflow_commit:kernelArchive.head,run_id:String(kernelArchive.run),run_attempt:'1',
+  source_commit:kernelSourceCommit,workflow_commit:kernelArchive.head,run_id:String(kernelArchive.run),run_attempt:'1',
   recipe_git_blob:changedFiles['browser-single/Kernel.Dockerfile'].gitBlob,
   linux_source:'830b3c68c1fb1e9176028d02ef86f3cf76aa2476',
   upstream_config_blob:'48dd1bf6191dd8d0d220358167f52dce36c69c45',
@@ -608,7 +678,7 @@ for (const [key,value] of Object.entries({
 })) assert.equal(kernelBuild[key],value,'Kernel producer metadata differs: '+key);
 assert.deepEqual(kernelBuild.missing_files,[]);
 assert.deepEqual(kernelBuild.missing_config,[]);
-assert.equal((await fs.readFile(path.join(kernelDirectory,'source-commit.txt'),'utf8')).trim(),sourceCommit);
+assert.equal((await fs.readFile(path.join(kernelDirectory,'source-commit.txt'),'utf8')).trim(),kernelSourceCommit);
 assert.equal((await fs.readFile(path.join(kernelDirectory,'workflow-commit.txt'),'utf8')).trim(),kernelArchive.head);
 const recipeRecord = await fileRecord(path.join(source,'browser-single/Kernel.Dockerfile'));
 assert.deepEqual(await fileRecord(path.join(kernelDirectory,'Kernel.Dockerfile')),recipeRecord);
@@ -663,7 +733,7 @@ const wasmTypeNames = ['rng-random','virtio-rng-pci'];
 // IRQ delivery, entropy credit or PostgreSQL progress. Those require the real VM.
 const kernelVerification = {
   run:kernelArchive.run,head:kernelArchive.head,artifact:kernelArchive.artifact,
-  archive:kernelArchive.archive,sourceCommit,recipe:recipeRecord,files:kernelFiles,
+  archive:kernelArchive.archive,sourceCommit:kernelSourceCommit,recipe:recipeRecord,files:kernelFiles,
   baselineConfig:kernelFiles['acpi-baseline.config'],exactlyOneConfigChange:true,
   exactChange:'HW_RANDOM_VIRTIO n -> y',requiredConfig,
   embeddedEmulatorTypeNames:wasmTypeNames,entropyDeliveryVerified:false
@@ -777,12 +847,12 @@ for (const name of ['browser-single/prepare-pages.sh','browser-single/check-page
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
 const proof = {
-  schemaVersion:1,experiment:'virtio_rng_with_verified_capture',diagnosticOnly:true,
+  schemaVersion:1,experiment:'openfga9_schema_reachability_with_rng',diagnosticOnly:true,
   modelExplorerBuildVerified:false,sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
   sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,lightweightVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
   originalRuntimeSource:originalManifest.source_commit,
-  kernelSource:sourceCommit,kernelVerification,
+  kernelSource:kernelSourceCommit,kernelVerification,
   rootfsUnchanged:true,preservedSegments,data:expectedData,loader:expectedLoader,
   args:originalManifest.files['arg-module.js'],kernel:kernelFiles.bzImage,
   kernelConfig:kernelFiles['linux.config'],requiredConfig,emulator:pair,
@@ -795,7 +865,7 @@ const proof = {
   authorizationDeadlinesChanged:false
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
-console.log('VIRTIO_RNG_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
+console.log('OPENFGA9_PATHS_BROWSER_GATE '+JSON.stringify({phase:'materialized',sourceCommit,nativeProducerCommit,configurationExperiment,
   rootfsUnchanged:true,data:expectedData,loader:expectedLoader,kernel:kernelFiles.bzImage,
   nativeVerification,lightweightVerification,kernelVerification,openfgaBinary,openfgaModelEncoder:openfga.model_json_encoder,
   resolverTypesystemReuse:openfga.first_resolver_typesystem_reuse,
