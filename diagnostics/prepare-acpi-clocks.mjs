@@ -1,4 +1,4 @@
-// Review-only until acpiKernelPin is filled from the completed reviewed kernel build.
+// Review-only: pinned completed kernel build; no workflow or VM activation here.
 // Never infer or accept new kernel identities from environment variables.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -8,11 +8,47 @@ import path from 'node:path';
 
 const retainedHead='379e3280c2a1c789071292af141648eb2fc3ffbc';
 const candidateHead='af9c5555e312ffaec3785154f5be83be7469c95f';
-// Required later: {run,head,artifact,artifact_name,source_commit,archive:{bytes,sha256},
+// Pin contract: {run,head,artifact,artifact_name,source_commit,archive:{bytes,sha256},
 // files:{'bzImage':{bytes,sha256},'linux.config':...,'ipc-baseline.config':...,
 // 'acpi.config.diff':...,'build.sha256':...,'SOURCE.txt':...}}.
 // head is the artifact workflow's exact commit, source_commit is candidateHead.
-const acpiKernelPin=null;
+const acpiKernelPin={
+  "run": 43421624199,
+  "head": "1a1d55f0b02519ff0c3eb1ed3f86b2852f2f8e85",
+  "artifact": 14033713071,
+  "artifact_name": "browser-acpi-kernel-candidate",
+  "source_commit": "af9c5555e312ffaec3785154f5be83be7469c95f",
+  "archive": {
+    "bytes": 3669750,
+    "sha256": "51b42d5fb8894930f9344f39754968fd8ed73b103d0a818c45ab4d2bb22edf64"
+  },
+  "files": {
+    "bzImage": {
+      "bytes": 3628928,
+      "sha256": "4d2088c41c19fa04d6ac93f97105d8541831acfcc2e96feb07e581fcd2a3db48"
+    },
+    "linux.config": {
+      "bytes": 75338,
+      "sha256": "fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8"
+    },
+    "ipc-baseline.config": {
+      "bytes": 72396,
+      "sha256": "b109d75227af31a6128280fd192bc06aa1e3d290075a2cf1c2e4fe148df00fcc"
+    },
+    "acpi.config.diff": {
+      "bytes": 1707,
+      "sha256": "84520b160eab472b1db6d6b028bd3f0bae19dfda5498d0d914699d514dfd388c"
+    },
+    "build.sha256": {
+      "bytes": 342,
+      "sha256": "a2886a81e725f7599d964b94d6aabb26ac1fb1a289fc3f6ceed8d518f4cdc525"
+    },
+    "SOURCE.txt": {
+      "bytes": 313,
+      "sha256": "c21dda73d592ffe967c6a6b663ac6d02b116564cb93cad96f0e17c94266778eb"
+    }
+  }
+};
 assert(acpiKernelPin,'Missing independently reviewed ACPI kernel artifact and member pins; no VM is permitted');
 assert.equal(acpiKernelPin.source_commit,candidateHead);
 for(const key of ['run','artifact']) assert(Number.isSafeInteger(acpiKernelPin[key])&&acpiKernelPin[key]>0);
@@ -57,6 +93,10 @@ for(const name of kernelNames) {
   assert.deepEqual(kernelArchive.members[name],acpiKernelPin.files[name],'Extraction provenance differs: '+name);
 }
 assert(acpiKernelPin.files.bzImage.bytes>1024*1024&&acpiKernelPin.files.bzImage.bytes<32*1024*1024);
+for(const [name,expected] of Object.entries(kernelArchive.members)) {
+  assert(/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)&&name!=='archive-provenance.json','Unexpected extracted kernel evidence name');
+  assert.deepEqual(await fileRecord(path.join(kernelDir,name)),expected,'Extracted kernel evidence changed: '+name);
+}
 assert.equal((await fileRecord(path.join(oldKernelDir,'bzImage'))).sha256,common.retainedKernel);
 assert.deepEqual(await fileRecord(path.join(kernelDir,'ipc-baseline.config')),
   await fileRecord(path.join(oldKernelDir,'linux.config')),'Kernel IPC baseline is not the retained configuration');
@@ -135,7 +175,7 @@ function replaceOnce(source,before,after) {
 const guestPatches=[
   [
     "# The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.",
-    "# Diagnostic-only observations; no timer, mount, scheduling or request setting changes.\ndiag_clock_snapshot() {\n    local clock_id=$1 clock_point=$2 clock_uptime=unavailable clock_idle=unavailable\n    local clock_source=unavailable clock_available=unavailable clock_device clock_file clock_line\n    local clock_events=0 clock_intr=unavailable clock_key clock_value clock_rest\n    local clock_timer=unavailable clock_sched=unavailable clock_rcu=unavailable\n    printf '\\n[browser-clock] begin id=%s point=%s\\n' \"$clock_id\" \"$clock_point\"\n    read -r clock_uptime clock_idle 2>/dev/null </proc/uptime || true\n    IFS= read -r clock_source 2>/dev/null \\\n        </sys/devices/system/clocksource/clocksource0/current_clocksource || true\n    IFS= read -r clock_available 2>/dev/null \\\n        </sys/devices/system/clocksource/clocksource0/available_clocksource || true\n    printf '[browser-clock] time id=%s uptime=%s idle=%s epoch=%s seconds=%s\\n' \\\n        \"$clock_id\" \"$clock_uptime\" \"$clock_idle\" \"${EPOCHREALTIME:-unavailable}\" \"$SECONDS\"\n    printf '[browser-clock] source id=%s value=%s\\n' \"$clock_id\" \"${clock_source:0:120}\"\n    printf '[browser-clock] available id=%s value=%s\\n' \"$clock_id\" \"${clock_available:0:240}\"\n    for clock_file in /sys/devices/system/clockevents/clockevent*/current_device \\\n                      /sys/devices/system/clockevents/broadcast/current_device; do\n        [[ -r \"$clock_file\" ]] || continue\n        clock_device=unavailable\n        IFS= read -r clock_device 2>/dev/null <\"$clock_file\" || true\n        printf '[browser-clock] event id=%s path=%s value=%s\\n' \\\n            \"$clock_id\" \"$clock_file\" \"${clock_device:0:120}\"\n        clock_events=$((clock_events + 1))\n        (( clock_events < 4 )) || break\n    done\n    while read -r clock_key clock_value clock_rest; do\n        if [[ \"$clock_key\" == intr && \"$clock_value\" =~ ^[0-9]+$ ]]; then\n            clock_intr=$clock_value\n            break\n        fi\n    done 2>/dev/null </proc/stat\n    printf '[browser-clock] intr id=%s total=%s\\n' \"$clock_id\" \"$clock_intr\"\n    while IFS= read -r clock_line; do\n        clock_key=${clock_line%%:*}\n        clock_key=${clock_key//[[:space:]]/}\n        case \"$clock_key\" in\n            TIMER) clock_timer=$clock_line ;;\n            SCHED) clock_sched=$clock_line ;;\n            RCU) clock_rcu=$clock_line ;;\n        esac\n    done 2>/dev/null </proc/softirqs\n    printf '[browser-clock] softirq id=%s name=TIMER value=%s\\n' \"$clock_id\" \"${clock_timer:0:240}\"\n    printf '[browser-clock] softirq id=%s name=SCHED value=%s\\n' \"$clock_id\" \"${clock_sched:0:240}\"\n    printf '[browser-clock] softirq id=%s name=RCU value=%s\\n' \"$clock_id\" \"${clock_rcu:0:240}\"\n    printf '[browser-clock] irq_status id=%s value=oci_masked_proc_interrupts\\n' \"$clock_id\"\n    printf '[browser-clock] end id=%s event_rows=%s softirq_rows=3\\n' \"$clock_id\" \"$clock_events\"\n}\ndiag_clock_snapshot 0 before-services\n\n# The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged."
+    "# Diagnostic-only observations; no timer, mount, scheduling or request setting changes.\ndiag_clock_snapshot() {\n    local clock_id=$1 clock_point=$2 clock_uptime=unavailable clock_idle=unavailable\n    local clock_source=unavailable clock_available=unavailable clock_device clock_file clock_line\n    local clock_events=0 clock_intr=unavailable clock_key clock_value clock_rest\n    local clock_timer=unavailable clock_sched=unavailable clock_rcu=unavailable\n    printf '\\n[browser-clock] begin id=%s point=%s\\n' \"$clock_id\" \"$clock_point\"\n    read -r clock_uptime clock_idle 2>/dev/null </proc/uptime || true\n    IFS= read -r clock_source 2>/dev/null \\\n        </sys/devices/system/clocksource/clocksource0/current_clocksource || true\n    IFS= read -r clock_available 2>/dev/null \\\n        </sys/devices/system/clocksource/clocksource0/available_clocksource || true\n    printf '[browser-clock] time id=%s uptime=%s idle=%s epoch=%s seconds=%s\\n' \\\n        \"$clock_id\" \"$clock_uptime\" \"$clock_idle\" \"${EPOCHREALTIME:-unavailable}\" \"$SECONDS\"\n    printf '[browser-clock] source id=%s value=%s\\n' \"$clock_id\" \"${clock_source:0:120}\"\n    printf '[browser-clock] available id=%s value=%s\\n' \"$clock_id\" \"${clock_available:0:240}\"\n    for clock_file in /sys/devices/system/clockevents/clockevent*/current_device \\\n                      /sys/devices/system/clockevents/broadcast/current_device; do\n        [[ -r \"$clock_file\" ]] || continue\n        clock_device=unavailable\n        IFS= read -r clock_device 2>/dev/null <\"$clock_file\" || true\n        printf '[browser-clock] event id=%s path=%s value=%s\\n' \\\n            \"$clock_id\" \"$clock_file\" \"${clock_device:0:120}\"\n        clock_events=$((clock_events + 1))\n        (( clock_events < 4 )) || break\n    done\n    while read -r clock_key clock_value clock_rest; do\n        if [[ \"$clock_key\" == intr && \"$clock_value\" =~ ^[0-9]+$ ]]; then\n            clock_intr=$clock_value\n            break\n        fi\n    done 2>/dev/null </proc/stat || true\n    printf '[browser-clock] intr id=%s total=%s\\n' \"$clock_id\" \"$clock_intr\"\n    while IFS= read -r clock_line; do\n        clock_key=${clock_line%%:*}\n        clock_key=${clock_key//[[:space:]]/}\n        case \"$clock_key\" in\n            TIMER) clock_timer=$clock_line ;;\n            SCHED) clock_sched=$clock_line ;;\n            RCU) clock_rcu=$clock_line ;;\n        esac\n    done 2>/dev/null </proc/softirqs || true\n    printf '[browser-clock] softirq id=%s name=TIMER value=%s\\n' \"$clock_id\" \"${clock_timer:0:240}\"\n    printf '[browser-clock] softirq id=%s name=SCHED value=%s\\n' \"$clock_id\" \"${clock_sched:0:240}\"\n    printf '[browser-clock] softirq id=%s name=RCU value=%s\\n' \"$clock_id\" \"${clock_rcu:0:240}\"\n    printf '[browser-clock] irq_status id=%s value=oci_masked_proc_interrupts\\n' \"$clock_id\"\n    printf '[browser-clock] end id=%s event_rows=%s softirq_rows=3\\n' \"$clock_id\" \"$clock_events\"\n}\ndiag_clock_snapshot 0 before-services\n\n# The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged."
   ],
   [
     "lab_pid=$!\n",
@@ -309,7 +349,7 @@ for(const name of ['archive-provenance.json','retained/startup-manifest.json','r
   await fs.copyFile(path.join(directory,name),path.join(recordDir,name.replaceAll('/','-')));
 }
 await write(path.join(recordDir,'new-kernel-pin.json'),acpiKernelPin);
-for(const name of ['archive-provenance.json',...kernelNames]) await fs.copyFile(path.join(kernelDir,name),path.join(recordDir,'acpi-'+name));
+for(const name of ['archive-provenance.json',...Object.keys(kernelArchive.members).sort()]) await fs.copyFile(path.join(kernelDir,name),path.join(recordDir,'acpi-'+name));
 await fs.copyFile(path.join(oldKernelDir,'archive-provenance.json'),path.join(recordDir,'retained-kernel-archive-provenance.json'));
 const result={diagnosticOnly:true,productionAcceptance:false,scope:'two-vCPU ACPI retained-runtime clock/protocol observation',
   bundleMode:'verified_379e_payload_af9c_host_new_pinned_acpi_kernel',hostSourceHead:candidateHead,runtimeSourceHead:retainedHead,
