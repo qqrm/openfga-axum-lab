@@ -27,13 +27,44 @@ SHA256 `b82edd6376065d99a50709e9e2f949a736fb4ca604751d0de1c7a804dfde9172`.
 This summary uses the completed job's full 22 selected service observations and
 structured result; it does not claim independent reconstruction of this console.
 
-The next preparation candidate replaces repeated calls to the same graph BFS
-with at most two existing Gonum breadth-first walks and membership checks.
-The pinned language graph exposes its existing directed graph; its original
-`PathExists` calls Gonum's `topo.PathExistsIn`, which starts a new BFS for each
-query. All original warmup, self-dial, listener and authorization budgets stay
-unchanged. No performance improvement or successful .10 browser result is
-claimed before fresh native parity/race proof and genuine acceptance.
+### Current .10 source candidate and pending verification
+
+The [runtime source 444b069d](https://github.com/qqrm/openfga-axum-lab/commit/444b069daf16e9606a0bbf1ea0aea7f4d61b97d8)
+and [native source bb8fed25](https://github.com/qqrm/openfga-axum-lab/commit/bb8fed250bdee9931f7702ae2475d28e5e9eed8f)
+replace repeated schema graph searches with at most two existing Gonum
+breadth-first walks, then membership checks for the same 316 target pairs.
+Both sources have identical OpenFGA helper, tests and producer inputs.
+The pinned language graph's original `PathExists` uses Gonum's
+`topo.PathExistsIn`, which starts a new BFS for each query. The candidate walks
+that same directed graph from `user`, and lazily from `user:*` only if needed
+and present; it does not simplify the authorization model.
+
+Per-target source-before-target lookup errors, optional wildcard error
+suppression, zero-pair behavior and the 512-pair bound are preserved.
+Cancellation is checked inside each walk and before final private publication;
+no partial visited set or map is returned. Existing plain-user keys, original
+fallbacks and the one-shot transfer after a real resolver model read are
+unchanged. The map contains schema reachability, never tuple or authorization
+results.
+
+The four existing structural-path groups remain. The added
+`TestBrowserModelUserPathsTwoWalkParity` checks all 316 results against the
+original predicate, actual graph expansion counts and same-node reachability.
+`TestBrowserModelUserPathsLookupFallbacks` covers source/target error order,
+absent, present and damaged wildcard nodes, and zero pairs.
+`TestBrowserModelUserPathsCanceledDuringWalk` cancels from a real graph
+expansion and requires the helper to discard the partial walk. All seven
+groups are required in the regular and focused race gates. Build metadata
+declares `schema_reachability_preparation=two_breadth_first_walks` and
+`schema_reachability_max_walks=2`; it is emitted only after tests pass.
+
+At this source snapshot, .10 native verification is still pending and there is
+no .10 browser result. The preceding .9 native success cannot validate the
+changed preparation. Warmup remains 60 seconds, the listener supervisor
+180 seconds, self-dial 60 seconds, OpenFGA authorization three seconds,
+Axum authorization two seconds and the real bootstrap/acceptance Check five
+seconds. Fresh native parity/race and real-service proof, then two consecutive
+original acceptance sequences in each browser, are still required.
 
 The separate [Actions metadata repair](https://github.com/qqrm/openfga-axum-lab/commit/05d5abc1458e677c7ec634e02e2e3a27c30d5f0b)
 uses an exact run attempt, bounded observations and the actual API job start
@@ -122,8 +153,8 @@ bootstrap artifact 14065566791 is 3321947 bytes, SHA256
 `ae6ff35cec4281e13343f9f2b9def30200a803fcdaba0380e816e55b5402ab19`.
 
 Native warmup took 57 ms; TypeSystem validation plus path preparation accounted
-for 49 ms. No inference about WASM speed or meeting its 60-second startup budget
-is made from those native numbers. Browser verification remains pending.
+for 49 ms. Those native numbers did not predict the following .9 browser result,
+recorded above: Chromium exhausted the unchanged 60-second startup budget.
 
 The separate [production compatibility source d5638bcd](https://github.com/qqrm/openfga-axum-lab/commit/d5638bcdc9ef51fded0b711bcd979ff306eaa938)
 removes exactly the three temporary syscall diagnostic lines, restoring the

@@ -71,7 +71,7 @@ git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.9 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.10 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -98,6 +98,8 @@ cat >"$output_dir/build.json" <<EOF
   "first_resolver_typesystem_reuse": "one_shot_after_real_model_read",
   "schema_reachability_reuse": "readonly_plain_user_paths_on_startup_typesystem",
   "schema_reachability_max_relations": 512,
+  "schema_reachability_preparation": "two_breadth_first_walks",
+  "schema_reachability_max_walks": 2,
   "warmup_generated_validation": "ValidateAll",
   "tuple_write_typesystem_reuse": "same_request_store_and_model",
   "warmup_model_sha256": "$model_sha256",
@@ -140,7 +142,7 @@ cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.9 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.10 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -164,14 +166,21 @@ prevents returning or caching a claimed object. No tuple, datastore existence or
 Check decision is cached by this adaptation. Stage timings are diagnostic only.
 Within that same 60-second phase, the private startup TypeSystem can retain up to
 512 original PathExists results for the plain user type and known schema
-object-type/relation pairs. The pinned model has 316 pairs. The map is filled
-privately and published only after all computations and cancellation checks
-succeed; it is never updated by requests. Missing user types, oversized schemas,
-other subject types, usersets and unknown target keys retain the original path.
-This is schema reachability only: every real tuple read, rewrite, condition and
-Check decision still runs. No entity IDs, store data or authorization decisions
-are retained. A failed seed cannot publish a partially prepared TypeSystem.
-Full upstream TypeSystem tests, pinned predicate parity and concurrent read tests
+object-type/relation pairs. The pinned model has 316 pairs. Preparation uses at
+most two Gonum breadth-first walks on the same directed graph: one from user and,
+only if needed and present, one from user:*. Target membership in the visited
+sets preserves the original predicate, source/target lookup errors and optional
+wildcard lookup fallback. Cancellation is checked within each walk and before
+publication; a canceled walk cannot return a partial visited set.
+The map is filled privately and published only after every target and context
+check succeeds; it is never updated by requests. Missing user types, oversized
+schemas, other subject types, usersets and unknown target keys retain the
+original path. This is schema reachability only: every real tuple read, rewrite,
+condition and Check decision still runs. No entity IDs, store data or
+authorization decisions are retained. A failed seed cannot publish a partially
+prepared TypeSystem.
+Full upstream TypeSystem tests, all 316 original-predicate comparisons, traversal
+expansion counts, lookup/fallback and cancellation tests, and concurrent reads
 run before this build metadata is emitted. Browser performance is not established
 by these native tests.
 The same successful warmup prepares a private JSON-to-protobuf decoder entry.

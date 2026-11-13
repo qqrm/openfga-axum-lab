@@ -13,6 +13,8 @@ import (
 	"time"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
+	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/traverse"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -896,8 +898,8 @@ func TestBrowserModelUserPathsFailureDoesNotPublish(t *testing.T) {
 		checks := 0
 		duringSeed := &browserCancelOnCheck{Context: ctx, cancel: cancel, when: func() bool {
 			checks++
-			// Three preparation checks precede seeding; then entry and
-			// before/after the first real BFS. Cancel before the second BFS.
+			// Cancel during preparation before any paths can be published.
+			// The dedicated walk test below also cancels inside traversal.
 			return checks >= 7
 		}}
 		prepared, err := PrepareBrowserModelValidation(duringSeed, model)
@@ -948,5 +950,191 @@ func TestBrowserModelUserPathsConcurrentReadonly(t *testing.T) {
 	}
 	if len(got.browserUserPaths) != 316 {
 		t.Fatal("concurrent entity IDs grew the structural map")
+	}
+}
+
+type browserPathWalkGraph struct {
+	traverse.Graph
+	fromCalls map[int64]int
+	cancel    context.CancelFunc
+}
+
+func (g *browserPathWalkGraph) From(id int64) graph.Nodes {
+	g.fromCalls[id]++
+	if g.cancel != nil {
+		g.cancel()
+	}
+	return g.Graph.From(id)
+}
+
+func TestBrowserModelUserPathsTwoWalkParity(t *testing.T) {
+	model := browserValidationFixture(t)
+	typesys, err := newAndValidate(context.Background(), model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var walks []*traverse.BreadthFirst
+	for _, label := range []string{"user", "user:*"} {
+		from, err := typesys.authorizationModelGraph.GetNodeByLabel(label)
+		if err != nil {
+			if label == "user:*" {
+				continue
+			}
+			t.Fatal(err)
+		}
+		counted := &browserPathWalkGraph{
+			Graph:     typesys.authorizationModelGraph.DirectedGraph,
+			fromCalls: make(map[int64]int),
+		}
+		walk, err := walkBrowserUserPaths(context.Background(), counted, from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !walk.Visited(from) {
+			t.Fatal("the starting node must be reachable from itself")
+		}
+		if len(counted.fromCalls) == 0 || len(counted.fromCalls) > typesys.authorizationModelGraph.Nodes().Len() {
+			t.Fatalf("unexpected traversal size: %d", len(counted.fromCalls))
+		}
+		for node, calls := range counted.fromCalls {
+			if calls != 1 {
+				t.Fatalf("node %d was expanded %d times in one walk", node, calls)
+			}
+		}
+		walks = append(walks, walk)
+	}
+	if len(walks) < 1 || len(walks) > 2 {
+		t.Fatalf("unexpected traversal count: %d", len(walks))
+	}
+	pairs := 0
+	for objectType, relations := range typesys.relations {
+		for relation := range relations {
+			target, err := typesys.authorizationModelGraph.GetNodeByLabel(objectType + "#" + relation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := false
+			for _, walk := range walks {
+				got = got || walk.Visited(target)
+			}
+			want, err := typesys.pathExists("user:browser-warmup", relation, objectType)
+			if err != nil || got != want {
+				t.Fatalf("two-walk parity for %s#%s: got %v, want %v, error %v", objectType, relation, got, want, err)
+			}
+			pairs++
+		}
+	}
+	if pairs != 316 {
+		t.Fatalf("checked %d schema pairs, want 316", pairs)
+	}
+}
+
+func TestBrowserModelUserPathsLookupFallbacks(t *testing.T) {
+	t.Run("missing_source_precedes_target", func(t *testing.T) {
+		typesys, err := newAndValidate(context.Background(), browserUserPathTestModel("user", 2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, label := range []string{"user", "document#viewer_000"} {
+			node, err := typesys.authorizationModelGraph.GetNodeByLabel(label)
+			if err != nil {
+				t.Fatal(err)
+			}
+			typesys.authorizationModelGraph.RemoveNode(node.ID())
+		}
+		_, wantErr := typesys.pathExists("user:browser-warmup", "viewer_000", "document")
+		if wantErr == nil {
+			t.Fatal("the original predicate must report the missing source")
+		}
+		err = typesys.prepareBrowserUserPaths(context.Background())
+		if fmt.Sprint(err) != fmt.Sprint(wantErr) || typesys.browserUserPaths != nil {
+			t.Fatalf("source lookup error changed or published paths: %v", err)
+		}
+	})
+	for _, test := range []struct {
+		name     string
+		wildcard bool
+		remove   bool
+		want     bool
+	}{
+		{name: "absent_wildcard"},
+		{name: "reachable_wildcard", wildcard: true, want: true},
+		{name: "damaged_wildcard", wildcard: true, remove: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := browserUserPathTestModel("user", 2)
+			model.TypeDefinitions = append(model.TypeDefinitions, &openfgav1.TypeDefinition{Type: "group"})
+			reference := &openfgav1.RelationReference{Type: "group"}
+			if test.wildcard {
+				reference = WildcardRelationReference("user")
+			}
+			model.TypeDefinitions[1].Metadata.Relations["viewer_001"].DirectlyRelatedUserTypes = []*openfgav1.RelationReference{reference}
+			typesys, err := newAndValidate(context.Background(), model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.remove {
+				node, err := typesys.authorizationModelGraph.GetNodeByLabel("user:*")
+				if err != nil {
+					t.Fatal(err)
+				}
+				typesys.authorizationModelGraph.RemoveNode(node.ID())
+			}
+			direct, err := typesys.authorizationModelGraph.PathExists("user", "document#viewer_001")
+			if err != nil || direct {
+				t.Fatalf("fixture must require the wildcard fallback: %v/%v", direct, err)
+			}
+			want, wantErr := typesys.pathExists("user:browser-warmup", "viewer_001", "document")
+			if wantErr != nil || want != test.want {
+				t.Fatalf("original wildcard behavior changed: %v/%v", want, wantErr)
+			}
+			if err := typesys.prepareBrowserUserPaths(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			key := browserUserPathKey{objectType: "document", relation: "viewer_001"}
+			got, exists := typesys.browserUserPaths[key]
+			if !exists || got != want {
+				t.Fatalf("wildcard result was omitted or changed: %v/%v", got, exists)
+			}
+		})
+	}
+	t.Run("zero_pairs", func(t *testing.T) {
+		typesys, err := newAndValidate(context.Background(), browserUserPathTestModel("user", 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// No source or target lookup is needed when there are no schema pairs.
+		typesys.authorizationModelGraph = nil
+		if err := typesys.prepareBrowserUserPaths(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if typesys.browserUserPaths == nil || len(typesys.browserUserPaths) != 0 {
+			t.Fatal("zero pairs must publish an empty map without graph access")
+		}
+	})
+}
+
+func TestBrowserModelUserPathsCanceledDuringWalk(t *testing.T) {
+	typesys, err := newAndValidate(context.Background(), browserUserPathTestModel("user", 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, err := typesys.authorizationModelGraph.GetNodeByLabel("user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	counted := &browserPathWalkGraph{
+		Graph:     typesys.authorizationModelGraph.DirectedGraph,
+		fromCalls: make(map[int64]int),
+		cancel:    cancel,
+	}
+	walk, err := walkBrowserUserPaths(ctx, counted, from)
+	if len(counted.fromCalls) != 1 || !errors.Is(err, context.Canceled) || walk != nil {
+		t.Fatalf("cancellation inside graph expansion exposed a partial walk: expanded=%d, error=%v, walk=%v", len(counted.fromCalls), err, walk)
+	}
+	if err := typesys.prepareBrowserUserPaths(ctx); !errors.Is(err, context.Canceled) || typesys.browserUserPaths != nil {
+		t.Fatalf("canceled preparation published partial paths: %v", err)
 	}
 }

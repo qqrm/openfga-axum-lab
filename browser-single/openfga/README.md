@@ -42,22 +42,44 @@ Panics continue to upstream recovery and do not emit a false completion event.
 Diagnostic logging itself adds work; it is not a performance improvement or a
 replacement for successful browser acceptance.
 
-## Bounded structural-path reuse in build .9
+## Two-walk structural-path preparation in build .10
 
-Build `v1.10.3-browser-startup.9` prepares a private read-only map of the
-original `PathExists` predicate for the plain `user` type and known schema
-object-type/relation pairs. The pinned model contains 316 such pairs; preparation
-has a 512-pair bound and remains inside the existing 60-second startup phase.
-Each entry is computed by the original method, including its wildcard handling.
-Cancellation or an error prevents publication of a partially filled map.
+Build `v1.10.3-browser-startup.10` prepares the same private read-only map of
+the original `PathExists` predicate for plain `user` subjects and known schema
+object-type/relation pairs. The pinned model contains 316 pairs and the bound
+remains 512. Preparation stays inside the original 60-second startup phase.
+
+Instead of repeating a graph search for each target, preparation uses at most
+two existing Gonum breadth-first walks on the same immutable directed graph:
+one from `user`, plus a lazy `user:*` walk when a target has no direct path
+and the wildcard node exists. Targets use visited-set membership. Source and
+target lookups preserve the original error order; a missing wildcard node keeps
+the original false fallback. Zero target pairs perform no graph lookup.
+Cancellation is checked inside each traversal and before publication; neither
+a partial visited set nor a partially filled map can escape.
 
 The map belongs only to the privately prepared startup TypeSystem. Its existing
-one-shot transfer still requires an actual persisted model read and an exact
-body match. All real Check rewrites, tuple reads, conditions and authorization
+one-shot transfer still requires a real resolver model read and an exact body
+match. All real Check rewrites, tuple reads, conditions and authorization
 decisions remain. Entity IDs and authorization answers are not retained.
 Usersets, other subject types and unknown target keys use the original method
 and errors. Models without a `user` type or above the bound keep that path too.
 The existing resolver-cache lifetime and fallback construction are unchanged.
+
+The four previous structural-path test groups remain. Three additional groups
+compare all 316 targets with the original method using the actual walk helper,
+count real graph expansions, cover source/target errors and wildcard fallbacks,
+and cancel inside graph traversal. Full TypeSystem tests, the focused race gate
+and the real server Write/Check/delete/Check proof remain mandatory.
+Build metadata records `schema_reachability_preparation=two_breadth_first_walks`
+and `schema_reachability_max_walks=2`.
+
+Fresh .10 native and browser results are pending. The 60-second warmup,
+180-second listener supervisor, 60-second self-dial and ordinary authorization
+deadlines are unchanged. The completed .9 native proof below does not validate
+this changed preparation or establish browser performance.
+
+### Previous .9 native and browser evidence
 
 [Fresh native verification 43478795296](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
 passed the complete TypeSystem tests, the existing command/server regressions,
@@ -83,8 +105,9 @@ failed Chromium's startup warmup after 60108 ms, before HTTP listener or self-di
 The unfinished TypeSystem stage consumed 54245 ms; its record combines original
 validation and structural preparation and does not count completed pairs.
 Firefox failed Actions metadata preflight before VM startup. There are no .9
-browser acceptance passes. The next candidate reduces repeated graph traversal
-without changing startup or authorization deadlines; it is not yet verified.
+browser acceptance passes. The .10 candidate above reduces repeated graph
+traversal while preserving all startup and authorization deadlines; it still
+requires fresh native validation and genuine browser acceptance.
 See the [current browser review](../../docs/browser-startup-review.md).
 
 ## Bounded startup and exact-schema validation cache
@@ -471,7 +494,7 @@ store/model TypeSystem reuse, exact JSON decoder, one-shot resolver transfer,
 one full real-response encoding, native parity/transport and race-test proof,
 dependency checksum and executable SHA-256. This proof means the native APIs/tests passed; it is not
 browser acceptance. The adapted build identifies itself as
-`v1.10.3-browser-startup.9`.
+`v1.10.3-browser-startup.10`.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

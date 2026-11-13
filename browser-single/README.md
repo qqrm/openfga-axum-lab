@@ -26,12 +26,17 @@ completed with zero acceptance passes in each engine. Its complete captures
 confirmed PostgreSQL startup; real OpenFGA Checks then exceeded their unchanged
 three-second request deadline.
 
-[Fresh native verification of the structural-path candidate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
+[Fresh native verification of the preceding .9 candidate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43478795296)
 passed Go/race tests and the real native backend proof with two original
 acceptance sequences. Native success does not establish browser acceptance.
-The next adaptation will remove repeated structural graph traversals while
-preserving the model, real tuple reads, all existing deadlines and fail-closed
-behavior. It still requires fresh native and real browser verification.
+
+The current .10 candidate prepares the same 316 structural-path results with
+at most two existing Gonum breadth-first walks on the same directed graph,
+followed by target membership checks. It preserves source/target errors,
+wildcard fallback, cancellation, the model and every real tuple read and Check.
+The original 60-second warmup and all listener, bootstrap and authorization
+deadlines remain unchanged. Three new targeted test groups supplement the
+existing four; fresh .10 Go/race, real native and browser results are pending.
 Sources, hashes and limitations are in
 [the startup review](../docs/browser-startup-review.md). Pages remains gated on
 two original acceptance sequences in each real browser.
