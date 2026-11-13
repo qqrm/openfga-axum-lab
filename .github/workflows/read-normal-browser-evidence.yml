@@ -1,0 +1,374 @@
+name: Read completed normal browser evidence 43446938814
+on:
+  push:
+    branches: [diag/read-normal-browser-43446938814]
+    paths: [.github/workflows/read-normal-browser-evidence.yml]
+permissions:
+  actions: read
+concurrency:
+  group: read-normal-browser-43446938814
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-normal-browser-43446938814'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Inspect one fixed completed archive without executing its contents
+        shell: bash
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, collections, hashlib, json, os, re, stat, tempfile, urllib.error, urllib.request, uuid, zipfile
+          from urllib.parse import urlsplit
+          
+          REPO = "qqrm/openfga-axum-lab"
+          RUN = 43446938814
+          HEAD = "55fb279741aa47ae813e5b7d5aff73dbd2692cc1"
+          CHECKOUT = "406c4d9cf0030a9ffe3d7a0deb2c0442a40ba5f1"
+          AID = 14053238656
+          SIZE = 264642675
+          SHA = "ccd7fc99a0b1816d634397ce48b2fa6edc53c416edcbd8dcae4d83ade79ffe7a"
+          M = 1024**2
+          OUTPUT_LIMIT = M
+          EXPECTED_BINARIES = {
+              "openfga": ("artifacts/browser-openfga/openfga", 63066296,
+                          "5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f"),
+              "bootstrap": ("artifacts/browser-bootstrap/bootstrap", 7415568,
+                            "d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f"),
+              "out.js": ("artifacts/browser-emulator/out.js", 279363,
+                         "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"),
+              "qemu-system-x86_64.wasm": ("artifacts/browser-emulator/qemu-system-x86_64.wasm", 41246941,
+                         "e85450e88a390c3494c9ce4d8fb599c8ed14afd8ae40b48deeee1bc6b3f34c0e")
+          }
+          METADATA = {
+              "openfga": "artifacts/browser-openfga/build.json",
+              "bootstrap": "artifacts/browser-bootstrap/build.json",
+              "emulator": "artifacts/browser-emulator/build.json",
+              "startup": "browser-output/wasm/runtime/startup-manifest.json",
+              "derived": "browser-output/wasm/runtime/derived-runtime.json"
+          }
+          def require(ok, message):
+              if not ok:
+                  raise SystemExit(message)
+          def digest(raw):
+              return hashlib.sha256(raw).hexdigest()
+          def record(raw):
+              return {"bytes": len(raw), "sha256": digest(raw)}
+          def js_utf8(value):
+              return value.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
+          def clipped(value, limit=1200):
+              text = str(value)
+              return {"text": text[:limit], "characters": len(text), "truncated": len(text) > limit}
+          
+          used = 0
+          def emit(label, value):
+              global used
+              line = json.dumps({"label": label, "value": value}, ensure_ascii=True, separators=(",", ":"))
+              require(len(line) <= 12000, "One output record exceeded 12000 bytes")
+              used += len(line) + 1
+              require(used <= OUTPUT_LIMIT, "Reader output exceeded 1 MiB")
+              print(line, flush=True)
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def request(suffix):
+              return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
+                  "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
+                  "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "retained-normal-browser-reader"})
+          def api(suffix):
+              try:
+                  with opener.open(request(suffix), timeout=20) as response:
+                      raw = response.read(M + 1)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit("GitHub metadata HTTP " + str(error.code)) from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit("GitHub metadata network failure") from None
+              require(len(raw) <= M, "Metadata response exceeded budget")
+              return json.loads(raw)
+          def selected_info(package, name, limit):
+              info = package.getinfo(name)
+              mode = info.external_attr >> 16
+              require(not info.is_dir() and not stat.S_ISLNK(mode) and
+                      stat.S_IFMT(mode) in (0, stat.S_IFREG) and 0 < info.file_size <= limit,
+                      "Invalid selected regular member: " + name)
+              return info
+          def member(package, name, limit):
+              info = selected_info(package, name, limit)
+              with package.open(info) as source:
+                  raw = source.read(limit + 1)
+              require(len(raw) == info.file_size and len(raw) <= limit, "Selected member size mismatch")
+              emit("member", {"name": name, **record(raw)})
+              return raw
+          def binary_record(package, name, size, sha):
+              info = selected_info(package, name, size)
+              require(info.file_size == size, "Pinned binary size mismatch: " + name)
+              actual, count = hashlib.sha256(), 0
+              with package.open(info) as source:
+                  while block := source.read(M):
+                      count += len(block)
+                      require(count <= size, "Binary exceeded pinned size")
+                      actual.update(block)
+              require(count == size and actual.hexdigest() == sha, "Pinned binary checksum mismatch: " + name)
+              return {"bytes": count, "sha256": sha}
+          def json_object(raw, label):
+              value = json.loads(raw)
+              require(isinstance(value, dict), label + " is not a JSON object")
+              return value
+          
+          require(os.environ.get("GITHUB_RUN_ATTEMPT") == "1", "This reader is one attempt only")
+          stop = uuid.uuid4().hex
+          print("::stop-commands::" + stop, flush=True)
+          try:
+              run = api("/actions/runs/" + str(RUN))
+              require(run["id"] == RUN and run["head_sha"] == HEAD and run["status"] == "completed"
+                      and run["conclusion"] == "failure" and run["event"] == "pull_request"
+                      and run["run_attempt"] == 1, "Pinned source run identity differs")
+              artifact = api("/actions/artifacts/" + str(AID))
+              require(artifact["id"] == AID and artifact["name"] == "pages-browser-vm-evidence"
+                      and not artifact["expired"] and artifact["workflow_run"]["id"] == RUN
+                      and artifact["workflow_run"]["head_sha"] == HEAD and artifact["size_in_bytes"] == SIZE
+                      and artifact["digest"] == "sha256:" + SHA, "Pinned artifact identity differs")
+              jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
+              matching = [job for job in jobs["jobs"] if job["id"] == 131958741493]
+              require(len(matching) == 1 and matching[0]["head_sha"] == HEAD
+                      and matching[0]["status"] == "completed" and matching[0]["conclusion"] == "failure"
+                      and matching[0]["run_attempt"] == 1, "Pinned source job differs")
+              steps = {step["number"]: step for step in matching[0]["steps"]}
+              require(steps[19]["conclusion"] == "failure" and steps[20]["conclusion"] == "success",
+                      "Browser failure/evidence upload outcome differs")
+              try:
+                  opener.open(request("/actions/artifacts/" + str(AID) + "/zip"), timeout=20)
+                  raise SystemExit("Expected artifact download redirect")
+              except urllib.error.HTTPError as error:
+                  require(error.code == 302, "Artifact redirect was not HTTP 302")
+                  location = error.headers.get("Location", "")
+                  error.close()
+              target = urlsplit(location)
+              host = target.hostname or ""
+              require(target.scheme == "https" and target.port in (None, 443) and
+                      target.username is None and target.password is None and
+                      (host.endswith(".blob.core.windows.net") or host.endswith(".actions.githubusercontent.com")),
+                      "Unexpected artifact storage host")
+              with tempfile.TemporaryFile() as archive:
+                  count, actual = 0, hashlib.sha256()
+                  try:
+                      # Deliberately no GitHub Authorization header on the signed storage request.
+                      with opener.open(urllib.request.Request(location), timeout=30) as response:
+                          while block := response.read(M):
+                              count += len(block)
+                              require(count <= SIZE, "ZIP exceeded pinned size")
+                              actual.update(block)
+                              archive.write(block)
+                  except (urllib.error.URLError, TimeoutError):
+                      raise SystemExit("Artifact storage network failure") from None
+                  require(count == SIZE and actual.hexdigest() == SHA, "Archive size/SHA mismatch")
+                  archive.seek(0)
+                  emit("source", {"run": RUN, "head": HEAD, "checkout": CHECKOUT, "attempt": 1,
+                      "source_conclusion": "failure", "artifact": AID, "zip_bytes": count, "zip_sha256": SHA,
+                      "browser_step_started_at": steps[19]["started_at"], "browser_step_finished_at": steps[19]["completed_at"],
+                      "scope": "Read fixed completed evidence only; no VM, executable, backend request or new acceptance"})
+                  with zipfile.ZipFile(archive) as package:
+                      names = package.namelist()
+                      require(len(names) <= 10000 and len(names) == len(set(names)), "Invalid ZIP member count/duplicates")
+                      require(all(not n.startswith("/") and "\\" not in n and "\0" not in n and
+                                  ".." not in n.split("/") for n in names), "Unsafe ZIP member name")
+                      binaries = {key: binary_record(package, *spec) for key, spec in EXPECTED_BINARIES.items()}
+                      emit("verified_archived_binaries", binaries)
+                      raw_metadata = {key: member(package, name, 4*M) for key, name in METADATA.items()}
+                      metadata = {key: json_object(raw, key) for key, raw in raw_metadata.items()}
+                      startup, derived = metadata["startup"], metadata["derived"]
+                      fga, bootstrap, emulator = metadata["openfga"], metadata["bootstrap"], metadata["emulator"]
+                      require(startup["base_source_commit"] == derived["source"] ==
+                              "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58", "Retained source differs")
+                      require(startup["openfga_build"] == fga and startup["bootstrap_build"] == bootstrap and
+                              startup["emulator_build"] == derived["emulator_build"] == emulator,
+                              "Archived build/startup/derived bindings differ")
+                      require(derived["startup_overlay"]["sha256"] == digest(raw_metadata["startup"]),
+                              "Derived runtime does not bind the exact startup manifest")
+                      require(fga["binary_sha256"] == binaries["openfga"]["sha256"] and
+                              fga["source_commit"] == "293893b22a53d8a130a5f7c97cab4bc8e91bcaa4" and
+                              fga["authorization_request_timeout_default_seconds"] == 3 and
+                              fga["warmup_model_sha256"] == "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
+                              "OpenFGA/policy/deadline provenance differs")
+                      require(bootstrap["source_commit"] == "53ff85cfdd3d84c26ae432189790e1e0f72d61db"
+                              and bootstrap["workflow_commit"] == CHECKOUT and bootstrap["run_id"] == str(RUN)
+                              and bootstrap["run_attempt"] == "1" and bootstrap["binary_sha256"] == binaries["bootstrap"]["sha256"]
+                              and bootstrap["binary_bytes"] == binaries["bootstrap"]["bytes"]
+                              and bootstrap["openfga_binary_sha256"] == binaries["openfga"]["sha256"]
+                              and bootstrap["openfga_build_sha256"] == digest(raw_metadata["openfga"])
+                              and bootstrap["timeout_scope"] == "bootstrap_model_post_and_get"
+                              and bootstrap["default_model_timeout_seconds"] == 5
+                              and bootstrap["browser_model_timeout_seconds"] == 30
+                              and "empty_store_check" not in bootstrap, "Bootstrap provenance differs")
+                      require(set(startup["files"]) == {"guest.sh", "entrypoint.sh", "runtime/openfga", "runtime/bootstrap"},
+                              "Unexpected startup payload")
+                      require(startup["files"]["runtime/openfga"] == binaries["openfga"] and
+                              startup["files"]["runtime/bootstrap"] == binaries["bootstrap"], "Observed executable bindings differ")
+                      require(startup["files"]["guest.sh"] == {
+                              "bytes": 6155, "sha256": "85567170437e8e6d18d089d859b292bf86c2e6b44519f6099ca80810b02f3d9c"} and
+                              startup["files"]["entrypoint.sh"] == {
+                              "bytes": 5367, "sha256": "930a48ef13f3df61b4bc09170f512fc7279b6c537a99eff80f24038126687225"},
+                              "Original guest/entrypoint identity differs")
+                      require(emulator["files"] == {key: binaries[key] for key in ["out.js", "qemu-system-x86_64.wasm"]},
+                              "Archived emulator build/binary binding differs")
+                      emit("manifest_provenance", {
+                          "exact_observed_manifest_required": True, "metadata": {k: record(v) for k, v in raw_metadata.items()},
+                          "base_source_commit": startup["base_source_commit"], "openfga": {
+                              key: fga[key] for key in ["source_commit", "startup_dial_timeout_seconds", "warmup_timeout_seconds",
+                              "warmup_cycles", "authorization_request_timeout_default_seconds", "model_json_decoder",
+                              "model_json_encoder", "first_resolver_typesystem_reuse"]},
+                          "bootstrap_source": bootstrap["source_commit"], "bootstrap_checkout": bootstrap["workflow_commit"],
+                          "bootstrap_model_client_seconds": 30, "new_deny_probe_present": False})
+                      complete_exports, engine_checks, observed_checks = [], {}, {}
+                      for engine in ["chromium", "firefox"]:
+                          prefix = "artifacts/browser-wasm/" + engine
+                          result = json_object(member(package, prefix + ".json", 4*M), engine)
+                          console = member(package, prefix + "-console.txt", 16*M)
+                          stream = member(package, prefix + "-stream.jsonl", 64*M)
+                          rows = stream.decode("utf-8").split("\n")
+                          require(rows[-1] == "", "JSONL is not terminated")
+                          texts, line_records, pending = [], [], ""
+                          chunks, byte_count, batches = 0, 0, 0
+                          for row in rows[:-1]:
+                              batch = json.loads(row)
+                              values = batch.get("texts")
+                              require(type(batch.get("firstSequence")) is int and batch["firstSequence"] == chunks + 1
+                                      and isinstance(values, list) and 0 < len(values) <= 1024,
+                                      "Invalid captured batch sequence")
+                              require(isinstance(batch.get("receivedAt"), str) and batch["receivedAt"].endswith("Z"),
+                                      "Missing host receipt timestamp")
+                              batches += 1
+                              for value in values:
+                                  require(isinstance(value, str), "Non-string captured source chunk")
+                                  chunks += 1
+                                  byte_count += len(js_utf8(value))
+                                  require(chunks <= 1000000 and byte_count <= 16*M, "Stream exceeded capture limits")
+                                  texts.append(value)
+                                  parts = (pending + value).split("\n")
+                                  pending = parts.pop()
+                                  for line in parts:
+                                      line_records.append({"line": len(line_records) + 1, "text": line.replace("\r", ""),
+                                          "receivedAt": batch["receivedAt"], "batchFirstSequence": batch["firstSequence"]})
+                                  require(len(line_records) <= 200000, "Console line-count analysis limit exceeded")
+                          if pending:
+                              line_records.append({"line": len(line_records) + 1, "text": pending.replace("\r", ""),
+                                  "partial": True, "receivedAt": None, "batchFirstSequence": None})
+                          capture = result.get("logCapture") or {}
+                          guest = result.get("guest") or {}
+                          require(isinstance(capture, dict) and isinstance(guest, dict), "Invalid captured result objects")
+                          vm = guest.get("vm") or {}
+                          checks = {
+                              "engine": result.get("engine") == engine,
+                              "source": guest.get("source") == startup["base_source_commit"],
+                              "observed_manifest": guest.get("startupManifest") == startup,
+                              "recorded_failure": result.get("passed") is False and result.get("passes") == []
+                                  and guest.get("booted") is True and guest.get("ready") is False
+                                  and guest.get("accepted") is False and guest.get("checks") == 0 and guest.get("passes") == []
+                                  and guest.get("error") == "LAB|boot-failed",
+                              "vm": vm.get("cpus") == 2 and vm.get("memoryMiB") == 512
+                                  and vm.get("cpuTopology") == "2,sockets=2,cores=1,threads=1"
+                                  and vm.get("qemuLiveInstanceLimit") == (8192 if engine == "firefox" else 15000),
+                              "console_equal": js_utf8("".join(texts)) == console,
+                              "capture_format": capture.get("format") == "browser-lab-log-batches-v1",
+                              "capture_counts": [capture.get(k) for k in ["chunks", "batches", "bytes"]] == [chunks, batches, byte_count],
+                              "cutoff": capture.get("expectedSequence") == chunks,
+                              "complete": capture.get("complete") is True and capture.get("error") is None
+                          }
+                          engine_checks[engine] = checks
+                          observed_checks[engine] = guest.get("checks")
+                          emit(engine + ".result", {key: result.get(key) for key in [
+                              "engine", "browser", "passed", "passes", "startedAt", "finishedAt"]} | {
+                              "guest": {key: guest.get(key) for key in ["booted", "ready", "accepted", "checks", "passes", "error"]},
+                              "vm": vm, "page_error_count": len(result.get("pageErrors") or [])})
+                          emit(engine + ".failure", clipped(result.get("failure")))
+                          page_errors = result.get("pageErrors") or []
+                          require(isinstance(page_errors, list), "Invalid page error list")
+                          for index in sorted(set(list(range(min(2, len(page_errors)))) + list(range(max(0, len(page_errors)-2), len(page_errors))))):
+                              emit(engine + ".page_error", {"index": index, **clipped(page_errors[index])})
+                          emit(engine + ".integrity", {"checks": checks, "capture": capture, "actual_chunks": chunks,
+                              "actual_batches": batches, "actual_encoded_chunk_bytes": byte_count,
+                              "console": record(console), "stream": record(stream),
+                              "page_errors_omitted": max(0, len(page_errors)-4)})
+                          counters, distinct, rpc_outcomes = collections.Counter(), collections.defaultdict(set), collections.Counter()
+                          relevant, faults, labs, qemu = [], [], [], []
+                          service_pattern = re.compile(r"LAB[|_]|browser-openfga|http_(?:start|end)|rpc_(?:start|end)|model_(?:decode|encode)|resolver_transfer|phase_(?:start|end)|warmup|self.?dial|bootstrap|postgres|OpenFGA|Axum|initdb|Listening on|database system|migration|provisioned|pg_ctl", re.I)
+                          fault_pattern = re.compile(r"\b(?:ERROR|FATAL|panic|[A-Za-z]*Error)\b|Elapsed\(\(\)\)|TimedOut|deadline|timed out|instantiate_throw|LAB\|boot-failed|unexpected HTTP|expected (?:status|200)", re.I)
+                          for item in line_records:
+                              line = item["text"]
+                              if "[browser-qemu]" in line:
+                                  qemu.append(item)
+                                  if fault_pattern.search(line):
+                                      faults.append(item)
+                                  continue
+                              if service_pattern.search(line):
+                                  relevant.append(item)
+                              if fault_pattern.search(line) and "error_kind=\"none\"" not in line and "context_error=<nil>" not in line:
+                                  faults.append(item)
+                              if line.startswith("LAB|"):
+                                  labs.append(item)
+                              event = re.search(r"\b(rpc_start|rpc_end|http_start|http_end)\b", line)
+                              method = re.search(r'\bmethod="([^"]+)"', line)
+                              if event and method:
+                                  name = method[1] if len(method[1]) <= 100 else "oversize_method"
+                                  key = (event[1], name)
+                                  counters[key] += 1
+                                  distinct[key].add(line)
+                                  if event[1] == "rpc_end":
+                                      fields = {key: value for key, value in re.findall(r'\b(status|context_state|error_kind)="([^"]*)"', line)}
+                                      outcome = tuple(fields.get(key, "absent")[:80] for key in ["status", "context_state", "error_kind"])
+                                      rpc_outcomes[(name, *outcome)] += 1
+                          require(len(counters) <= 64 and len(rpc_outcomes) <= 64, "Method summary exceeded its bound")
+                          emit(engine + ".method_counts", {
+                              "scope": "Observed metadata lines in captured console, not authenticated request IDs; diagnostic tails may repeat lines",
+                              "events": [{"event": event, "method": method, "raw_lines": count,
+                                          "distinct_line_texts": len(distinct[(event, method)])}
+                                         for (event, method), count in sorted(counters.items())]})
+                          emit(engine + ".rpc_outcomes", [{"method": key[0], "status": key[1], "context_state": key[2],
+                              "error_kind": key[3], "raw_lines": count} for key, count in sorted(rpc_outcomes.items())])
+                          selected = {}
+                          for category, values, first, last in [
+                              ("service", relevant, 12, 28), ("fault", faults, 4, 12), ("protocol", labs, 4, 4)]:
+                              chosen = {item["line"]: item for item in values[:first] + values[-last:]}
+                              emit(engine + "." + category + "_selection", {
+                                  "matched_lines": len(values), "selected_lines": len(chosen),
+                                  "omitted_middle_lines": len(values)-len(chosen)})
+                              for number, item in chosen.items():
+                                  selected.setdefault(number, {"item": item, "categories": []})["categories"].append(category)
+                          require(len(selected) <= 64, "Selected diagnostic line limit exceeded")
+                          for number, selected_item in sorted(selected.items()):
+                              item = selected_item["item"]
+                              emit(engine + ".line", {key: item.get(key) for key in [
+                                  "line", "receivedAt", "batchFirstSequence", "partial"]} | {
+                                  "categories": selected_item["categories"], **clipped(item["text"], 600)})
+                          emit(engine + ".line_timing_scope",
+                              "receivedAt identifies the host batch completing a line; it is not guest execution time or operation latency")
+                          for item in qemu[-2:]:
+                              emit(engine + ".last_qemu", {"line": item["line"], **clipped(item["text"], 1000)})
+                          complete_exports.append((engine, console))
+                      # Export complete consoles when their exact size and remaining stdout budget permit it.
+                      for engine, console in complete_exports:
+                          encoded_size = 4*((len(console)+2)//3)
+                          envelope_budget = ((encoded_size+4999)//5000)*180 + 2000
+                          if len(console) <= 160*1024 and used + encoded_size + envelope_budget + 16000 <= OUTPUT_LIMIT:
+                              encoded = base64.b64encode(console).decode("ascii")
+                              emit(engine + ".full_console", {**record(console), "encoded_characters": len(encoded), "part_size": 5000})
+                              for offset in range(0, len(encoded), 5000):
+                                  emit(engine + ".console_part", {"index": offset//5000, "offset": offset, "base64": encoded[offset:offset+5000]})
+                              emit(engine + ".console_end", {"parts": (len(encoded)+4999)//5000, "encoded_characters": len(encoded), **record(console)})
+                          else:
+                              emit(engine + ".full_console_omitted", {**record(console),
+                                  "reason": "Console exceeds 160 KiB or remaining 1 MiB output budget",
+                                  "bounded_sections_emitted": True, "all_matching_line_omissions_explicit": True})
+                      valid = all(all(checks.values()) for checks in engine_checks.values()) and set(engine_checks) == {"chromium", "firefox"}
+                      emit("finished", {"data_integrity_valid": valid, "source_conclusion_preserved": "failure",
+                          "browser_acceptance_verified": False, "checks": observed_checks,
+                          "no_new_execution": True, "output_bytes_before_final": used})
+                      require(valid, "Captured result/manifest/cutoff validation failed; emitted sections remain diagnostic only")
+          finally:
+              print("::" + stop + "::", flush=True)
+          PY
