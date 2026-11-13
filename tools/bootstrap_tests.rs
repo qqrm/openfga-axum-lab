@@ -173,6 +173,8 @@ async fn reply(
         "get_model"
     } else if method == Method::POST && uri.path().ends_with("/read") {
         "read"
+    } else if method == Method::POST && uri.path().ends_with("/check") {
+        "check"
     } else {
         panic!("bootstrap unexpectedly called {method} {}", uri.path());
     };
@@ -192,6 +194,7 @@ async fn reply(
         "get_store" => Reply::json(StatusCode::OK, json!({"id": STORE})),
         "get_model" => Reply::json(StatusCode::OK, model_response()),
         "read" => Reply::json(StatusCode::OK, json!({})),
+        "check" => Reply::json(StatusCode::OK, json!({"allowed": false, "resolution": ""})),
         _ => unreachable!(),
     });
     let delay = state.delays.lock().await.get(operation).copied();
@@ -274,13 +277,13 @@ async fn provisions_only_empty_store_and_pinned_model_then_reuses_binding() -> T
     let directory = tempfile::tempdir()?;
     let model = model_path(directory.path());
     let path = directory.path().join("config.json");
-    provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await?;
+    provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false).await?;
     let published = fs::read(&path)?;
     let bound: Config = serde_json::from_slice(&published)?;
     assert_eq!(bound.store_id, STORE);
     assert_eq!(bound.model_id, MODEL);
     assert_eq!(bound.model_sha256, PINNED_MODEL_SHA256);
-    provision(&stub.url, &path, &model, REQUEST_TIMEOUT).await?;
+    provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false).await?;
     assert_eq!(fs::read(&path)?, published);
     let requests = stub.state.requests.lock().await;
     let creates: Vec<_> = requests
@@ -317,7 +320,7 @@ async fn creation_requires_exact_201_and_never_publishes_uncertain_binding() -> 
             stub.enqueue(operation, Reply::json(StatusCode::from_u16(status)?, body))
                 .await;
             assert!(
-                provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+                provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false)
                     .await
                     .is_err(),
                 "{operation} accepted HTTP {status}"
@@ -378,7 +381,7 @@ async fn persisted_target_failures_preserve_config_and_never_recreate() -> ToolR
         let original = fs::read(&path)?;
         stub.enqueue(operation, response).await;
         assert!(
-            provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+            provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false)
                 .await
                 .is_err()
         );
@@ -419,7 +422,7 @@ async fn new_target_must_match_model_and_be_confirmed_empty_before_publish() -> 
         };
         stub.enqueue(operation, Reply::json(status, body)).await;
         assert!(
-            provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+            provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false)
                 .await
                 .is_err()
         );
@@ -436,7 +439,7 @@ async fn unexpected_model_file_is_rejected_before_any_request() -> ToolResult {
     fs::write(&model, b"{}")?;
     let path = directory.path().join("config.json");
     assert!(
-        provision(&stub.url, &path, &model, REQUEST_TIMEOUT)
+        provision(&stub.url, &path, &model, REQUEST_TIMEOUT, false)
             .await
             .is_err()
     );
@@ -592,7 +595,7 @@ async fn model_budget_does_not_apply_to_health_store_or_empty_tuple_reads() -> T
     let directory = tempfile::tempdir()?;
     let model = model_path(directory.path());
     let path = directory.path().join("config.json");
-    provision(&stub.url, &path, &model, model_timeout).await?;
+    provision(&stub.url, &path, &model, model_timeout, false).await?;
     let bound: Config = serde_json::from_slice(&fs::read(path)?)?;
     validate_existing(&bound, MODEL_BYTES)?;
     let requests = stub.state.requests.lock().await;
@@ -610,7 +613,7 @@ async fn model_request_deadline_never_retries_or_publishes_uncertain_binding() -
         let model = model_path(directory.path());
         let path = directory.path().join("config.json");
         assert!(
-            provision(&stub.url, &path, &model, Duration::from_millis(50))
+            provision(&stub.url, &path, &model, Duration::from_millis(50), false)
                 .await
                 .is_err()
         );
@@ -644,7 +647,7 @@ async fn existing_binding_model_deadline_preserves_configuration_without_reset()
     write_config(&path, &config())?;
     let before = fs::read(&path)?;
     assert!(
-        provision(&stub.url, &path, &model, Duration::from_millis(50))
+        provision(&stub.url, &path, &model, Duration::from_millis(50), false)
             .await
             .is_err()
     );
@@ -678,7 +681,7 @@ async fn model_override_keeps_confirmation_and_empty_store_requirements() -> Too
         let model = model_path(directory.path());
         let path = directory.path().join("config.json");
         assert!(
-            provision(&stub.url, &path, &model, Duration::from_secs(30))
+            provision(&stub.url, &path, &model, Duration::from_secs(30), false)
                 .await
                 .is_err()
         );
@@ -716,5 +719,211 @@ async fn model_request_deadline_includes_unfinished_response_body() -> ToolResul
     assert!(result.is_err());
     let _ = release.send(());
     server.await??;
+    Ok(())
+}
+
+#[test]
+fn empty_store_check_flag_is_strict_and_default_off() -> ToolResult {
+    assert!(!empty_store_check_enabled(None)?);
+    assert!(empty_store_check_enabled(Some(OsStr::new("yes")))?);
+    for value in ["", "no", "true", "1", "YES", " yes", "yes "] {
+        assert!(empty_store_check_enabled(Some(OsStr::new(value))).is_err());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        assert!(empty_store_check_enabled(Some(OsStr::from_bytes(&[0xff]))).is_err());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn empty_store_check_requires_deny_after_model_and_empty_read() -> ToolResult {
+    for body in [
+        json!({"allowed": false}),
+        json!({"allowed": false, "resolution": ""}),
+    ] {
+        let stub = Stub::start().await?;
+        stub.enqueue("check", Reply::json(StatusCode::OK, body)).await;
+        let directory = tempfile::tempdir()?;
+        let model = model_path(directory.path());
+        let path = directory.path().join("config.json");
+        provision(&stub.url, &path, &model, REQUEST_TIMEOUT, true).await?;
+        let published = fs::read(&path)?;
+        validate_existing(&serde_json::from_slice(&published)?, MODEL_BYTES)?;
+        {
+            let requests = stub.state.requests.lock().await;
+            let paths: Vec<_> = requests
+                .iter()
+                .map(|(_, path, _)| path.as_str())
+                .collect();
+            assert_eq!(
+                paths,
+                [
+                    "/healthz".to_owned(),
+                    "/stores".to_owned(),
+                    format!("/stores/{STORE}/authorization-models"),
+                    format!("/stores/{STORE}"),
+                    format!("/stores/{STORE}/authorization-models/{MODEL}"),
+                    format!("/stores/{STORE}/read"),
+                    format!("/stores/{STORE}/check"),
+                ]
+            );
+            assert_eq!(requests[6].0, Method::POST);
+            assert_eq!(
+                requests[6].2,
+                json!({
+                    "authorization_model_id": MODEL,
+                    "consistency": "HIGHER_CONSISTENCY",
+                    "tuple_key": {
+                        "user": "user:browser-bootstrap-probe",
+                        "relation": "ownership",
+                        "object": "lakekeeper_table:browser-bootstrap-probe"
+                    }
+                })
+            );
+        }
+        // Existing bindings are verified, never treated as new empty stores.
+        provision(&stub.url, &path, &model, REQUEST_TIMEOUT, true).await?;
+        assert_eq!(fs::read(&path)?, published);
+        let requests = stub.state.requests.lock().await;
+        assert_eq!(requests.len(), 10);
+        assert!(
+            requests[7..]
+                .iter()
+                .all(|(method, _, _)| *method == Method::GET)
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(_, path, _)| path.ends_with("/check"))
+                .count(),
+            1
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn empty_store_check_failures_never_publish_or_retry() -> ToolResult {
+    let replies = [
+        Reply::json(StatusCode::OK, json!({"allowed": true})),
+        Reply::json(StatusCode::OK, json!({})),
+        Reply::json(StatusCode::OK, json!({"allowed": "false"})),
+        Reply::json(StatusCode::OK, json!({"allowed": null})),
+        Reply::json(StatusCode::OK, json!({"allowed": false, "resolution": 42})),
+        Reply::json(StatusCode::OK, json!({"allowed": false, "unexpected": true})),
+        Reply::json(StatusCode::CREATED, json!({"allowed": false})),
+        Reply::json(StatusCode::TEMPORARY_REDIRECT, json!({"allowed": false})),
+        Reply::json(StatusCode::INTERNAL_SERVER_ERROR, json!({"allowed": false})),
+        Reply {
+            status: StatusCode::OK,
+            content_type: Some("application/json"),
+            body: br#"{"allowed":false"#.to_vec(),
+        },
+        Reply {
+            status: StatusCode::OK,
+            content_type: Some("application/json"),
+            body: br#"{"allowed":false,"allowed":true}"#.to_vec(),
+        },
+    ];
+    for reply in replies {
+        let stub = Stub::start().await?;
+        stub.enqueue("check", reply).await;
+        let directory = tempfile::tempdir()?;
+        let model = model_path(directory.path());
+        let path = directory.path().join("config.json");
+        assert!(
+            provision(&stub.url, &path, &model, Duration::from_secs(30), true)
+                .await
+                .is_err()
+        );
+        assert!(!path.exists());
+        let requests = stub.state.requests.lock().await;
+        assert_eq!(requests.len(), 7);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(_, path, _)| path.ends_with("/check"))
+                .count(),
+            1
+        );
+        assert!(!requests.iter().any(|(_, path, _)| path.ends_with("/write")));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn empty_store_check_requires_prior_confirmation() -> ToolResult {
+    for operation in ["get_model", "read", "continuation"] {
+        let stub = Stub::start().await?;
+        let (route, reply) = match operation {
+            "get_model" => {
+                let mut actual = model_response();
+                actual["authorization_model"]["id"] = json!(OTHER);
+                ("get_model", Reply::json(StatusCode::OK, actual))
+            }
+            "read" => ("read", Reply::json(StatusCode::OK, json!({"tuples": [{}]}))),
+            _ => (
+                "read",
+                Reply::json(StatusCode::OK, json!({"continuation_token": "more"})),
+            ),
+        };
+        stub.enqueue(route, reply).await;
+        let directory = tempfile::tempdir()?;
+        let model = model_path(directory.path());
+        let path = directory.path().join("config.json");
+        assert!(
+            provision(&stub.url, &path, &model, Duration::from_secs(30), true)
+                .await
+                .is_err()
+        );
+        assert!(!path.exists());
+        assert!(
+            stub.state
+                .requests
+                .lock()
+                .await
+                .iter()
+                .all(|(_, path, _)| !path.ends_with("/check"))
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn empty_store_check_keeps_five_seconds_with_model_override() -> ToolResult {
+    let stub = Stub::start().await?;
+    stub.delay("check", Duration::from_secs(6)).await;
+    let directory = tempfile::tempdir()?;
+    let model = model_path(directory.path());
+    let path = directory.path().join("config.json");
+    let start = std::time::Instant::now();
+    let result = provision(&stub.url, &path, &model, Duration::from_secs(30), true).await;
+    assert!(result.is_err());
+    assert!(start.elapsed() >= Duration::from_millis(4500));
+    assert!(start.elapsed() < Duration::from_secs(8));
+    assert!(!path.exists());
+    let requests = stub.state.requests.lock().await;
+    assert_eq!(requests.len(), 7);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|(_, path, _)| path.ends_with("/check"))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn short_model_budget_does_not_shorten_empty_store_check() -> ToolResult {
+    let stub = Stub::start().await?;
+    stub.delay("check", Duration::from_millis(250)).await;
+    let directory = tempfile::tempdir()?;
+    let model = model_path(directory.path());
+    let path = directory.path().join("config.json");
+    provision(&stub.url, &path, &model, Duration::from_millis(100), true).await?;
+    validate_existing(&serde_json::from_slice(&fs::read(path)?)?, MODEL_BYTES)?;
     Ok(())
 }

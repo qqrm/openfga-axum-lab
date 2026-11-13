@@ -56,6 +56,14 @@ struct ReadPage {
     continuation_token: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CheckDecision {
+    allowed: bool,
+    #[serde(default, rename = "resolution")]
+    _resolution: Option<String>,
+}
+
 fn digest(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -96,6 +104,14 @@ fn model_request_timeout(value: Option<&OsStr>) -> ToolResult<Duration> {
         return Err(error.into());
     }
     Ok(Duration::from_secs(seconds))
+}
+
+fn empty_store_check_enabled(value: Option<&OsStr>) -> ToolResult<bool> {
+    match value {
+        None => Ok(false),
+        Some(value) if value == OsStr::new("yes") => Ok(true),
+        Some(_) => Err("BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK must be absent or exactly yes".into()),
+    }
 }
 
 async fn send_json<T: DeserializeOwned>(
@@ -255,6 +271,7 @@ async fn provision(
     path: &Path,
     model_path: &Path,
     model_timeout: Duration,
+    check_empty_store: bool,
 ) -> ToolResult {
     let model_bytes = fs::read(model_path)?;
     let model_hash = digest(&model_bytes);
@@ -323,6 +340,32 @@ async fn provision(
                 .into(),
         );
     }
+    if check_empty_store {
+        // The pinned ownership relation has no tuples in this new store. A real
+        // deny is required before publishing the binding; this read-only Check
+        // retains the ordinary five-second client budget and is never retried.
+        let decision: CheckDecision = send_json(
+            client
+                .post(format!("{base}/stores/{}/check", config.store_id))
+                .json(&json!({
+                    "authorization_model_id": config.model_id,
+                    "consistency": "HIGHER_CONSISTENCY",
+                    "tuple_key": {
+                        "user": "user:browser-bootstrap-probe",
+                        "relation": "ownership",
+                        "object": "lakekeeper_table:browser-bootstrap-probe"
+                    }
+                })),
+            StatusCode::OK,
+        )
+        .await?;
+        if decision.allowed {
+            return Err(
+                "empty-store ownership Check did not deny; configuration was not published"
+                    .into(),
+            );
+        }
+    }
     write_config(path, &config)?;
     println!(
         "Empty store and pinned model provisioned; SQL authorization migration remains required"
@@ -335,10 +378,19 @@ pub async fn run() -> ToolResult {
     // identity, tuple reads and all other CLI commands retain their deadlines.
     let configured_timeout = std::env::var_os("BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS");
     let model_timeout = model_request_timeout(configured_timeout.as_deref())?;
+    let configured_check = std::env::var_os("BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK");
+    let check_empty_store = empty_store_check_enabled(configured_check.as_deref())?;
     let base = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
     let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let model = std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
-    provision(&base, Path::new(&path), Path::new(&model), model_timeout).await
+    provision(
+        &base,
+        Path::new(&path),
+        Path::new(&model),
+        model_timeout,
+        check_empty_store,
+    )
+    .await
 }
 
 #[cfg(test)]
