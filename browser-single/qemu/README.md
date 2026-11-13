@@ -6,7 +6,8 @@ using the dependency stages and x86_64 build flags in
 [container2wasm `087c313`](https://github.com/container2wasm/container2wasm/blob/087c313479d51cdf255e4f28ded6ae7d8141297b/Dockerfile).
 The C patch separates the retained-function threshold from the total number of
 live instances. At 2048 retained instances on a CPU, it detaches the oldest
-half before another compilation. The global limit is 8192 live instances,
+half before another compilation. The global backstop is the upstream value of
+15000 live instances,
 including detached instances awaiting a browser GC callback. An atomic
 compare/exchange reserves a slot before compilation, so simultaneous CPU
 workers cannot exceed that count. `INSTANTIATE_NUM=1500`, `MAX_EXEC_NUM=50000`
@@ -45,13 +46,30 @@ after detachment, with five-second sampling. Increasing yield frequency is not
 supported by that observation. These probes measured counters, not native code
 bytes, and were not production acceptance runs.
 
+The intermediate 8192/2048 candidate still failed both browsers in
+[run 43343577131](https://github.com/qqrm/openfga-axum-lab/actions/runs/43343577131).
+A longer local numeric diagnostic then observed the entire OpenFGA warmup at
+8192 live instances, with 5120 detached pending GC and 3072 retained. No new
+compilations occurred during that warmup, despite thousands of actual zero-sleep
+callbacks. The containing sampled plateau lasted at least 296.024 seconds.
+The console SHA-256 is
+`9be5ad78700239f00519fdd21a8b5cb80ad785304d8d2d67ffc271f8a615cdd2`.
+Console-window replay was deduplicated; these are counters, not native-memory
+measurements or uninstrumented CI performance results.
+
+The current candidate restores the original 15000 global backstop while retaining
+early detachment at 2048 per CPU and strict atomic admission. Relative to the
+8192 C postimage, only this numerical backstop changes. This provides more room
+between detachment and the hard fallback limit. It does not revert to the old
+late-eviction behavior that reached Firefox OOM without any detached instances.
+
 The revised candidate detaches functions while allocation headroom remains.
 Detachment does **not** decrement the live count; only a delivered GC callback
 does. A pending GC batch no longer prevents the next eviction once the retained
 count reaches 2048 again. Repeated checks below that threshold do nothing, so a
 full live budget cannot repeatedly drain the hot cache. A CPU can retain at
 most 2048 functions, and the two-CPU guest at most 4096 in total; the unused
-quota of one CPU is not shared with the other. The 8192-slot FIFO is reused
+quota of one CPU is not shared with the other. The 15000-slot FIFO is reused
 only after entries have been detached.
 
 Both thresholds are heuristics. The strict count is not a byte budget or a

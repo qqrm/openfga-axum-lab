@@ -21,8 +21,10 @@ git apply --unidiff-zero --check --whitespace=error-all "$patch_dir/startup-dial
 git apply --unidiff-zero --whitespace=error-all "$patch_dir/startup-dial.patch"
 cp "$patch_dir/browser_http_dial.go" "$patch_dir/browser_http_dial_test.go" \
     "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_http_warmup_test.go" cmd/run/
+cp "$patch_dir/browser_model_validation.go" "$patch_dir/browser_model_validation_test.go" pkg/typesystem/
 test -z "$(gofmt -l cmd/run/browser_http_dial.go cmd/run/browser_http_dial_test.go \
-    cmd/run/browser_http_warmup.go cmd/run/browser_http_warmup_test.go)"
+    cmd/run/browser_http_warmup.go cmd/run/browser_http_warmup_test.go \
+    pkg/typesystem/browser_model_validation.go pkg/typesystem/browser_model_validation_test.go)"
 
 # Resolve only the pinned upstream dependency graph and verify its checksums.
 go mod download
@@ -30,13 +32,14 @@ go mod verify
 mkdir -p "$output_dir"
 go test -mod=readonly -count=1 -timeout=120s -v ./cmd/run -run '^TestBrowserHTTP' \
     2>&1 | tee "$output_dir/dial-tests.log"
-git diff --exit-code -- go.mod go.sum pkg/server/config/config.go \
-    pkg/server/commands/write_authzmodel.go pkg/typesystem/typesystem.go
+go test -mod=readonly -count=1 -timeout=120s -v ./pkg/typesystem -run '^TestBrowserModel' \
+    2>&1 | tee "$output_dir/model-validation-tests.log"
+git diff --exit-code -- go.mod go.sum pkg/server/config/config.go
 
 build_epoch=$(git show -s --format=%ct HEAD)
 build_date=$(date -u --date="@$build_epoch" +'%Y-%m-%dT%H:%M:%SZ')
 go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.3 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
+    -ldflags "-s -w -X github.com/openfga/openfga/internal/build.Version=v1.10.3-browser-startup.4 -X github.com/openfga/openfga/internal/build.Commit=$source_commit -X github.com/openfga/openfga/internal/build.Date=$build_date -X github.com/openfga/openfga/internal/build.ProjectName=openfga" \
     -o "$output_dir/openfga" ./cmd/openfga
 chmod 0555 "$output_dir/openfga"
 
@@ -56,31 +59,35 @@ cat >"$output_dir/build.json" <<EOF
   "startup_dial_timeout_seconds": 60,
   "transport_diagnostics": "http_and_unary_rpc_metadata_only",
   "unary_raw_logging": "disabled_browser_only",
-  "startup_model_warmup": "in_process_codec_validation_only",
+  "startup_model_warmup": "in_process_codec_validation_with_exact_schema_cache",
+  "model_validation_cache": "conditionless_exact_protobuf_body_except_id",
   "warmup_model_sha256": "$model_sha256",
   "warmup_model_bytes": 52709,
   "warmup_timeout_seconds": 60,
-  "warmup_cycles": 4,
+  "warmup_cycles": 1,
   "authorization_request_timeout_default_seconds": 3,
   "patch_sha256": "$(sha256_of "$patch_dir/startup-dial.patch")",
   "helper_sha256": "$(sha256_of "$patch_dir/browser_http_dial.go")",
   "tests_sha256": "$(sha256_of "$patch_dir/browser_http_dial_test.go")",
   "warmup_helper_sha256": "$(sha256_of "$patch_dir/browser_http_warmup.go")",
   "warmup_tests_sha256": "$(sha256_of "$patch_dir/browser_http_warmup_test.go")",
+  "model_validation_helper_sha256": "$(sha256_of "$patch_dir/browser_model_validation.go")",
+  "model_validation_tests_sha256": "$(sha256_of "$patch_dir/browser_model_validation_test.go")",
   "go_sum_sha256": "$(sha256_of go.sum)",
   "binary_sha256": "$(sha256_of "$output_dir/openfga")",
   "startup_dial_tests": "passed",
   "transport_diagnostics_tests": "passed",
-  "warmup_tests": "passed"
+  "warmup_tests": "passed",
+  "model_validation_tests": "passed"
 }
 EOF
 cp LICENSE "$output_dir/LICENSE"
 cp "$patch_dir/startup-dial.patch" "$patch_dir/browser_http_dial.go" \
-    "$patch_dir/browser_http_warmup.go" "$output_dir/"
+    "$patch_dir/browser_http_warmup.go" "$patch_dir/browser_model_validation.go" "$output_dir/"
 cat >"$output_dir/SOURCE.txt" <<EOF
 OpenFGA v1.10.3, Apache-2.0, source commit $source_commit.
 Source: https://github.com/openfga/openfga/tree/$source_commit
-Browser build v1.10.3-browser-startup.3 extends the HTTP gateway startup gRPC
+Browser build v1.10.3-browser-startup.4 extends the HTTP gateway startup gRPC
 self-dial budget from 3 to 60 seconds and observes parent cancellation.
 It also logs HTTP and unary RPC start/end metadata to stderr without bodies,
 query strings or headers, preserving handler inputs, outputs and errors.
@@ -89,12 +96,16 @@ are omitted; metadata status logs and streaming logging remain. Other upstream
 error logs, validation, authentication, timeout and recovery middleware remain.
 Before datastore construction/listeners, one separate 60-second startup phase
 reads FGA_MODEL once and verifies its exact 52709 bytes and SHA-256 $model_sha256.
-Within that same budget, four cycles exercise the real JSONPb/protobuf codecs,
-generated request validation and TypeSystem.NewAndValidate without any datastore,
-RPC or Check operation. Each cycle creates fresh messages and a fresh TypeSystem;
-all fixtures and validation results are discarded. One diagnostic line per
-started cycle records stage timings and completion/failure. Real operations
-repeat the unchanged validation and datastore work. Failure prevents readiness.
+Within that same budget, one cycle exercises the real JSONPb/protobuf codecs,
+generated request validation and the full original TypeSystem validator without
+any datastore, RPC or Check operation. After every stage succeeds, only the
+validity of the exact conditionless model body is retained in a private clone.
+Matching compares every protobuf field and unknown field except the generated ID.
+The write-model command reuses this proven validity and still writes PostgreSQL.
+Real resolver loads construct a fresh TypeSystem with the real ID; no TypeSystem,
+graph, tuple, datastore existence or Check decision is shared by this cache.
+All mismatching models use the original full validator. Failure or cancellation
+prevents cache publication and readiness. Stage timings remain diagnostic only.
 The startup caller is bounded and observes parent cancellation; a synchronous
 worker may finish later, but cannot publish readiness and the CLI exits on error.
 The blocking connection, TLS, request timeouts and authorization engine remain.

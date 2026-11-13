@@ -46,8 +46,8 @@ check_clean_source
 git -C "$source_dir" apply --unidiff-zero --check --whitespace=error-all "$context_dir/instance-budget.patch"
 git -C "$source_dir" apply --unidiff-zero --whitespace=error-all "$context_dir/instance-budget.patch"
 test "$(git -C "$source_dir" diff --name-only HEAD --)" = tcg/wasm32.c
-test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = 207a59b01ee8655fb542173fd944549653c3d29c
-grep -qx '#define MAX_INSTANCE_ALIVE 8192' "$source_dir/tcg/wasm32.c"
+test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = 8075f1b4ee8569dfda0934d02268d755d5151ef8
+grep -qx '#define MAX_INSTANCE_ALIVE 15000' "$source_dir/tcg/wasm32.c"
 grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' "$source_dir/tcg/wasm32.c"
 git -C "$source_dir" diff --check HEAD --
 node "$script_dir/check-instance-budget.mjs" "$source_dir/tcg/wasm32.c"
@@ -73,11 +73,11 @@ expected = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508",
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "207a59b01ee8655fb542173fd944549653c3d29c",
+    "backend_postimage_blob": "8075f1b4ee8569dfda0934d02268d755d5151ef8",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
-    "max_instance_alive_after": 8192,
+    "max_instance_alive_after": 15000,
     "max_instance_running_local": 2048,
     "instance_reservation": "atomic_compare_exchange",
     "instance_budget_tests": "passed",

@@ -78,7 +78,7 @@ static void *contend(void *result) {
     return NULL;
 }
 int main(void) {
-    assert(MAX_INSTANCE_ALIVE == 8192 && MAX_INSTANCE_RUNNING_LOCAL == 2048);
+    assert(MAX_INSTANCE_ALIVE == 15000 && MAX_INSTANCE_RUNNING_LOCAL == 2048);
     fixture(2048, 4096, 0); /* One earlier batch still awaits callbacks. */
     remove_instance_running_local();
     assert(instance_running_local == 1024 && detached == 1024);
@@ -120,7 +120,7 @@ int main(void) {
     assert(instance_alive_global == MAX_INSTANCE_ALIVE);
     assert(!can_add_instance() && !try_reserve_instance());
     assert(pthread_barrier_destroy(&admission_gate) == 0);
-    puts("PASS concurrent admission at 8191 reserves exactly one final slot");
+    puts("PASS concurrent admission at 14999 reserves exactly one final slot");
 }
 `;
 

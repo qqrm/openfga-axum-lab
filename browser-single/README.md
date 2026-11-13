@@ -96,9 +96,10 @@ launcher checks every payload's size and SHA-256 before starting QEMU;
 The [QEMU adaptation](qemu/README.md) rebuilds only the emulator JS/WASM pair
 with separate early eviction and total live-instance limits. It releases half
 of a CPU's retained compiled instances at 2048, while an atomic reservation
-limits live instances, including those awaiting browser GC, to 8192 globally.
-This leaves room for compilation after detachment; the previous single 4096
-limit caused long waits for GC callbacks in real Chromium diagnostics.
+limits live instances, including those awaiting browser GC, to the original
+upstream backstop of 15000 globally. Both previous 4096 and 8192 candidates
+blocked compilation for long intervals while awaiting GC. Early detachment
+remains at 2048 per CPU, unlike the original late-eviction implementation.
 The original data, loader,
 arguments and reviewed SYSVIPC kernel are checked before and after that overlay.
 The derived manifest records this separate emulator build; it does not rewrite
@@ -112,12 +113,16 @@ requested QEMU arguments alone do not prove that Linux discovered both CPUs.
 
 The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
 self-dial from three seconds to a bounded 60 seconds. A separate bounded
-startup phase exercises the codecs and validation code for the exact pinned
-model in four fresh cycles under one total 60-second budget, before opening
-listeners. Its results are discarded: the
-original bootstrap and every subsequent real validation, write and Check
-still run. This is a candidate for reducing initialization and emulated-code
-translation costs, not evidence of successful browser acceptance.
+startup phase exercises the codecs and fully validates the exact pinned
+model once under one total 60-second budget, before opening listeners.
+Only the validity of that conditionless model body is retained. A real model
+write compares every protobuf field, including unknown fields, except the
+generated ID; a match reuses the already established schema validity and still
+writes PostgreSQL. On resolver loads, matching models get a fresh TypeSystem
+with their real ID; graphs and mutable state are not shared by this cache.
+Every other model uses the original complete validator. The original bootstrap,
+datastore reads/writes, tuple operations and Check decisions still run. This
+optimization remains a candidate until real browser acceptance passes.
 
 Compact HTTP and gRPC transport traces record request boundaries and timing
 without reading request bodies or changing the handler's context, writer,

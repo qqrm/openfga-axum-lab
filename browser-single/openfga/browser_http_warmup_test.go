@@ -43,17 +43,17 @@ func TestBrowserHTTPWarmupExactModel(t *testing.T) {
 	if err := warmBrowserHTTPModel(context.Background(), path); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(output.String(), "warmup_cycle "); got != 4 {
-		t.Fatalf("expected four completed real codec/validation cycles, got %d: %s", got, output.String())
+	if got := strings.Count(output.String(), "warmup_cycle "); got != browserHTTPWarmupCycles {
+		t.Fatalf("expected one completed real codec/validation cycle, got %d: %s", got, output.String())
 	}
-	for cycle := 1; cycle <= 4; cycle++ {
+	for cycle := 1; cycle <= browserHTTPWarmupCycles; cycle++ {
 		want := fmt.Sprintf("warmup_cycle cycle=%d completed=true current_stage=complete failed=false", cycle)
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("cycle did not complete all real stages: %s", output.String())
 		}
 	}
 	for _, field := range []string{"json_decode_ms=", "protobuf_ms=", "generated_validation_ms=", "typesystem_ms=", "response_codec_ms="} {
-		if strings.Count(output.String(), field) != 4 {
+		if strings.Count(output.String(), field) != browserHTTPWarmupCycles {
 			t.Fatalf("missing per-cycle %s timing: %s", field, output.String())
 		}
 	}
@@ -68,7 +68,7 @@ func TestBrowserHTTPWarmupStopsAtFailedCycle(t *testing.T) {
 	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
 	// Exercise the real decoder's failure path directly. Production reaches
 	// these codecs only after the pinned size/hash check has passed.
-	err := warmBrowserHTTPModelCycles(context.Background(), []byte("{"), progress)
+	_, err := warmBrowserHTTPModelCycles(context.Background(), []byte("{"), progress)
 	if err == nil || !strings.Contains(err.Error(), "warmup gateway model decode") {
 		t.Fatalf("invalid codec input accepted or wrong failure: %v", err)
 	}

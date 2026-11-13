@@ -1,11 +1,10 @@
 diff --git a/tcg/wasm32.c b/tcg/wasm32.c
+index d60ce4b..8075f1b 100644
 --- a/tcg/wasm32.c
 +++ b/tcg/wasm32.c
-@@ -107 +107,2 @@
--#define MAX_INSTANCE_ALIVE 15000
-+#define MAX_INSTANCE_ALIVE 8192
+@@ -107,0 +108 @@ struct instance_info {
 +#define MAX_INSTANCE_RUNNING_LOCAL 2048
-@@ -146,0 +148,15 @@
+@@ -146,0 +148,15 @@ static void check_instance_garbage_collected()
 +/* Reserve before compilation; detached instances still count until GC. */
 +static bool try_reserve_instance()
 +{
@@ -21,16 +20,16 @@ diff --git a/tcg/wasm32.c b/tcg/wasm32.c
 +    return false;
 +}
 +
-@@ -149 +165,2 @@
+@@ -149 +165,2 @@ static void remove_instance_running_local()
 -    if (instance_pending_gc_local() > 0) {
 +    /* Detach early, leaving room for new compilations while GC is pending. */
 +    if (instance_running_local < MAX_INSTANCE_RUNNING_LOCAL) {
-@@ -174 +190,0 @@
+@@ -174 +190,0 @@ static void add_instance_running_local(int fidx, void *tb_ptr)
 -    qatomic_inc(&instance_alive_global);
-@@ -1336 +1352 @@
+@@ -1336 +1352 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 -        } else if (!can_add_instance()) {
 +        } else if (!try_reserve_instance()) {
-@@ -1338 +1353,0 @@
+@@ -1338 +1353,0 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 -            check_instance_garbage_collected();
-@@ -1340,0 +1356 @@
+@@ -1340,0 +1356 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 +            remove_instance_running_local();

@@ -23,3 +23,13 @@
 @@ -807,0 +811,2 @@
 +
 +		handler = browserHTTPObserver(handler, browserTransportLogger)
+--- a/pkg/server/commands/write_authzmodel.go
++++ b/pkg/server/commands/write_authzmodel.go
+@@ -84 +84 @@
+-	_, err := typesystem.NewAndValidate(ctx, model)
++	err := typesystem.ValidateBrowserAuthorizationModel(ctx, model)
+--- a/pkg/typesystem/typesystem.go
++++ b/pkg/typesystem/typesystem.go
+@@ -1118 +1118 @@
+-func NewAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {
++func newAndValidate(ctx context.Context, model *openfgav1.AuthorizationModel) (*TypeSystem, error) {

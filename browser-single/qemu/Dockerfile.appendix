@@ -13,8 +13,8 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && git -C /qemu apply --unidiff-zero --whitespace=error-all /browser-qemu-input/instance-budget.patch \
     && git -C /qemu diff --check HEAD -- \
     && test "$(git -C /qemu diff --name-only HEAD --)" = tcg/wasm32.c \
-    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = 207a59b01ee8655fb542173fd944549653c3d29c \
-    && grep -qx '#define MAX_INSTANCE_ALIVE 8192' /qemu/tcg/wasm32.c \
+    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = 8075f1b4ee8569dfda0934d02268d755d5151ef8 \
+    && grep -qx '#define MAX_INSTANCE_ALIVE 15000' /qemu/tcg/wasm32.c \
     && grep -qx '#define MAX_INSTANCE_RUNNING_LOCAL 2048' /qemu/tcg/wasm32.c \
     && mkdir /emulator-out \
     && node /browser-qemu-input/check-instance-budget.mjs /qemu/tcg/wasm32.c > /emulator-out/instance-budget-tests.log \
@@ -54,11 +54,11 @@ metadata = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": digest("upstream.Dockerfile"),
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "207a59b01ee8655fb542173fd944549653c3d29c",
+    "backend_postimage_blob": "8075f1b4ee8569dfda0934d02268d755d5151ef8",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
-    "max_instance_alive_after": 8192,
+    "max_instance_alive_after": 15000,
     "max_instance_running_local": 2048,
     "instance_reservation": "atomic_compare_exchange",
     "instance_budget_tests": "passed",
@@ -78,7 +78,7 @@ metadata = {
     "Build dependencies and flags: included upstream.Dockerfile, container2wasm "
     "087c313479d51cdf255e4f28ded6ae7d8141297b.\n"
     "The included patch detaches half the retained instances at 2048 per CPU, "
-    "while an atomic reservation limits live instances globally to 8192. "
+    "while an atomic reservation limits live instances globally to 15000. "
     "Detached instances remain counted until GC callbacks are processed. "
     "INSTANTIATE_NUM remains 1500 and MAX_EXEC_NUM remains 50000. "
     "Native accounting tests passed; this is an unproven browser memory-budget "

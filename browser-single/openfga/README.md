@@ -42,7 +42,7 @@ Panics continue to upstream recovery and do not emit a false completion event.
 Diagnostic logging itself adds work; it is not a performance improvement or a
 replacement for successful browser acceptance.
 
-## Startup-only model warmup candidate
+## Bounded startup and exact-schema validation cache
 
 [Run 43306901697, attempt 2](https://github.com/qqrm/openfga-axum-lab/actions/runs/43306901697/attempts/2)
 reached healthy OpenFGA and successfully created a store. For the model POST,
@@ -60,35 +60,57 @@ A limited reader prevents an oversized input from allocating without a bound.
 The checked input is the unchanged repository `fga/model.json`; the real HTTP
 client's serialized request is a separate representation.
 
-Each of four fresh warmup cycles exercises the pinned grpc-gateway `JSONPb` decoder, protobuf binary
-encoding/decoding, generated request validation, and
-`typesystem.NewAndValidate`. It then encodes local write-model and full read-model
-response fixtures through the protobuf and JSONPb APIs. The fixed ULID is codec
-input only. No request handler, datastore, store/tuple write or Check is called,
-and no response is sent. All messages, the TypeSystem and validation results are
-discarded. Subsequent real requests still parse their own bytes, validate again,
-construct fresh type systems and perform the unchanged database operations.
+One startup cycle exercises the pinned grpc-gateway `JSONPb` decoder, protobuf
+binary encoding/decoding, generated request validation and the complete original
+TypeSystem validator. It then encodes local write-model and full read-model
+response fixtures through protobuf and JSONPb. The fixed ULID is codec input
+only. No request handler, datastore, store/tuple write or Check is called, and
+no response is sent.
 
-The intended effect is to initialize shared protobuf metadata and exercise code
-before serving the first model request. Native profiling selected these code
-paths; it does not predict browser/TCG cache behavior or prove a speedup. Removing
-redundant unary payload logging and this warmup remain a browser candidate until
-real acceptance verifies them.
+After every stage succeeds, the caller publishes an opaque, private deep copy
+of the successfully validated **conditionless schema body**. The copy excludes
+only `AuthorizationModel.Id`. Every other field, nested message and unknown
+field participates in `proto.Equal` for subsequent matches. The pinned protobuf
+descriptor is tested so that adding a future field cannot silently broaden the
+match. No caller receives a reference to this private copy.
 
-Reading/verifying the file and all four cycles share **one 60-second startup
-budget**, inheriting parent cancellation. This is not a new budget per cycle.
-Compact per-cycle records separate JSON decoding, protobuf roundtrip, generated
-validation, TypeSystem validation and response codecs, including an interrupted
-stage. Four cycles are a bounded experiment: neither their completion nor
-native timings prove that real browser requests will meet their deadlines.
-A buffered worker result bounds the startup caller's wait even if a synchronous
-codec/validation step does not observe cancellation immediately. Context checks
-between stages prevent further work after cancellation. The worker cannot publish
-readiness; timeout, cancellation, bad identity or API failure returns a startup
-error before any listener opens. The CLI exits on that error. A synchronous step
-may finish later before process exit; Go does not forcibly stop that goroutine.
-The result is never a cached validation or authorization decision. Request and
-authorization deadlines are unchanged.
+The real write-model command previously built a TypeSystem solely for validation
+and immediately discarded it. For an exact match it now reuses the established
+validity; generated request validation, type/size limits, new model ID and the
+actual PostgreSQL write remain in place. A resolver cache miss still reads the
+actual model from the actual datastore. If its body matches, a fresh `New(model)`
+builds both graphs, maps and independent mutable state with the real model ID.
+All mismatches, absent cache entries and conditional models use the complete
+original validator. No authorization answer, tuple, datastore existence or
+TypeSystem is memoized by this new cache. Upstream's existing store/model-bound
+resolver cache remains unchanged.
+
+This narrow reuse is justified by the pinned `NewAndValidate` implementation:
+after `New(model)`, conditionless schema validation does not mutate the returned
+TypeSystem. Conditional models are excluded because condition compilation does
+retain additional state. Neither identity nor tuple data affects these schema
+checks. The two modified schema-validation locations and every added helper are pinned
+and included in the build evidence.
+
+Reading/verifying the file, codecs, full validation and publication share
+**one 60-second startup budget**, inheriting parent cancellation. Stage records
+include interrupted work. A buffered worker result bounds the caller's wait
+if synchronous codec/validation work does not promptly observe cancellation.
+Only the caller can publish the cache after a successful wait; a late worker
+cannot publish either the cache or readiness. Cancellation wins over late
+success. Bad identity, validation failure, timeout or cancellation stops startup
+before listeners. The CLI exits on error. A synchronous worker may finish later
+before process exit; Go does not forcibly stop it.
+
+The previous four-cycle candidate failed the real
+[23562aca browser gate](https://github.com/qqrm/openfga-axum-lab/actions/runs/43343577131):
+Chromium completed warmup in 53 seconds and self-dial in 550 ms, then exceeded the
+unchanged five-second model-write limit. Firefox exhausted the shared 60-second
+budget during its third warmup cycle. Neither browser completed an acceptance
+pass. Repeating validation did not establish adequate request performance;
+this revision removes that repetition without changing request deadlines.
+The remaining graph construction and browser JIT/GC costs still require actual
+browser verification.
 
 ## Build and check
 
@@ -126,20 +148,24 @@ Tests invoke the same helper called by the patched server:
   cancellation fail closed.
 - The patched server entry point rejects an unacceptable model or cancelled
   parent before datastore or listener initialization.
+- Exact-schema cache tests cover generated IDs, nested/unknown-field mismatches,
+  invalid-model fallback, independent inputs/TypeSystems and cancellation. The
+  cache contains validation evidence only and never substitutes a Check result.
 
 The tests include a deliberate 60-second wait to verify the production bound.
 They do not substitute for the real PostgreSQL/OpenFGA/Axum browser acceptance.
 Both Chromium and Firefox must still pass the actual sequence twice, in order:
 `403 → 204 → 200 → 204 → 403`.
 
-Output contains `openfga`, `build.json`, `dial-tests.log`, `LICENSE`, `SOURCE.txt`,
-the exact source patch and both helpers. `build.json` is created only after passing
+Output contains `openfga`, `build.json`, `dial-tests.log`,
+`model-validation-tests.log`, `LICENSE`, `SOURCE.txt`, the exact source patch and
+all three helpers. `build.json` is created only after passing
 tests and records the source commit, compiler version, canonical UTC commit
 date, patch/helper/test digests, metadata-only diagnostics, omitted unary logging,
 the pinned warmup model identity and budget, native warmup proof, dependency
 checksum and executable SHA-256. This proof means the native APIs/tests passed;
 it is not browser acceptance. The build identifies itself as
-`v1.10.3-browser-startup.3`, rather than claiming to be an untouched release.
+`v1.10.3-browser-startup.4`, rather than claiming to be an untouched release.
 
 The same `build.sh` can run directly from a clean checkout of the pinned upstream
 commit when Go 1.24.6 is available on `PATH`; pass the output directory as its

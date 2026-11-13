@@ -58,8 +58,10 @@ try {
       const first=await page.evaluate(()=>window.labEvidence);
       assert.equal(first.error,undefined,JSON.stringify(first));
       assert.ok(first.startupManifest,'Missing verified startup provenance');
-      assert.equal(first.startupManifest.openfga_build.warmup_cycles,4);
-      assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,8192);
+      assert.equal(first.startupManifest.openfga_build.warmup_cycles,1);
+      assert.equal(first.startupManifest.openfga_build.model_validation_cache,'conditionless_exact_protobuf_body_except_id');
+      assert.equal(first.startupManifest.openfga_build.model_validation_tests,'passed');
+      assert.equal(first.startupManifest.emulator_build?.max_instance_alive_after,15000);
       assert.equal(first.startupManifest.emulator_build?.max_instance_running_local,2048);
       assert.equal(first.startupManifest.emulator_build?.instance_reservation,'atomic_compare_exchange');
       assert.equal(first.ready,true);

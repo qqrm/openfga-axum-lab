@@ -19,7 +19,7 @@ import (
 
 const (
 	browserHTTPWarmupTimeout = 60 * time.Second
-	browserHTTPWarmupCycles  = 4
+	browserHTTPWarmupCycles  = 1
 	browserHTTPModelBytes    = 52709
 	browserHTTPModelSHA256   = "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"
 	// Only codec input: this ID is never written to a store or returned by an RPC.
@@ -44,35 +44,48 @@ type browserHTTPWarmupProgress struct {
 	failed       bool
 }
 
-// Run before datastore construction or any listener. All decoded messages and
-// TypeSystems are fresh per cycle, local and discarded. Real requests still
-// decode, validate and execute the unchanged datastore operations.
+// Run before datastore construction or any listener. Exercise the real codecs
+// and fully validate the pinned model once. Publish only the immutable fact that
+// this exact model body is valid after every startup stage succeeds; never cache
+// a TypeSystem, datastore state or an authorization decision.
 func warmBrowserHTTPModel(ctx context.Context, path string) error {
 	started := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, browserHTTPWarmupTimeout)
+	defer cancel()
+	var prepared *typesystem.BrowserModelValidation
 	// Five stage starts and one completion per cycle fit even after the caller
 	// times out. The worker sends value snapshots and never logs after timeout.
 	progress := make(chan browserHTTPWarmupProgress, browserHTTPWarmupCycles*(browserWarmupStageCount+1))
 	browserTransportLogger.Printf("warmup_start model_sha256=%s model_bytes=%d cycles=%d timeout_seconds=%d", browserHTTPModelSHA256, browserHTTPModelBytes, browserHTTPWarmupCycles, int(browserHTTPWarmupTimeout/time.Second))
 	err := runBrowserHTTPWarmup(ctx, browserHTTPWarmupTimeout, func(ctx context.Context) error {
-		// Reading, identity verification and all four cycles share this context.
+		// Reading, identity verification, codecs and validation share this context.
 		data, err := readBrowserHTTPModel(path)
 		if err != nil {
 			return err
 		}
-		return warmBrowserHTTPModelCycles(ctx, data, progress)
+		prepared, err = warmBrowserHTTPModelCycles(ctx, data, progress)
+		return err
 	})
+	if err == nil {
+		// The result receive synchronizes access to prepared. On timeout the
+		// caller never reads the worker result and never installs its cache.
+		err = typesystem.InstallBrowserModelValidation(ctx, prepared)
+	}
 	logBrowserHTTPWarmupCycles(progress)
 	browserTransportLogger.Printf("warmup_end duration_ms=%d failed=%t", time.Since(started).Milliseconds(), err != nil)
 	return err
 }
 
-func warmBrowserHTTPModelCycles(ctx context.Context, data []byte, progress chan<- browserHTTPWarmupProgress) error {
+func warmBrowserHTTPModelCycles(ctx context.Context, data []byte, progress chan<- browserHTTPWarmupProgress) (*typesystem.BrowserModelValidation, error) {
+	var prepared *typesystem.BrowserModelValidation
 	for cycle := 1; cycle <= browserHTTPWarmupCycles; cycle++ {
-		if err := warmBrowserHTTPModelCodecs(ctx, data, cycle, progress); err != nil {
-			return err
+		var err error
+		prepared, err = warmBrowserHTTPModelCodecs(ctx, data, cycle, progress)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return ctx.Err()
+	return prepared, ctx.Err()
 }
 
 // Log one latest snapshot per started cycle. On timeout this includes the
@@ -158,9 +171,9 @@ func readBrowserHTTPModel(path string) ([]byte, error) {
 	return data, nil
 }
 
-func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, progress chan<- browserHTTPWarmupProgress) (err error) {
+func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, progress chan<- browserHTTPWarmupProgress) (prepared *typesystem.BrowserModelValidation, err error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	current := browserHTTPWarmupProgress{cycle: cycle}
 	startStage := func(stage int) {
@@ -185,30 +198,30 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 	}
 	request := &openfgav1.WriteAuthorizationModelRequest{}
 	if err := codec.NewDecoder(bytes.NewReader(data)).Decode(request); err != nil {
-		return fmt.Errorf("warmup gateway model decode: %w", err)
+		return nil, fmt.Errorf("warmup gateway model decode: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	startStage(browserWarmupProtobuf)
 	request.StoreId = browserHTTPWarmupID
 	wire, err := proto.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("warmup request protobuf encode: %w", err)
+		return nil, fmt.Errorf("warmup request protobuf encode: %w", err)
 	}
 	decoded := &openfgav1.WriteAuthorizationModelRequest{}
 	if err := proto.Unmarshal(wire, decoded); err != nil {
-		return fmt.Errorf("warmup request protobuf decode: %w", err)
+		return nil, fmt.Errorf("warmup request protobuf decode: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	startStage(browserWarmupGeneratedValidation)
 	if err := decoded.Validate(); err != nil {
-		return fmt.Errorf("warmup generated request validation: %w", err)
+		return nil, fmt.Errorf("warmup generated request validation: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	startStage(browserWarmupTypeSystem)
 	model := &openfgav1.AuthorizationModel{
@@ -217,11 +230,12 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 		TypeDefinitions: decoded.GetTypeDefinitions(),
 		Conditions:      decoded.GetConditions(),
 	}
-	if _, err := typesystem.NewAndValidate(ctx, model); err != nil {
-		return fmt.Errorf("warmup type-system validation: %w", err)
+	prepared, err = typesystem.PrepareBrowserModelValidation(ctx, model)
+	if err != nil {
+		return nil, fmt.Errorf("warmup type-system validation: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	startStage(browserWarmupResponseCodec)
 	// Serialization fixtures only: no service handler, datastore or Check call.
@@ -231,22 +245,22 @@ func warmBrowserHTTPModelCodecs(ctx context.Context, data []byte, cycle int, pro
 		&openfgav1.ReadAuthorizationModelResponse{AuthorizationModel: model},
 	} {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		wire, err := proto.Marshal(response)
 		if err != nil {
-			return fmt.Errorf("warmup response protobuf encode: %w", err)
+			return nil, fmt.Errorf("warmup response protobuf encode: %w", err)
 		}
 		decodedResponse := response.ProtoReflect().New().Interface()
 		if err := proto.Unmarshal(wire, decodedResponse); err != nil {
-			return fmt.Errorf("warmup response protobuf decode: %w", err)
+			return nil, fmt.Errorf("warmup response protobuf decode: %w", err)
 		}
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		if err := codec.NewEncoder(io.Discard).Encode(decodedResponse); err != nil {
-			return fmt.Errorf("warmup gateway response encode: %w", err)
+			return nil, fmt.Errorf("warmup gateway response encode: %w", err)
 		}
 	}
-	return ctx.Err()
+	return prepared, ctx.Err()
 }

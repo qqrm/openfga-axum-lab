@@ -1,8 +1,8 @@
 # Browser OpenFGA startup review
 
-Status of this review on 12 November 2026: **approved changes under validation;
-browser acceptance has not passed**. The latest retained test below is commit
-`077452deabadde3c06bce44a49e8e0b4e5c5febf`, run `43318362131`.
+Status of this review on 13 November 2026: **approved changes under validation;
+browser acceptance has not passed**. The latest completed browser gate below is
+commit `23562aca73d2356df493055aa51a3086d688d7e5`, run `43343577131`.
 The Browser preview run for the current PR head is the authority for later
 acceptance results. The initial proposal was prepared against PR #36 head
 `c527f3ca016b317350a29c0dca38c07e7699230b`. The user approved publishing changes
@@ -39,12 +39,15 @@ and adapted executable to the guest.
   the gateway startup self-dial budget from three to 60 seconds, observing
   parent cancellation. Preserve `grpc.WithBlock()`, TLS options and fatal
   startup failure. Record source, patch, compiler and executable provenance.
-- Before opening listeners, exercise real codecs and validation APIs for the
-  exact pinned model in four fresh cycles under one 60-second startup budget,
-  then discard the results. Record per-cycle stage timings.
-  Do not cache validation decisions, perform backend writes, or skip any
-  subsequent real request. Omit unary raw-payload logging work while retaining
-  compact transport metadata and the existing security middleware.
+- Before opening listeners, exercise real codecs and fully validate the exact
+  pinned model once under one 60-second startup budget. Retain only the proven
+  validity of its immutable conditionless schema body. Matching real model
+  writes reuse this validation and still write PostgreSQL; resolver loads create
+  a fresh TypeSystem with the real ID. Full protobuf comparison excludes only
+  the generated model ID; every other model uses the original validator.
+  No datastore state, graph, TypeSystem or authorization decision is cached by
+  this adaptation. Record stage timings. Omit unary raw-payload logging work
+  while retaining compact transport metadata and the security middleware.
 - Supply the adapted executable and current entrypoint through the existing
   host mount, with checksums verified before VM initialization. Use the
   converter's `mr` instruction for a read-only bind mount. Its `m`
@@ -216,9 +219,10 @@ buffer and its flush does not release those compiled-module references.
 performance result. Its subsequent actual build passed, but its browser gate
 failed as recorded below.
 
-The OpenFGA candidate repeats fresh codec/validation work four times under the
-same total 60-second startup budget. No TypeSystem or validation result is cached.
-Every real request remains unchanged. Increasing administrative model RPC budgets
+The earlier OpenFGA candidate repeated fresh codec/validation work four times under the
+same total 60-second startup budget. Neither TypeSystem nor validation results
+were cached by that revision.
+That revision left every real request unchanged. Increasing administrative model RPC budgets
 was rejected as a shortcut: it would require separating authentication/access
 control deadlines, and the first real Check/tuple Write would still load and
 validate the model through the server resolver cache with its original deadline.
@@ -286,6 +290,73 @@ pending-GC guard and non-atomic admission. The exact C postimage is Git blob
 ShellCheck versions, Python/JavaScript syntax and the 13 existing browser
 protocol/payload/error tests passed. Native adapters do not test browser GC,
 pointer-width-dependent TB lookup or actual WASM execution; CI must do that.
+
+## Actual 8192-instance gate and exact-schema cache candidate
+
+[Browser preview 43343577131](https://github.com/qqrm/openfga-axum-lab/actions/runs/43343577131)
+tested `23562aca` and failed with zero passes in both browsers. PostgreSQL and
+OpenFGA migrations completed in both. All six other workflows passed; Pages
+upload and deployment were skipped.
+
+| Browser | Observed failure |
+| --- | --- |
+| Chromium 158.0.8127.18 | Four warmup cycles completed in 53000 ms; self-dial succeeded in 550 ms. Real health and CreateStore succeeded. The model POST reached its unary handler after 2800 ms, exceeded the original five-second client budget and ended cancelled; its handler lasted 7110 ms. Axum did not start. |
+| Firefox 159.0 | The shared startup budget expired in the third cycle's response codec after 60300 ms. No listeners, self-dial, bootstrap or acceptance were reached. |
+
+No page error/OOM was recorded. The evidence ZIP is
+[artifact 14002636348](https://github.com/qqrm/openfga-axum-lab/actions/runs/43343577131/artifacts/14002636348),
+SHA-256 `81fd4e84dbd5c8e6e0fded9767842c6be3f00f3e8d368424e8d8143a12aadbf9`.
+
+A subsequent local Chromium 157 numeric diagnostic used this exact 8192/2048
+WASM and unchanged guest. Throughout the observed OpenFGA warmup, both cores'
+registration/collection totals remained unchanged at the full live budget:
+23552 registered minus 15360 collected = 8192; 5120 were detached pending GC
+and 3072 remained retained. Thousands of actual zero-sleep callbacks occurred.
+The shared warmup deadline expired in the fourth cycle's TypeSystem stage at
+60060 ms, with zero acceptance passes and no page errors. This directly links
+that diagnostic's warmup to blocked JIT admission; it does not prove identical
+counter state in the uninstrumented CI run. Console-window resets replay old
+lines, so replayed events must be deduplicated when interpreting counters.
+
+The next OpenFGA adaptation uses one full startup validation and memoizes only
+the validity of the exact conditionless protobuf schema body. This avoids the
+write-model command's otherwise discarded TypeSystem and repeated schema
+validation in resolver loads. It never shares a TypeSystem or graph: resolver
+loads still call `New` on their real datastore model. Every body mismatch uses
+the complete original validator, including conditional models. Deep cloning,
+unknown-field comparison, independent returned state, cancellation and normal
+fallback require focused regression tests. Successful native checks do not
+establish that remaining graph/JIT costs meet the real browser deadlines.
+
+The full native candidate build passed the startup/transport/warmup package in
+67.317 seconds and the ten focused schema-cache tests in 0.601 seconds. A separate
+isolated run passed all 42 top-level TypeSystem tests (396 including subtests),
+and focused `-race` testing passed. The executable SHA-256 is
+`98e2eabee1ee8861c6e672c043547e7742278bef56cb17254b559fa91df17391`.
+Normal runtime preparation verified this executable and the unchanged emulator,
+data, loader, original arguments and kernel. These are native/build checks;
+real browser acceptance for that candidate was still pending at build time.
+
+A local Chromium 157 run of this exact binary and the unchanged 8192/2048
+emulator then failed with zero passes. Its single warmup completed in 21180 ms
+and self-dial in 450 ms. Real health/CreateStore succeeded, but the model POST
+took 4400 ms before its unary handler and exceeded the original five-second
+operation limit. HTTP ended cancelled after 5180 ms; the unary handler ended
+after 2140 ms with code 2056. Axum did not start. There is no claim that the model
+write committed. No browser page error was recorded. This proves that the
+schema optimization alone is insufficient on that runtime; different runs are
+not a controlled latency comparison.
+
+The accompanying emulator candidate therefore restores the original upstream
+15000 live-instance backstop, while preserving early 2048-per-CPU detachment,
+strict CAS reservation, real GC accounting and compilation/yield thresholds.
+The new C postimage is `8075f1b4ee8569dfda0934d02268d755d5151ef8` and differs
+from the 8192 C postimage by one numerical line. All five native accounting
+scenarios and both negative controls passed at the new bound, including
+14999-to-15000 concurrent admission; patch application/reversal passed.
+This retains a finite count limit and adds allocation headroom after detachment.
+It still cannot guarantee GC scheduling or a safe byte budget. The combined
+candidate needs a new actual emulator build and two real passes per browser.
 
 ## Allocator-debug performance candidate
 
