@@ -1,0 +1,357 @@
+name: Revalidate retained Firefox noirq boot data 43454373832
+on:
+  push:
+    branches: [diag/revalidate-noirq-43454373832]
+    paths: [.github/workflows/revalidate-noirq-evidence.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: revalidate-noirq-43454373832
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/revalidate-noirq-43454373832'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Verify already captured boot data and generated argument handling
+        shell: bash
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, datetime, hashlib, json, math, os, re, stat, tempfile, urllib.error, urllib.request, uuid, zipfile
+          from urllib.parse import urlsplit
+          
+          REPO = "qqrm/openfga-axum-lab"
+          RUN = 43454373832
+          HEAD = "72a26ad324e2a688bba34882f85d2e3e605ece88"
+          SOURCE = "1f10fb8b17cf09ae18b0003fbf0b7e731b91b6aa"
+          M = 1024**2
+          SPECS = [
+              ("boot", RUN, HEAD, "push", 14052637976, "firefox-noirq-boot", 3469860,
+               "55e08e7585d1a9e89ee3148d079450ed5f0f36423956351188c11f6b2cde29ab"),
+              ("emulator", 43402635950, "379e3280c2a1c789071292af141648eb2fc3ffbc", "pull_request",
+               14029511154, "pages-browser-vm-evidence", 260830150,
+               "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e")
+          ]
+          PREFIX = "artifacts/noirq-boot-diagnostic/"
+          MEMBERS = {
+              "summary": (PREFIX + "firefox-summary.json", 4*M),
+              "materialization": (PREFIX + "materialization.json", 4*M),
+              "console": (PREFIX + "firefox-console.txt", M),
+              "stream": (PREFIX + "firefox-stream.jsonl", 64*M),
+              "receipts": (PREFIX + "firefox-receipts.json", 16*M),
+              "startup": ("source-candidate/browser-output/wasm/runtime/startup-manifest.json", 4*M)
+          }
+          def require(ok, message):
+              if not ok:
+                  raise SystemExit(message)
+          def sha(raw):
+              return hashlib.sha256(raw).hexdigest()
+          def record(raw):
+              return {"bytes": len(raw), "sha256": sha(raw)}
+          def finite(value):
+              return type(value) in (int, float) and math.isfinite(value)
+          def timestamp(value):
+              require(isinstance(value, str) and value.endswith("Z"), "Invalid UTC timestamp")
+              return datetime.datetime.fromisoformat(value[:-1] + "+00:00")
+          def js_utf8(value):
+              return value.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def request(suffix):
+              return urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers={
+                  "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
+                  "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "retained-noirq-data-revalidator"})
+          def api(suffix):
+              try:
+                  with opener.open(request(suffix), timeout=20) as response:
+                      raw = response.read(M + 1)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit("GitHub metadata HTTP " + str(error.code)) from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit("GitHub metadata network failure") from None
+              require(len(raw) <= M, "Metadata response exceeded budget")
+              return json.loads(raw)
+          
+          used = 0
+          def emit(label, value):
+              global used
+              line = json.dumps({"label": label, "value": value}, ensure_ascii=True, separators=(",", ":"))
+              require(len(line) <= 12000, "Output record exceeded budget; no silent truncation")
+              used += len(line) + 1
+              require(used <= 160*1024, "Output exceeded 160 KiB")
+              print(line, flush=True)
+          def member(package, name, limit):
+              info = package.getinfo(name)
+              mode = info.external_attr >> 16
+              require(not info.is_dir() and not stat.S_ISLNK(mode) and
+                      stat.S_IFMT(mode) in (0, stat.S_IFREG) and 0 < info.file_size <= limit,
+                      "Invalid selected regular member: " + name)
+              with package.open(info) as part:
+                  raw = part.read(limit + 1)
+              require(len(raw) == info.file_size and len(raw) <= limit, "Member size mismatch: " + name)
+              return raw
+          
+          require(os.environ.get("GITHUB_RUN_ATTEMPT") == "1", "No automatic or manual rerun is part of this reader")
+          stop = uuid.uuid4().hex
+          print("::stop-commands::" + stop, flush=True)
+          try:
+              data = {}
+              for label, run_id, head, event, aid, name, size, digest in SPECS:
+                  run = api("/actions/runs/" + str(run_id))
+                  require(run["id"] == run_id and run["head_sha"] == head and run["status"] == "completed"
+                          and run["conclusion"] == "failure" and run["event"] == event and run["run_attempt"] == 1,
+                          "Pinned completed run identity mismatch")
+                  artifact = api("/actions/artifacts/" + str(aid))
+                  require(artifact["id"] == aid and artifact["name"] == name and not artifact["expired"] and
+                          artifact["workflow_run"]["id"] == run_id and artifact["workflow_run"]["head_sha"] == head and
+                          artifact["size_in_bytes"] == size and artifact["digest"] == "sha256:" + digest,
+                          "Pinned artifact identity mismatch")
+                  try:
+                      opener.open(request("/actions/artifacts/" + str(aid) + "/zip"), timeout=20)
+                      raise SystemExit("Expected artifact redirect")
+                  except urllib.error.HTTPError as error:
+                      require(error.code == 302, "Artifact redirect was not HTTP 302")
+                      location = error.headers.get("Location", "")
+                      error.close()
+                  target = urlsplit(location)
+                  host = target.hostname or ""
+                  require(target.scheme == "https" and target.port in (None, 443) and
+                          target.username is None and target.password is None and
+                          (host.endswith(".blob.core.windows.net") or host.endswith(".actions.githubusercontent.com")),
+                          "Unexpected artifact storage host")
+                  with tempfile.TemporaryFile() as archive:
+                      count, actual = 0, hashlib.sha256()
+                      try:
+                          # The signed storage request deliberately has no GitHub Authorization header.
+                          with opener.open(urllib.request.Request(location), timeout=30) as response:
+                              while block := response.read(M):
+                                  count += len(block)
+                                  require(count <= size, "Archive exceeded pinned size")
+                                  actual.update(block)
+                                  archive.write(block)
+                      except (urllib.error.URLError, TimeoutError):
+                          raise SystemExit("Artifact storage network failure") from None
+                      require(count == size and actual.hexdigest() == digest, "Archive SHA/size mismatch")
+                      archive.seek(0)
+                      with zipfile.ZipFile(archive) as package:
+                          names = package.namelist()
+                          require(len(names) <= 10000 and len(names) == len(set(names)), "Invalid ZIP member count/duplicates")
+                          require(all(not n.startswith("/") and "\\" not in n and "\0" not in n
+                                      and ".." not in n.split("/") for n in names), "Unsafe ZIP member name")
+                          if label == "boot":
+                              for key, (path, limit) in MEMBERS.items():
+                                  data[key] = member(package, path, limit)
+                          else:
+                              data["glue"] = member(package, "artifacts/browser-emulator/out.js", M)
+                  emit("archive", {"role": label, "run": run_id, "head": head, "artifact": aid,
+                                   "bytes": count, "sha256": digest})
+              jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
+              require(jobs["total_count"] == 1 and len(jobs["jobs"]) == 1, "Unexpected source job list")
+              job = jobs["jobs"][0]
+              require(job["id"] == 131984507093 and job["name"] == "Noirq kernel boot (firefox)" and
+                      job["head_sha"] == HEAD and job["run_attempt"] == 1 and
+                      job["status"] == "completed" and job["conclusion"] == "failure", "Source job identity differs")
+              steps = {item["number"]: item for item in job["steps"]}
+              require(all(steps[number]["conclusion"] == "success" for number in range(1, 7)) and
+                      steps[7]["conclusion"] == "failure" and steps[8]["conclusion"] == "success",
+                      "Source preflight/observation/capture outcome differs")
+          
+              summary = json.loads(data["summary"])
+              materialization = json.loads(data["materialization"])
+              startup = json.loads(data["startup"])
+              receipts = json.loads(data["receipts"])
+              for key, value in {
+                  "schemaVersion": 1, "experiment": "firefox_acpi_noirq_boot", "diagnosticOnly": True,
+                  "productionAcceptance": False, "acceptanceVerified": False, "sourceCommit": SOURCE,
+                  "workflowCommit": HEAD, "engine": "firefox", "browser": "159.0", "vmStartRequested": True,
+                  "maxVmStarts": 1, "hostObservationMilliseconds": 300000, "bootObserved": False,
+                  "stopReason": "required_boot_markers_observed", "failure": None, "cleanupError": None,
+                  "pageErrors": [], "scanIndeterminate": False
+              }.items():
+                  require(summary.get(key) == value, "Recorded summary differs: " + key)
+              expected_error = (
+                  "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n"
+                  "+ actual - expected\n\n  [\n+   './this.program',\n"
+                  "    '-nographic',\n    '-m',\n    '512M',\n    '-accel',\n"
+                  "    'tcg,tb-size=500,thread=multi',\n")
+              require(summary.get("validationError") == expected_error, "Unexpected original validation error")
+              require(materialization["sourceCommit"] == SOURCE and materialization["productionAcceptance"] is False
+                      and materialization["hostObservationMilliseconds"] == 300000
+                      and materialization["rootfsUnchanged"] is True, "Materialization identity differs")
+              require(summary["configurationExperiment"] == materialization["configurationExperiment"]
+                      and materialization["configurationExperiment"]["value"] == "acpi=noirq"
+                      and materialization["configurationExperiment"]["engine"] == "firefox"
+                      and materialization["configurationExperiment"]["nativeConfigurationProof"] is False
+                      and materialization["configurationExperiment"]["inverseByteComparison"] is True
+                      and materialization["configurationExperiment"]["changedPaths"] == ["browser-single/pages/launcher.js"],
+                      "Single-variable candidate identity differs")
+              require(materialization["kernelConfig"] == {
+                  "bytes": 75338, "sha256": "fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8"},
+                  "Retained kernel config identity differs")
+              required_config = [
+                  "CONFIG_SYSVIPC=y", "CONFIG_IPC_NS=y", "CONFIG_SMP=y", "CONFIG_X86_LOCAL_APIC=y",
+                  "CONFIG_X86_IO_APIC=y", "CONFIG_HPET_TIMER=y", "CONFIG_ACPI=y", "CONFIG_X86_PM_TIMER=y",
+                  "CONFIG_HZ_100=y", "CONFIG_X86_MPPARSE=y", "# CONFIG_PCI_MSI is not set"]
+              require(materialization["requiredConfig"] == required_config, "Preflight config guard differs")
+          
+              # Prove the one argv0 insertion from exact retained generated bytes, without executing JS.
+              require(record(data["glue"]) == {
+                  "bytes": 279363, "sha256": "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"},
+                  "Generated emulator JS identity differs")
+              glue = data["glue"].decode("utf-8")
+              default = re.search(r"\bthisProgram\s*=\s*['\"]\./this\.program['\"]", glue)
+              call = re.search(r"\bfunction\s+callMain\s*\([^)]*\)\s*\{", glue)
+              require(default is not None and call is not None, "Missing generated default program/callMain")
+              unshift = re.search(r"\bargs\.unshift\s*\(\s*thisProgram\s*\)", glue[call.start():call.start()+3000])
+              require(unshift is not None, "Actual generated callMain does not prepend thisProgram")
+              for key, value in {
+                  "out.js": record(data["glue"]),
+                  "qemu-system-x86_64.wasm": {
+                      "bytes": 41246941, "sha256": "e85450e88a390c3494c9ce4d8fb599c8ed14afd8ae40b48deeee1bc6b3f34c0e"}
+              }.items():
+                  require(materialization["emulator"][key] == value and summary["materialization"]["emulator"][key] == value,
+                          "Observed emulator pair differs")
+              expected = materialization["expectedArguments"]
+              actual_args = summary["actualArguments"]
+              require(isinstance(expected, list) and all(isinstance(value, str) for value in expected)
+                      and "./this.program" not in expected, "Invalid pre-main expected argument array")
+              require(actual_args == ["./this.program"] + expected, "Actual argument delta is not exactly one generated argv0")
+              for option, value in {"-m": "512M", "-smp": "2,sockets=2,cores=1,threads=1",
+                                    "-accel": "tcg,tb-size=500,thread=multi",
+                                    "-netdev": "hubport,id=vmnic,hubid=0"}.items():
+                  require(expected.count(option) == 1 and expected[expected.index(option)+1] == value,
+                          "Expected reviewed emulator option differs: " + option)
+              require(expected.count("-append") == 1, "Unexpected kernel argument array")
+              flags = expected[expected.index("-append")+1].split()
+              require(flags.count("acpi=noirq") == 1 and "--" in flags and
+                      flags.index("acpi=noirq") < flags.index("--") and "acpi=off" not in flags and
+                      "-no-acpi" not in expected and "-no-hpet" not in expected,
+                      "Kernel routing/timer arguments differ")
+          
+              # Replay every original assertion that followed the incorrect argv comparison.
+              guest = summary["guest"]
+              require(isinstance(guest, dict) and "error" not in guest and guest.get("booted") is True,
+                      "Original final guest boot/error assertion failed")
+              vm = guest["vm"]
+              require(vm["cpus"] == 2 and vm["cpuTopology"] == "2,sockets=2,cores=1,threads=1"
+                      and vm["memoryMiB"] == 512 and vm["qemuLiveInstanceLimit"] == 8192
+                      and type(vm["reportedLogicalCPUs"]) is int and vm["reportedLogicalCPUs"] >= 2,
+                      "Original final CPU/memory/instance-limit assertions failed")
+              require(guest["startupManifest"] == startup, "Original full observed startup manifest equality failed")
+              require(record(data["startup"]) == materialization["startupManifest"], "Served manifest bytes differ")
+              require(startup["openfga_build"] == materialization["openfgaBuild"]
+                      and startup["bootstrap_build"] == materialization["bootstrapBuild"]
+                      and startup["files"]["guest.sh"] == materialization["configurationExperiment"]["guest"],
+                      "Original startup payload binding failed")
+              require(guest.get("accepted") is False and guest.get("checks") == 0,
+                      "This boot-only observation unexpectedly contains acceptance")
+              elapsed = summary["observationElapsedMilliseconds"]
+              require(finite(elapsed) and 0 <= elapsed <= 300000, "Original host observation exceeded 300 seconds")
+              start = timestamp(summary["startedAt"])
+              finish = timestamp(summary["finishedAt"])
+              require(0 <= (finish-start).total_seconds() <= 322, "Recorded capture/cleanup completion exceeds its bounds")
+              require(summary["harnessSha256"] == "a39b67a1bfc60f88593b6e808260ccce7383d5971500aa457e73cc3ec1272e05"
+                      and summary["logModuleSha256"] == "e72050060b35555d47557231e028ae0287e7a76175a902fe78d0fc340a55b257",
+                      "Original harness/capture source identity differs")
+          
+              for key, name, expected_record in [
+                  ("console", "firefox-console.txt", {"bytes": 28830, "sha256": "94b3f317717fb9147974e32f45ad39e810e1fe0339e79da66d8946aebb924f76"}),
+                  ("stream", "firefox-stream.jsonl", {"bytes": 446833, "sha256": "37efd57d2880a6a344dd063194a29b922015ddd3ba5b2afff5244bb5f149b73f"}),
+                  ("receipts", "firefox-receipts.json", {"bytes": 257889, "sha256": "928a6123e0cb36f5a437da52015bfbcd065cfe36385d3e443c1c73b7948091c7"})
+              ]:
+                  require(record(data[key]) == expected_record and summary["files"][name] == expected_record,
+                          "Captured member hash/size differs: " + name)
+              require(receipts["format"] == "host-batch-receipts-v1" and receipts["columns"] ==
+                      ["firstSequence", "chunks", "hostElapsedMilliseconds"], "Receipt timeline schema differs")
+              receipt_rows = receipts["records"]
+              stream_lines = data["stream"].decode("utf-8").split("\n")
+              require(stream_lines[-1] == "" and len(stream_lines)-1 == len(receipt_rows) <= 100000,
+                      "Stream/receipt batch counts differ")
+              texts, chunks, encoded_bytes, previous_ms = [], 0, 0, -1
+              batches = []
+              for index, line in enumerate(stream_lines[:-1]):
+                  batch = json.loads(line)
+                  values = batch.get("texts")
+                  require(type(batch.get("firstSequence")) is int and batch["firstSequence"] == chunks+1
+                          and isinstance(values, list) and len(values) > 0, "Noncontiguous captured stream")
+                  timestamp(batch["receivedAt"])
+                  row = receipt_rows[index]
+                  require(isinstance(row, list) and len(row) == 3 and
+                          row[0] == batch["firstSequence"] and row[1] == len(values)
+                          and finite(row[2]) and previous_ms <= row[2] <= elapsed+10000,
+                          "Receipt does not identify the corresponding captured batch")
+                  previous_ms = row[2]
+                  for value in values:
+                      require(isinstance(value, str), "Non-string captured chunk")
+                      chunks += 1
+                      encoded_bytes += len(js_utf8(value))
+                      require(chunks <= 1000000 and encoded_bytes <= 16*M, "Captured stream exceeded bounds")
+                      texts.append(value)
+                  batches.append(batch)
+              require(js_utf8("".join(texts)) == data["console"], "Full stream does not reconstruct exact console bytes")
+              capture = summary["logCapture"]
+              require(capture == {
+                  "format": "browser-lab-log-batches-v1", "complete": True, "chunks": chunks,
+                  "batches": len(batches), "bytes": encoded_bytes, "expectedSequence": chunks},
+                  "Original complete capture/count/cutoff assertion failed")
+              require(summary["receiptBatches"] == len(batches), "Receipt summary count differs")
+              markers = summary["markers"]
+              patterns = {
+                  "onlineCPUs": r"\[browser-guest\] confirmed online CPUs: 0-1$",
+                  "serviceCPUs": r"\[browser-guest\] confirmed service CPU availability: 0-1$",
+                  "hpet": r"clocksource: Switched to clocksource hpet$",
+                  "rootfs": r"VFS: Mounted root \(iso9660 filesystem\) readonly on device 254:0\.$"
+              }
+              require(set(markers) == set(patterns), "Missing or unexpected required boot markers")
+              batch_lookup = {row[0]: row for row in receipt_rows}
+              console = data["console"].decode("utf-8")
+              console_lines = console.replace("\r", "").split("\n")
+              require("LAB|boot" in console_lines, "Missing raw original boot marker")
+              for name, pattern in patterns.items():
+                  marker = markers[name]
+                  require(re.search(pattern, marker["line"]) is not None and marker["line"] in console_lines,
+                          "Recorded marker is not present in complete console: " + name)
+                  row = batch_lookup.get(marker["firstSequence"])
+                  require(row is not None and row[1] == marker["chunks"]
+                          and row[2] == marker["hostElapsedMilliseconds"] and 0 <= row[2] <= elapsed <= 300000,
+                          "Marker host receipt/timing does not match capture: " + name)
+                  timestamp(marker["receivedAt"])
+          
+              emit("generated_glue", {"file": record(data["glue"]),
+                  "default_program_excerpt": glue[max(0, default.start()-50):default.end()+70],
+                  "call_main_excerpt": glue[call.start():call.start()+min(800, unshift.end()+100)],
+                  "artifact_code_executed": False})
+              emit("arguments", {"expected_before_generated_callMain": expected, "actual_after_callMain": actual_args,
+                                "only_delta": "one generated ./this.program argv0"})
+              emit("integrity", {"members": {key: record(value) for key, value in data.items()},
+                  "capture": capture, "receipt_batches": len(receipt_rows),
+                  "full_console_reconstructed": True, "full_observed_startup_manifest_equal": True,
+                  "actual_config_guards_passed_in_original_preflight": required_config})
+              emit("boot_evidence", {"original_run": RUN, "original_head": HEAD, "original_conclusion": "failure",
+                  "original_validation_error": summary["validationError"], "original_bootObserved": summary["bootObserved"],
+                  "guest_booted": guest["booted"], "vm": vm, "markers": markers,
+                  "optional_observations": summary["optionalObservations"],
+                  "startedAt": summary["startedAt"], "finishedAt": summary["finishedAt"],
+                  "observationElapsedMilliseconds": elapsed, "pageErrors": summary["pageErrors"],
+                  "cleanupError": summary["cleanupError"], "recorded_boot_conditions_validated_with_generated_argv0": True,
+                  "productionAcceptance": False, "acceptanceVerified": False, "checks": guest["checks"],
+                  "scope": "Data-only revalidation of one already captured boot; no repeat VM, backend request or authorization proof"})
+              encoded = base64.b64encode(data["console"]).decode("ascii")
+              emit("console", {**record(data["console"]), "encoded_characters": len(encoded), "part_size": 5000})
+              for offset in range(0, len(encoded), 5000):
+                  emit("console_part", {"index": offset//5000, "offset": offset, "base64": encoded[offset:offset+5000]})
+              emit("console_end", {"parts": (len(encoded)+4999)//5000, "encoded_characters": len(encoded),
+                                   **record(data["console"])})
+              emit("finished", {"data_revalidation": "passed", "source_workflow_conclusion_preserved": "failure",
+                                "productionAcceptance": False, "acceptanceVerified": False, "output_bytes_before_final": used})
+          finally:
+              print("::" + stop + "::", flush=True)
+          PY
