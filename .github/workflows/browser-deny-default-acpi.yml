@@ -1,21 +1,21 @@
-name: Real browser bootstrap deny probe with ACPI noirq
+name: Real browser bootstrap deny probe with default ACPI
 on:
   push:
-    branches: [diag/browser-deny-noirq-543a]
+    branches: [diag/browser-deny-default-acpi-e381]
     paths:
-      - .github/workflows/browser-deny-noirq.yml
-      - diagnostics/prepare-deny-noirq-browser.mjs
-      - diagnostics/check-deny-noirq-browser.mjs
+      - .github/workflows/browser-deny-default-acpi.yml
+      - diagnostics/prepare-deny-default-acpi-browser.mjs
+      - diagnostics/check-deny-default-acpi-browser.mjs
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: browser-deny-noirq-543a
+  group: browser-deny-default-acpi-e381
   cancel-in-progress: false
 jobs:
   browser:
-    name: Bootstrap deny/noirq browser gate (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-deny-noirq-543a'
+    name: Bootstrap deny/default-ACPI browser gate (${{ matrix.engine }})
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/browser-deny-default-acpi-e381'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 543a2af2ddabd48002ebc57bebf95694c95438d7
+          ref: e381339f80dd76777ef526b0073dc5eb34739f26
           fetch-depth: 2
           path: source-candidate
           persist-credentials: false
@@ -132,7 +132,7 @@ jobs:
           require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
           jobs = api("/actions/runs/" + str(current_run) + "/jobs?filter=latest&per_page=100")
           require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
-          job_name = "Bootstrap deny/noirq browser gate (" + engine + ")"
+          job_name = "Bootstrap deny/default-ACPI browser gate (" + engine + ")"
           matching = [job for job in jobs["jobs"] if job["name"] == job_name]
           require(len(matching) == 1, "Expected exactly one current matrix job")
           job = matching[0]
@@ -284,9 +284,9 @@ jobs:
       - name: Run the unchanged production materializer and verify preserved application segments
         timeout-minutes: 3
         run: |
-          node --check diagnostics/prepare-deny-noirq-browser.mjs
-          node --check diagnostics/check-deny-noirq-browser.mjs
-          node diagnostics/prepare-deny-noirq-browser.mjs
+          node --check diagnostics/prepare-deny-default-acpi-browser.mjs
+          node --check diagnostics/check-deny-default-acpi-browser.mjs
+          node diagnostics/prepare-deny-default-acpi-browser.mjs
       - name: Install the locked test runtime for this engine
         working-directory: source-candidate/e2e
         timeout-minutes: 3
@@ -299,14 +299,14 @@ jobs:
         timeout-minutes: 25
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
-        run: node diagnostics/check-deny-noirq-browser.mjs
+        run: node diagnostics/check-deny-default-acpi-browser.mjs
       - name: Retain full browser evidence and exact input provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: browser-deny-noirq-${{ matrix.engine }}
+          name: browser-deny-default-acpi-${{ matrix.engine }}
           path: |
-            artifacts/deny-noirq-browser-gate/
+            artifacts/deny-default-acpi-browser-gate/
             prepared/*-archive-provenance.json
             prepared/job-timing.json
             prepared/native-evidence/

@@ -5,12 +5,12 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '543a2af2ddabd48002ebc57bebf95694c95438d7';
+const sourceCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
 const nativeProducerCommit = 'e381339f80dd76777ef526b0073dc5eb34739f26';
 const bootstrapCoreCommit = '207d15fab685d3adb9c5d51a048982c2236ae75c';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
-const evidence = path.resolve('artifacts/deny-noirq-browser-gate');
+const evidence = path.resolve('artifacts/deny-default-acpi-browser-gate');
 const runtime = path.join(source,'browser-output/wasm/runtime');
 const readJSON = async filename => JSON.parse(await fs.readFile(filename,'utf8'));
 const fileRecord = async filename => {
@@ -90,25 +90,16 @@ const fixtureFiles = {
   }
 };
 const launcherPath = 'browser-single/pages/launcher.js';
-assert.equal(command('git',['rev-parse','HEAD^'],{stdio:'pipe'}).trim(),nativeProducerCommit);
-const changedPaths = command('git',['diff','--name-only',nativeProducerCommit,'HEAD'],{stdio:'pipe'}).trim().split('\n');
-assert.deepEqual(changedPaths,[launcherPath],'The candidate must change only the reviewed kernel argument mapping');
-const baselineLauncher = command('git',['show',nativeProducerCommit+':'+launcherPath],{stdio:'pipe',encoding:null});
-assert(Buffer.isBuffer(baselineLauncher));
-const launcher = await fs.readFile(path.join(source,launcherPath));
-const replacements = [
-  ["kernelFlags.filter(flag => flag !== 'slub_debug=F' && flag !== 'acpi=off')",
-   "kernelFlags.filter(flag => flag !== 'slub_debug=F')"],
-  [".map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag).join(' ');",
-   ".map(flag => flag === 'loglevel=0' ? 'loglevel=7' : flag === 'acpi=off' ? 'acpi=noirq' : flag).join(' ');"]
-];
-let inverse = launcher.toString('utf8');
-for (const [before,after] of replacements) {
-  assert.equal(inverse.split(after).length,2,'Expected one exact reviewed launcher replacement');
-  inverse = inverse.replace(after,()=>before);
-}
-assert.deepEqual(Buffer.from(inverse),baselineLauncher,'Reversing only two reviewed lines must restore the exact parent');
-assert.equal(command('git',['hash-object','--',launcherPath],{stdio:'pipe'}).trim(),'ea8e9a477a48b41d4137ad38b322977fd65dbda0');
+assert.equal(sourceCommit,nativeProducerCommit,'This diagnostic must use the exact native producer source');
+const expectedLauncher = {
+  gitBlob:'30c578771b85f7eb5f5adc15f94fd72142c21c7d',mode:'100644',
+  bytes:10715,sha256:'055204abad48a78914c7322b9692b972f68fc06522578d7994f3b3fa38d83bd0'
+};
+assert.equal(command('git',['rev-parse','HEAD:'+launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
+assert.equal(command('git',['hash-object','--',launcherPath],{stdio:'pipe'}).trim(),expectedLauncher.gitBlob);
+assert.equal(command('git',['ls-tree','HEAD','--',launcherPath],{stdio:'pipe'}).split(' ')[0],expectedLauncher.mode);
+const launcherRecord = await fileRecord(path.join(source,launcherPath));
+assert.deepEqual(launcherRecord,{bytes:expectedLauncher.bytes,sha256:expectedLauncher.sha256});
 for (const [name,expected] of Object.entries(fixtureFiles)) {
   assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),expected.gitBlob,
     'Reviewed production runtime file changed: '+name);
@@ -124,14 +115,13 @@ for (const [name,blob] of Object.entries({
   'tools/bootstrap_tests.rs':'f5b5e56b04f9d8dd518228f84b7470b9949c65ca'
 })) assert.equal(command('git',['hash-object','--',name],{stdio:'pipe'}).trim(),blob);
 const configurationExperiment = {
-  bootstrap:'one_real_higher_consistency_ownership_deny',kernelIRQ:'acpi=noirq',
+  bootstrap:'one_real_higher_consistency_ownership_deny',kernelIRQ:'default_acpi',
   runtimeSource:sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
-  nativeKernelRoutingProof:false,inverseByteComparison:true,changedPaths,
-  baselineLauncher:{bytes:baselineLauncher.length,sha256:createHash('sha256').update(baselineLauncher).digest('hex')},
-  candidateLauncher:{bytes:launcher.length,sha256:createHash('sha256').update(launcher).digest('hex')},
+  runtimeSourceMatchesNativeProducer:true,launcherIdentityVerified:true,
+  launcher:launcherRecord,launcherGitBlob:expectedLauncher.gitBlob,launcherMode:expectedLauncher.mode,
   guest:await fileRecord(path.join(source,'browser-single/pages/guest.sh')),
   unchangedAuthorizationDeadlines:true,unchangedModelAndRootfs:true,
-  scope:'Native-proven initial deny probe with one separately observed kernel routing change'
+  scope:'Native-proven initial deny probe with unchanged production ACPI routing'
 };
 
 const archives = {};
@@ -458,7 +448,7 @@ assert.deepEqual(startup.bootstrap_build,bootstrapBuild);
 assert.deepEqual(startup.files['runtime/openfga'],openfgaBinary);
 assert.deepEqual(startup.files['runtime/bootstrap'],bootstrapBinary);
 assert.deepEqual(startup.files['guest.sh'],configurationExperiment.guest);
-assert.deepEqual(await fileRecord(path.join(source,'browser-output/wasm/launcher.js')),configurationExperiment.candidateLauncher);
+assert.deepEqual(await fileRecord(path.join(source,'browser-output/wasm/launcher.js')),configurationExperiment.launcher);
 assert.deepEqual(startup.emulator_build,emulator);
 assert.deepEqual(Object.keys(startup.files).sort(),
   ['guest.sh','entrypoint.sh','runtime/openfga','runtime/bootstrap'].sort());
@@ -474,7 +464,7 @@ for (const name of ['browser-single/prepare-pages.sh','browser-single/check-page
   sourceFiles[name] = await fileRecord(path.join(source,name));
 }
 const proof = {
-  schemaVersion:1,experiment:'bootstrap_real_deny_and_noirq',diagnosticOnly:true,
+  schemaVersion:1,experiment:'bootstrap_real_deny_default_acpi',diagnosticOnly:true,
   modelExplorerBuildVerified:false,sourceCommit,nativeProducerCommit,bootstrapCoreCommit,
   sourceFiles,fixtureFiles,configurationExperiment,archives,nativeVerification,
   retainedRuntimeSource:'379e3280c2a1c789071292af141648eb2fc3ffbc',
@@ -487,7 +477,7 @@ const proof = {
   openfgaBuild:openfga,openfgaBinary,bootstrapBuild:startup.bootstrap_build,
   executions:{initialBootstrap:'/tmp/browser-lab-runtime/bootstrap',
     probe:'/usr/local/bin/lab-tool',acceptance:'/usr/local/bin/lab-tool'},
-  expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi',kernelIRQ:'acpi=noirq'},
+  expectedRuntimeConfiguration:{virtualCPUs:2,memoryMiB:512,accel:'tcg,tb-size=500,thread=multi',kernelIRQ:'default_acpi'},
   authorizationDeadlinesChanged:false
 };
 await fs.writeFile(path.join(evidence,'materialization.json'),JSON.stringify(proof,null,2)+'\n');
