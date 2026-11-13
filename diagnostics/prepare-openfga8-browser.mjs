@@ -5,7 +5,7 @@ import {createReadStream, promises as fs} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const sourceCommit = '501cfc2535f09826550aae97225fa5cbda86f08d';
+const sourceCommit = 'b267fefdba375395d496e6d89413786c048c70d2';
 const source = path.resolve('source-candidate');
 const prepared = path.resolve('prepared');
 const evidence = path.resolve('artifacts/openfga8-browser-gate');
@@ -168,6 +168,71 @@ for (const [key,name] of Object.entries(sourceBindings)) {
 const raceLog = await fileRecord(path.join(openfgaDirectory,'model-reuse-race-tests.log'));
 assert(raceLog.bytes>0);
 assert.equal(openfga.model_reuse_race_tests_sha256,raceLog.sha256,'Race log hash differs');
+// The successful native retry reuses the exact Go-tested output from step 7.
+const originPath = path.join(nativeRoot,'openfga8-retained-origin.json');
+const originRecord = await fileRecord(originPath);
+assert.equal(inputs.retainedOpenfgaOriginSha256,originRecord.sha256,'Retained origin is not bound to current native input');
+const origin = await readJSON(originPath);
+for (const [key,value] of Object.entries({
+  schema_version:1,source_run:43440821229,source_job:131937646033,
+  source_workflow_commit:'84112f7373df40dc767d7f10fbea453720651f0e',
+  source_commit:'501cfc2535f09826550aae97225fa5cbda86f08d',
+  source_run_attempt:1,source_run_conclusion:'failure',
+  artifact:14047585163,artifact_name:'browser-openfga8-native-evidence',
+  browser_acceptance_verified:false
+})) assert.equal(origin[key],value,'Retained Go origin differs: '+key);
+assert.deepEqual(origin.archive,{bytes:20612111,sha256:'45fda236fb2dc536d0c437e38230a18f8a19fc09b8b7fca6807cc76f65fc094f'});
+assert.equal(origin.openfga_build_step.number,7);
+assert.equal(origin.openfga_build_step.name,'Build and regression-test the actual combined OpenFGA producer');
+assert.equal(origin.openfga_build_step.conclusion,'success');
+const goStarted = Date.parse(origin.openfga_build_step.started_at);
+const goCompleted = Date.parse(origin.openfga_build_step.completed_at);
+assert(Number.isFinite(goStarted) && Number.isFinite(goCompleted) && goCompleted>=goStarted);
+assert.deepEqual(origin.source_verification,{
+  producer_commit:sourceCommit,retained_source_commit:origin.source_commit,
+  upstream_commit:'293893b22a53d8a130a5f7c97cab4bc8e91bcaa4',
+  unchanged_files_except_bootstrap_producer:true
+});
+assert.equal(origin.permissions_regression_fixture.directory_mode,'0700');
+assert.equal(origin.permissions_regression_fixture.binary_mode,'0555');
+assert.equal(origin.permissions_regression_fixture.historical_mode_not_inferred,true);
+assert(Number.isSafeInteger(origin.permissions_regression_fixture.owner_uid) && origin.permissions_regression_fixture.owner_uid>=0);
+const oldInputPath = path.join(nativeRoot,'openfga8-retained-verifier-input.json');
+const oldInputRecord = await fileRecord(oldInputPath);
+assert.deepEqual(oldInputRecord,{bytes:998,sha256:'fcb7a8aa0db087f6489c691d982dd1fb205244e4e99965654fcc3a41e6093e1c'});
+assert.deepEqual(origin.verifier_input,oldInputRecord);
+assert.deepEqual(origin.members['openfga8-verifier-input.json'],oldInputRecord);
+const oldInputs = await readJSON(oldInputPath);
+assert.equal(oldInputs.producerSource,origin.source_commit);
+assert.equal(oldInputs.workflowCommit,origin.source_workflow_commit);
+assert.equal(oldInputs.runId,String(origin.source_run));
+assert.equal(oldInputs.runAttempt,'1');
+for (const name of inputFiles.filter(name=>name!=='browser-single/bootstrap/build.sh')) {
+  assert.equal(oldInputs.sourceSha256[name],inputs.sourceSha256[name],'Retained service/proof source changed: '+name);
+}
+const retainedFiles = ['LICENSE','SOURCE.txt','build.json','openfga','startup-dial.patch',
+  'browser_http_dial.go','browser_http_warmup.go','browser_model_validation.go','browser_model_validation_test.go',
+  'browser_model_codec.go','browser_model_codec_test.go','browser_model_codec_integration_test.go',
+  'browser_write_typesystem_test.go','browser_resolver_transfer_integration_test.go',
+  'dial-tests.log','model-validation-tests.log','write-typesystem-tests.log','model-reuse-race-tests.log'];
+assert.deepEqual((await fs.readdir(openfgaDirectory)).sort(),retainedFiles.slice().sort());
+assert.deepEqual(Object.keys(origin.members).filter(name=>name.startsWith('browser-openfga/')).sort(),
+  retainedFiles.map(name=>'browser-openfga/'+name).sort());
+for (const name of retainedFiles) {
+  const actual = name==='openfga' ? openfgaBinary : name==='model-reuse-race-tests.log' ? raceLog
+    : await fileRecord(path.join(openfgaDirectory,name));
+  assert.deepEqual(origin.members['browser-openfga/'+name],actual,'Retained Go output/log changed: '+name);
+}
+assert.deepEqual(openfgaBinary,{bytes:63066296,sha256:'5204b54bed6c9b74afd2517eb82117b1e91befcee8d1c2c709a554d20ad9ee5f'});
+assert.deepEqual(origin.members['browser-openfga/build.json'],
+  {bytes:2743,sha256:'d7f903c286657d193eddee5b4bf98ccdc2a56431f1924d7b456555fd506d6315'});
+assert.equal(raceLog.sha256,'6ff7585a2ca3f1d6d8df82009e906b3e01b14db23a1296697fba4bb2d5705253');
+const retainedOpenfgaOrigin = {
+  file:originRecord,sourceRun:origin.source_run,sourceJob:origin.source_job,
+  sourceCommit:origin.source_commit,workflowCommit:origin.source_workflow_commit,
+  artifact:origin.artifact,archive:origin.archive,goBuildStep:origin.openfga_build_step,
+  actualOutputsAndLogsUnchanged:true,historicalDirectoryModeInferred:false
+};
 const bootstrapDirectory = path.join(source,'artifacts/browser-bootstrap');
 const bootstrapBuild = await readJSON(path.join(bootstrapDirectory,'build.json'));
 const bootstrapBinary = await fileRecord(path.join(bootstrapDirectory,'bootstrap'));
@@ -213,7 +278,7 @@ const nativeVerification = {
   run:nativeArchive.run,head:nativeArchive.head,producerSource:sourceCommit,
   evidenceArtifact:nativeArchive.artifact,bootstrapArtifact:bootstrapArchive.artifact,
   openfgaBinary,openfgaBuild:await fileRecord(path.join(openfgaDirectory,'build.json')),
-  raceLog,nativeProof:await fileRecord(nativeProofPath),bootstrapBinary,
+  raceLog,retainedOpenfgaOrigin,nativeProof:await fileRecord(nativeProofPath),bootstrapBinary,
   sourceBindings,browserAcceptanceVerified:false
 };
 assert.deepEqual(previousStartup.emulator_build,emulator);
