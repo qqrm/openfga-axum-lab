@@ -38,15 +38,22 @@ if [[ $# -ne 2 ]]; then
 fi
 core_dir=$(realpath -- "$1")
 fixture_dir=$(realpath -- "$2")
-core_commit=53ff85cfdd3d84c26ae432189790e1e0f72d61db
-fixture_commit=d7f7ead003c774e30584798adfde38afb854528d
+core_commit=64d6fb4614b6674284a32cee2f4f84179dfb2a2f
+fixture_commit=325b650f4c9e5a7611d3773dc599e06e7ef133fc
 test "$(git -C "$core_dir" rev-parse HEAD)" = "$core_commit"
 test "$(git -C "$fixture_dir" rev-parse HEAD)" = "$fixture_commit"
 git -C "$core_dir" diff --exit-code HEAD --
 git -C "$fixture_dir" diff --exit-code HEAD --
-test "$(git -C "$core_dir" hash-object tools/bootstrap.rs)" = a38ba1e8f792e7c0ed019c92f0ffd08a5d74a7a3
-test "$(git -C "$core_dir" hash-object tools/bootstrap_tests.rs)" = f5b5e56b04f9d8dd518228f84b7470b9949c65ca
-for relative in tools/bootstrap.rs tools/bootstrap_tests.rs Cargo.toml Cargo.lock browser-single/Dockerfile fga/model.json; do
+test "$(git -C "$core_dir" hash-object tools/bootstrap.rs)" = 3905824abaa53f9df080615978debc5e26300a5a
+test "$(git -C "$core_dir" hash-object tools/bootstrap_tests.rs)" = 74d9715a34137214d521152e78b376d37c76ffeb
+# Only the separately built bootstrap overlay opts into the new deny probe.
+# Keep the main CLI source at its reviewed pre-probe bytes.
+test "$(git -C "$repo_root" hash-object tools/bootstrap.rs)" = a38ba1e8f792e7c0ed019c92f0ffd08a5d74a7a3
+test "$(git -C "$repo_root" hash-object tools/bootstrap_tests.rs)" = f5b5e56b04f9d8dd518228f84b7470b9949c65ca
+for relative in tools/bootstrap.rs tools/bootstrap_tests.rs; do
+    cmp "$core_dir/$relative" "$fixture_dir/$relative"
+done
+for relative in Cargo.toml Cargo.lock browser-single/Dockerfile fga/model.json; do
     cmp "$core_dir/$relative" "$repo_root/$relative"
     cmp "$core_dir/$relative" "$fixture_dir/$relative"
 done
@@ -198,7 +205,7 @@ timeout --kill-after=15s 900s docker run --rm --name native-bootstrap-rust-tests
     --label "io.authzlab.native-bootstrap-run=$bootstrap_run_id" "$test_image" cargo test --release --locked \
     --no-default-features --features http --bin lab-tool bootstrap::tests -- --nocapture \
     2>&1 | tee "$proof_dir/unit-tests.log"
-grep -Fq 'test result: ok. 19 passed; 0 failed;' "$proof_dir/unit-tests.log"
+grep -Fq 'test result: ok. 25 passed; 0 failed;' "$proof_dir/unit-tests.log"
 
 cd "$bootstrap_workdir"
 BROWSER_BOOTSTRAP_OPENFGA_SHA256="$openfga_sha" \
@@ -224,11 +231,35 @@ const read = (directory, name) => readFileSync(path.join(directory, name), 'utf8
 const digest = filename => createHash('sha256').update(readFileSync(filename)).digest('hex');
 const proof = JSON.parse(read(evidence, 'native-result.json'));
 const image = read(evidence, 'image-id.txt').trim();
-const fixedSource = '53ff85cfdd3d84c26ae432189790e1e0f72d61db';
-const fixture = 'd7f7ead003c774e30584798adfde38afb854528d';
+const fixedSource = '64d6fb4614b6674284a32cee2f4f84179dfb2a2f';
+const fixture = '325b650f4c9e5a7611d3773dc599e06e7ef133fc';
 assert(proof.passed === true && proof.image_id === image &&
     proof.source_commit === fixedSource && proof.packaging_commit === fixture &&
     proof.browser_acceptance_verified === false, 'Native proof identity differs');
+assert.deepEqual(proof.default_failures.map(item => item.phase), ['default-post', 'default-get']);
+for (const item of [...proof.default_failures, proof.empty_store_check_deadline_failure]) {
+    assert.equal(item.exit, 1, 'A delayed ordinary request must fail');
+    assert.equal(item.config_published, false, 'A failed request must not publish a binding');
+    assert.equal(item.response_still_withheld, true, 'The response must still be delayed at failure');
+    assert(item.elapsed_ms >= 4500 && item.elapsed_ms < 6000, 'The original five-second limit changed');
+}
+assert.equal(proof.empty_store_check_deadline_failure.phase, 'check-deadline');
+assert.equal(proof.delayed_empty_store_check_seconds, 6);
+assert.equal(proof.actual_postgres_model_count, 4);
+assert.equal(proof.actual_postgres_tuple_count_before_app, 0);
+for (const check of [proof.empty_store_check, proof.empty_store_check_deadline_failure.real_check]) {
+    assert.equal(check.request_count, 1, 'Exactly one real Check is required');
+    assert.equal(check.status, 200);
+    assert.equal(check.allowed, false, 'The real new store must deny ownership');
+    assert.equal(check.consistency, 'HIGHER_CONSISTENCY');
+    assert.equal(check.tuple_count_before, 0);
+    assert.deepEqual(check.tuple_key, {
+        user: 'user:browser-bootstrap-probe', relation: 'ownership',
+        object: 'lakekeeper_table:browser-bootstrap-probe'
+    });
+    assert.match(check.store_id, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.match(check.authorization_model_id, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+}
 assert.equal(proof.native_passes.length, 2, 'Two genuine native sequences are required');
 for (const item of proof.native_passes) {
     assert.equal(item.accepted, true, 'Original native acceptance failed');
@@ -262,9 +293,12 @@ const metadata = {
     timeout_scope: 'bootstrap_model_post_and_get',
     default_model_timeout_seconds: 5, min_model_timeout_seconds: 5,
     max_model_timeout_seconds: 30, browser_model_timeout_seconds: 30,
+    empty_store_check: 'one_real_higher_consistency_ownership_deny',
+    empty_store_check_default: false, browser_empty_store_check: true,
+    empty_store_check_timeout_seconds: 5, empty_store_check_tests: 'passed',
     native_tests: 'passed', native_test_log_sha256: digest(path.join(output, 'native-tests.log')),
     packaging_commit: fixture, native_proof_sha256: digest(path.join(evidence, 'native-result.json')),
-    proof_semantics_origin_commit: 'a0f9f9d08eca434ec2b03f756cf4bf5c08a0cb3b',
+    proof_semantics_origin_commit: 'c8cf8630d86712567935e064dabd8b437640c8c6',
     native_harness_runtime: 'node',
     expected_openfga_sha_input: 'required_verified_build_metadata',
     native_harness_sha256: digest(path.join(evidence, 'native-proof.mjs')),
@@ -280,6 +314,7 @@ writeFileSync(path.join(output, 'SOURCE.txt'),
     'Reviewed entrypoint fixture: ' + fixture + '\n' +
     'Tested native image: ' + image + '\n' +
     'Versioned Node producer/proof hashes are recorded in build.json.\n' +
-    'The retained rootfs probe and acceptance executables are not replaced.\n');
+    'The retained rootfs probe and acceptance executables are not replaced.\n' +
+    'The opt-in empty-store Check requires a real deny with the original five-second client limit.\n');
 console.log(JSON.stringify(metadata));
 NODE

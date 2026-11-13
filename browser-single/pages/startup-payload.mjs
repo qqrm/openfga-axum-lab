@@ -1,9 +1,9 @@
 const startupFiles = ['guest.sh', 'entrypoint.sh', 'runtime/openfga', 'runtime/bootstrap'];
-const bootstrapSourceCommit = '53ff85cfdd3d84c26ae432189790e1e0f72d61db';
+const bootstrapSourceCommit = '64d6fb4614b6674284a32cee2f4f84179dfb2a2f';
 const sha256Pattern = /^[0-9a-f]{64}$/;
 
-// One reviewed native CLI supplies only initial model provisioning. The
-// archived rootfs CLI remains the probe and acceptance authority.
+// One reviewed native CLI supplies initial provisioning and its opt-in deny
+// Check. The archived rootfs CLI remains the probe and acceptance authority.
 export function validateBootstrapBuild(build, entry) {
   if (!build || typeof build !== 'object' || Array.isArray(build) ||
       build.schema_version !== 1 || build.source_commit !== bootstrapSourceCommit ||
@@ -11,6 +11,9 @@ export function validateBootstrapBuild(build, entry) {
       build.timeout_scope !== 'bootstrap_model_post_and_get' ||
       build.default_model_timeout_seconds !== 5 || build.min_model_timeout_seconds !== 5 ||
       build.max_model_timeout_seconds !== 30 || build.browser_model_timeout_seconds !== 30 ||
+      build.empty_store_check !== 'one_real_higher_consistency_ownership_deny' ||
+      build.empty_store_check_default !== false || build.browser_empty_store_check !== true ||
+      build.empty_store_check_timeout_seconds !== 5 || build.empty_store_check_tests !== 'passed' ||
       build.native_tests !== 'passed' ||
       !sha256Pattern.test(build.dockerfile_sha256 ?? '') ||
       !sha256Pattern.test(build.cargo_lock_sha256 ?? '') ||

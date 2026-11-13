@@ -79,6 +79,11 @@ try {
       assert.equal(first.startupManifest.bootstrap_build.timeout_scope,'bootstrap_model_post_and_get');
       assert.equal(first.startupManifest.bootstrap_build.default_model_timeout_seconds,5);
       assert.equal(first.startupManifest.bootstrap_build.browser_model_timeout_seconds,30);
+      assert.equal(first.startupManifest.bootstrap_build.empty_store_check,'one_real_higher_consistency_ownership_deny');
+      assert.equal(first.startupManifest.bootstrap_build.empty_store_check_default,false);
+      assert.equal(first.startupManifest.bootstrap_build.browser_empty_store_check,true);
+      assert.equal(first.startupManifest.bootstrap_build.empty_store_check_timeout_seconds,5);
+      assert.equal(first.startupManifest.bootstrap_build.empty_store_check_tests,'passed');
       assert.equal(first.vm?.kernelLogLevel,7);
       assert.ok(Number.isSafeInteger(first.vm?.reportedLogicalCPUs) && first.vm.reportedLogicalCPUs >= 2);
       assert.equal(first.startupManifest.openfga_build.warmup_cycles,1);

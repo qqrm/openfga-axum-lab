@@ -61,6 +61,7 @@ bash -n "$output/entrypoint.sh"
 node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {validateBootstrapBuild} from './browser-single/pages/startup-payload.mjs';
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -106,8 +107,21 @@ const bootstrap = JSON.parse(readFileSync('browser-output/wasm/runtime/bootstrap
 validateBootstrapBuild(bootstrap,files['runtime/bootstrap']);
 assert.equal(bootstrap.dockerfile_sha256,digest('browser-single/Dockerfile'));
 assert.equal(bootstrap.cargo_lock_sha256,digest('Cargo.lock'));
-assert.equal(bootstrap.bootstrap_source_sha256,digest('tools/bootstrap.rs'));
-assert.equal(bootstrap.bootstrap_tests_sha256,digest('tools/bootstrap_tests.rs'));
+// The new bootstrap-only CLI is built from a separate immutable checkout.
+const bootstrapSource = 'browser-bootstrap-source';
+assert.equal(execFileSync('git',['-C',bootstrapSource,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),
+  bootstrap.source_commit,'Bootstrap source checkout differs from the reviewed build');
+execFileSync('git',['-C',bootstrapSource,'diff','--exit-code','HEAD','--'],{stdio:'pipe'});
+assert.equal(bootstrap.bootstrap_source_sha256,digest(bootstrapSource+'/tools/bootstrap.rs'));
+assert.equal(bootstrap.bootstrap_tests_sha256,digest(bootstrapSource+'/tools/bootstrap_tests.rs'));
+// The normal repository CLI and archived probe/acceptance authority stay exact.
+for (const [file,blob] of Object.entries({
+  'tools/bootstrap.rs':'a38ba1e8f792e7c0ed019c92f0ffd08a5d74a7a3',
+  'tools/bootstrap_tests.rs':'f5b5e56b04f9d8dd518228f84b7470b9949c65ca'
+})) {
+  assert.equal(execFileSync('git',['hash-object','--',file],{encoding:'utf8'}).trim(),blob,
+    'The ordinary repository bootstrap source changed: '+file);
+}
 assert.equal(bootstrap.native_test_log_sha256,digest('browser-output/wasm/runtime/bootstrap-build/native-tests.log'));
 const emulator = JSON.parse(readFileSync('browser-output/wasm/runtime/emulator-build/build.json','utf8'));
 const startup = {base_source_commit:original.source_commit,openfga_build:build,bootstrap_build:bootstrap,emulator_build:emulator,files};

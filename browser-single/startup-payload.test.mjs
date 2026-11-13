@@ -18,7 +18,7 @@ function fixture() {
     }]))
   };
   manifest.bootstrap_build = {
-    schema_version:1,source_commit:'53ff85cfdd3d84c26ae432189790e1e0f72d61db',
+    schema_version:1,source_commit:'64d6fb4614b6674284a32cee2f4f84179dfb2a2f',
     target:'linux/amd64',image_id:'sha256:'+'a'.repeat(64),
     binary_bytes:manifest.files['runtime/bootstrap'].bytes,
     binary_sha256:manifest.files['runtime/bootstrap'].sha256,
@@ -27,6 +27,8 @@ function fixture() {
     bootstrap_tests_sha256:digest('bootstrap_tests.rs fixture'),
     timeout_scope:'bootstrap_model_post_and_get',default_model_timeout_seconds:5,
     min_model_timeout_seconds:5,max_model_timeout_seconds:30,browser_model_timeout_seconds:30,
+    empty_store_check:'one_real_higher_consistency_ownership_deny',empty_store_check_default:false,
+    browser_empty_store_check:true,empty_store_check_timeout_seconds:5,empty_store_check_tests:'passed',
     native_tests:'passed',native_test_log_sha256:digest('native test log fixture')
   };
   const requests = [];
@@ -97,6 +99,29 @@ test('require reviewed native bootstrap provenance before downloading executable
   ]) {
     const input = fixture();
     modify(input);
+    await assert.rejects(loadStartupPayload(base,input.fetcher),/bootstrap build provenance/);
+    assert.deepEqual(input.requests,['runtime/startup-manifest.json']);
+  }
+});
+
+
+test('require the opt-in real empty-store deny proof without broadening its ordinary deadline', async () => {
+  const missing = ['empty_store_check','empty_store_check_default','browser_empty_store_check',
+    'empty_store_check_timeout_seconds','empty_store_check_tests'];
+  for (const key of missing) {
+    const input = fixture();
+    delete input.manifest.bootstrap_build[key];
+    await assert.rejects(loadStartupPayload(base,input.fetcher),/bootstrap build provenance/);
+    assert.deepEqual(input.requests,['runtime/startup-manifest.json']);
+  }
+  for (const [key,value] of [
+    ['source_commit','53ff85cfdd3d84c26ae432189790e1e0f72d61db'],
+    ['empty_store_check','synthetic_deny'],
+    ['empty_store_check_default',true],['browser_empty_store_check',false],
+    ['empty_store_check_timeout_seconds',30],['empty_store_check_tests','not-run']
+  ]) {
+    const input = fixture();
+    input.manifest.bootstrap_build[key] = value;
     await assert.rejects(loadStartupPayload(base,input.fetcher),/bootstrap build provenance/);
     assert.deepEqual(input.requests,['runtime/startup-manifest.json']);
   }

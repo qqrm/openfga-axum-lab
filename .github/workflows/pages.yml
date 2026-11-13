@@ -79,13 +79,13 @@ jobs:
       - name: Check out the fixed native bootstrap source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 53ff85cfdd3d84c26ae432189790e1e0f72d61db
+          ref: 64d6fb4614b6674284a32cee2f4f84179dfb2a2f
           path: browser-bootstrap-source
           persist-credentials: false
       - name: Check out the reviewed bootstrap proof entrypoint fixture
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: d7f7ead003c774e30584798adfde38afb854528d
+          ref: 325b650f4c9e5a7611d3773dc599e06e7ef133fc
           path: browser-bootstrap-fixture
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8

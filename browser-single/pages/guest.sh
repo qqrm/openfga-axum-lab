@@ -50,9 +50,11 @@ if ! mkdir -m 0700 /tmp/browser-lab-runtime || \
     exit 1
 fi
 printf '[browser-guest] executables staged; starting the real services\n'
-# Only bootstrap model POST/GET opt in; original probe/acceptance and all
-# health, store, tuple, Check and Axum request deadlines remain unchanged.
+# Only bootstrap model POST/GET extend their setup budget. A single real
+# empty-store deny Check uses the ordinary five-second client deadline.
+# Original probe/acceptance and all authorization deadlines remain unchanged.
 BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS=30 \
+BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes \
     /bin/bash /browser-host/entrypoint.sh > >(tee /tmp/browser-lab-startup.log) 2>&1 &
 lab_pid=$!
 trap 'kill -TERM "$lab_pid" 2>/dev/null || true' EXIT
