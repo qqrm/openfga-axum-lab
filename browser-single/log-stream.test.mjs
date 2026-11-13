@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTranscriptLog, createGuestLogCollector, guestLogEvent,
+import {createTranscriptLog, createCoalescedTranscriptRender, createGuestLogCollector, guestLogEvent,
   subscribeToGuestLog, drainGuestLogWithin, freezeGuestLogCapture, guestLogFormat} from './pages/log-stream.mjs';
 
 const decode = jsonl => jsonl.trimEnd().split('\n').filter(Boolean).flatMap(line => {
@@ -146,7 +146,9 @@ test('120000 per-character UART chunks survive bursts with one delivery per 1024
     await new Promise(resolve=>setImmediate(resolve));
   }
   assert.equal(await finish(),120000);
-  assert.equal(deliveries,3*Math.ceil(40000/1024));
+  // A partial tail may join the next burst before its 16 ms timer fires.
+  assert(deliveries >= Math.ceil(120000/1024));
+  assert(deliveries <= 3*Math.ceil(40000/1024));
   assert.equal(largest,1024);
   const result=capture.snapshot(120000),source=decode(result.jsonl);
   assert.equal(result.metadata.complete,true);
@@ -222,4 +224,158 @@ test('cutoff survives a bounded timeout of a permanently pending delivery', asyn
   const cutoff=freezeGuestLogCapture(target);
   await assert.rejects(drainGuestLogWithin(target.__browserLabLogDrain,10),/drain timed out/);
   assert.deepEqual(cutoff,{expectedSequence:7,guest:{booted:true}});
+});
+
+test('visible rendering coalesces separate tasks without delaying original emissions', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const rendered = [], emitted = [];
+  const renderer = createCoalescedTranscriptRender(text => rendered.push(text), assert.fail);
+  const log = createTranscriptLog(renderer.render, chunk => emitted.push(chunk));
+  log('first');
+  await new Promise(resolve => setImmediate(resolve));
+  log('second');
+  t.mock.timers.tick(15);
+  assert.deepEqual(rendered, []);
+  await new Promise(resolve => setImmediate(resolve));
+  log('🙂');
+  assert.deepEqual(emitted, [
+    {sequence:1,text:'first'}, {sequence:2,text:'second'}, {sequence:3,text:'🙂'}]);
+  t.mock.timers.tick(1);
+  assert.deepEqual(rendered, ['firstsecond🙂']);
+  log('latest');
+  renderer.flush();
+  assert.deepEqual(rendered, ['firstsecond🙂', 'firstsecond🙂latest']);
+  t.mock.timers.tick(100);
+  assert.equal(rendered.length, 2);
+});
+
+test('a render failure reports once, stays observable and never schedules a retry loop', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const capture = createGuestLogCollector();
+  const failure = new Error('render sentinel');
+  let attempts = 0, reports = 0, log;
+  const renderer = createCoalescedTranscriptRender(() => { attempts++; throw failure; }, error => {
+    assert.equal(error, failure);
+    reports++;
+    log('error report');
+  });
+  log = createTranscriptLog(renderer.render, capture.append);
+  log('first');
+  assert.throws(renderer.flush, error => error === failure);
+  log('later');
+  t.mock.timers.tick(100);
+  assert.equal(attempts, 1);
+  assert.equal(reports, 1);
+  assert.equal(capture.snapshot(3).text, 'firsterror reportlater');
+  assert.throws(renderer.flush, error => error === failure);
+});
+
+test('partial capture batches coalesce separate tasks and full batches wake the timer', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const target = new EventTarget(), capture = createGuestLogCollector(), batches = [];
+  const finish = subscribeToGuestLog(target, batch => {
+    batches.push(batch);
+    capture.appendBatch(batch);
+  }, {maxBatchChunks:4});
+  send(target,1,'');
+  await new Promise(resolve => setImmediate(resolve));
+  send(target,2,'\ud83d');
+  await new Promise(resolve => setImmediate(resolve));
+  send(target,3,'\ude42');
+  t.mock.timers.tick(15);
+  await Promise.resolve();
+  assert.equal(batches.length, 0);
+  send(target,4,'€');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(batches.map(batch => batch.length), [4]);
+  send(target,5,'tail');
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(15);
+  await Promise.resolve();
+  assert.equal(batches.length, 1);
+  t.mock.timers.tick(1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(batches.map(batch => batch.length), [4,1]);
+  assert.equal(await finish(), 5);
+  const result = capture.snapshot(5);
+  assert.equal(result.text, '🙂€tail');
+  assert.equal(result.metadata.bytes, 13);
+  assert.equal(result.metadata.complete, true);
+  assert.deepEqual(decode(result.jsonl).map(({sequence,text}) => ({sequence,text})), [
+    {sequence:1,text:''}, {sequence:2,text:'\ud83d'}, {sequence:3,text:'\ude42'},
+    {sequence:4,text:'€'}, {sequence:5,text:'tail'}]);
+});
+
+test('finish immediately detaches and drains a final partial batch without its timer', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const target = new EventTarget(), capture = createGuestLogCollector();
+  let deliveries = 0;
+  const finish = subscribeToGuestLog(target, batch => {
+    deliveries++;
+    capture.appendBatch(batch);
+  });
+  send(target,1,'first');
+  await new Promise(resolve => setImmediate(resolve));
+  send(target,2,'second');
+  const drained = finish();
+  send(target,3,'after cutoff');
+  assert.equal(await drained, 2);
+  assert.equal(capture.snapshot(2).text, 'firstsecond');
+  assert.equal(capture.snapshot(2).metadata.complete, true);
+  t.mock.timers.tick(100);
+  await Promise.resolve();
+  assert.equal(deliveries, 1);
+});
+
+test('a pending render failure at cutoff rejects completeness even after a full batch was delivered', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const target = new EventTarget(), capture = createGuestLogCollector();
+  const failure = new Error('cutoff render sentinel');
+  target.labLogSequence = 0;
+  target.labEvidence = {ready:true,accepted:true};
+  let reports = 0;
+  const renderer = createCoalescedTranscriptRender(() => { throw failure; }, error => {
+    reports++;
+    target.labEvidence = {ready:false,accepted:false,error:String(error)};
+  });
+  target.__flushBrowserLabTranscript = renderer.flush;
+  target.__finishBrowserLabLog = subscribeToGuestLog(target, capture.appendBatch, {maxBatchChunks:1});
+  const log = createTranscriptLog(renderer.render, chunk => {
+    target.labLogSequence = chunk.sequence;
+    send(target,chunk.sequence,chunk.text);
+  });
+  log('one full capture batch');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(capture.snapshot(1).metadata.complete, true);
+  assert.equal(reports, 0);
+  const cutoff = freezeGuestLogCapture(target);
+  assert.deepEqual(cutoff, {expectedSequence:1,
+    guest:{ready:false,accepted:false,error:String(failure)}});
+  assert.deepEqual(await target.__browserLabLogDrain, {error:String(failure)});
+  assert.equal(reports, 1);
+  assert.throws(renderer.flush, error => error === failure);
+  t.mock.timers.tick(100);
+  assert.equal(reports, 1);
+});
+
+test('cutoff flushes the latest visible transcript before taking the guest snapshot', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const target = new EventTarget(), capture = createGuestLogCollector();
+  target.labLogSequence = 0;
+  target.labEvidence = {rendered:''};
+  const renderer = createCoalescedTranscriptRender(text => { target.labEvidence.rendered = text; }, assert.fail);
+  target.__flushBrowserLabTranscript = renderer.flush;
+  target.__finishBrowserLabLog = subscribeToGuestLog(target, capture.appendBatch);
+  const log = createTranscriptLog(renderer.render, chunk => {
+    target.labLogSequence = chunk.sequence;
+    send(target,chunk.sequence,chunk.text);
+  });
+  log('first'); log('latest');
+  const cutoff = freezeGuestLogCapture(target);
+  assert.deepEqual(cutoff, {expectedSequence:2,guest:{rendered:'firstlatest'}});
+  assert.deepEqual(await target.__browserLabLogDrain, {deliveredSequence:2});
+  log('after cutoff');
+  assert.equal(capture.snapshot(2).text, 'firstlatest');
+  assert.deepEqual(cutoff.guest, {rendered:'firstlatest'});
+  renderer.flush();
 });

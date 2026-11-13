@@ -1,7 +1,7 @@
 import {consumeGuestLine, initialEvidence, requestVerification} from './acceptance-protocol.mjs';
 import {loadStartupPayload} from './startup-payload.mjs';
 import {observeRuntimeErrors} from './runtime-errors.mjs';
-import {createTranscriptLog, guestLogEvent} from './log-stream.mjs';
+import {createTranscriptLog, createCoalescedTranscriptRender, guestLogEvent} from './log-stream.mjs';
 import {configureInstanceBudget} from './qemu-budget.mjs';
 
 const element = id => document.getElementById(id);
@@ -15,7 +15,9 @@ const signals = new Set();
 window.labEvidence = initialEvidence('99f00cc');
 window.labLogSequence = 0;
 
-const log = createTranscriptLog(text => { element('log').textContent = text; }, chunk => {
+const transcriptRender = createCoalescedTranscriptRender(text => { element('log').textContent = text; }, fail);
+window.__flushBrowserLabTranscript = transcriptRender.flush;
+const log = createTranscriptLog(transcriptRender.render, chunk => {
   window.labLogSequence = chunk.sequence;
   window.dispatchEvent(new CustomEvent(guestLogEvent, {detail: chunk}));
 });

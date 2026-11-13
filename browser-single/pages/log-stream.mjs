@@ -12,6 +12,42 @@ export function createTranscriptLog(render, emit, maxChars = 120000) {
   };
 }
 
+// The transcript still accepts every chunk synchronously. Only its visible
+// rendering waits for a timer, which also runs when the tab is not repainting.
+export function createCoalescedTranscriptRender(render, onError) {
+  let latest;
+  let dirty = false;
+  let timer;
+  let failed = false;
+  let failure;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (failed) throw failure;
+    if (!dirty) return;
+    const text = latest;
+    dirty = false;
+    try { render(text); }
+    catch (error) {
+      // Set this before reporting: fail() emits a log too. Never retry a
+      // broken renderer, and keep the failure observable at the cutoff.
+      failed = true;
+      failure = error;
+      onError(error);
+      throw error;
+    }
+  };
+  return {
+    render(text) {
+      if (failed) return;
+      latest = text;
+      dirty = true;
+      timer ??= setTimeout(flush, 16);
+    },
+    flush
+  };
+}
+
 // One pump delivers arrays, not one binding/Promise chain entry per UART byte.
 // Both queue bounds include the batch awaiting the host's acknowledgement.
 export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
@@ -19,6 +55,9 @@ export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
   if (!Number.isSafeInteger(maxBatchChunks) || maxBatchChunks < 1) throw new Error('Invalid guest log batch limit');
   let pending = Promise.resolve();
   let pumping = false;
+  let stopped = false;
+  let wakePartial;
+  let partialTimer;
   const queue = [];
   const sizes = [];
   let lastSequence = 0;
@@ -26,15 +65,32 @@ export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
   let pendingBytes = 0;
   let error;
   const encoder = new TextEncoder();
+  const flushPartial = () => {
+    clearTimeout(partialTimer);
+    partialTimer = undefined;
+    const resolve = wakePartial;
+    wakePartial = undefined;
+    resolve?.();
+  };
   const stopWithError = failure => {
     if (error) return;
     error = failure;
+    stopped = true;
     target.removeEventListener(guestLogEvent, listener);
+    flushPartial();
     Promise.resolve().then(() => onError(failure)).catch(() => {});
   };
   const pump = async () => {
     try {
       while (queue.length) {
+        // Separate UART tasks can share a binding call. A full batch or a
+        // synchronous finish/error wakes this wait without another delay.
+        if (!stopped && queue.length < maxBatchChunks) {
+          await new Promise(resolve => {
+            wakePartial = resolve;
+            partialTimer = setTimeout(flushPartial, 16);
+          });
+        }
         const batch = queue.splice(0, maxBatchChunks);
         const size = sizes.splice(0, batch.length).reduce((sum, value) => sum + value, 0);
         await deliver(batch);
@@ -63,6 +119,7 @@ export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
       pendingChunks++;
       pendingBytes += size;
       lastSequence = sequence;
+      if (queue.length >= maxBatchChunks) flushPartial();
       if (!pumping) {
         pumping = true;
         pending = Promise.resolve().then(pump);
@@ -74,7 +131,9 @@ export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
   };
   target.addEventListener(guestLogEvent, listener);
   return async () => {
+    stopped = true;
     target.removeEventListener(guestLogEvent, listener);
+    flushPartial();
     await pending;
     if (error) throw error;
     return lastSequence;
@@ -84,6 +143,10 @@ export function subscribeToGuestLog(target, deliver, {maxPendingChunks = 65536,
 // Freeze before awaiting delivery. The caller can retrieve this cutoff even
 // when draining rejects or times out; the drain result is a separate promise.
 export function freezeGuestLogCapture(target) {
+  let renderFailure;
+  try {
+    if (typeof target.__flushBrowserLabTranscript === 'function') target.__flushBrowserLabTranscript();
+  } catch (error) { renderFailure = {error: String(error)}; }
   const cutoff = {expectedSequence: target.labLogSequence, guest: structuredClone(target.labEvidence)};
   let drain;
   try {
@@ -91,7 +154,7 @@ export function freezeGuestLogCapture(target) {
     drain = target.__finishBrowserLabLog();
   } catch (error) { drain = Promise.reject(error); }
   target.__browserLabLogDrain = Promise.resolve(drain).then(
-    deliveredSequence => ({deliveredSequence}), error => ({error: String(error)}));
+    deliveredSequence => renderFailure ?? {deliveredSequence}, error => ({error: String(error)}));
   return cutoff;
 }
 
