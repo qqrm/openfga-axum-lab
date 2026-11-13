@@ -38,14 +38,14 @@ if [[ $# -ne 2 ]]; then
 fi
 core_dir=$(realpath -- "$1")
 fixture_dir=$(realpath -- "$2")
-core_commit=64d6fb4614b6674284a32cee2f4f84179dfb2a2f
-fixture_commit=325b650f4c9e5a7611d3773dc599e06e7ef133fc
+core_commit=207d15fab685d3adb9c5d51a048982c2236ae75c
+fixture_commit=4b7a1e1933083232fb8305a60a47bdd3c32e6689
 test "$(git -C "$core_dir" rev-parse HEAD)" = "$core_commit"
 test "$(git -C "$fixture_dir" rev-parse HEAD)" = "$fixture_commit"
 git -C "$core_dir" diff --exit-code HEAD --
 git -C "$fixture_dir" diff --exit-code HEAD --
-test "$(git -C "$core_dir" hash-object tools/bootstrap.rs)" = 3905824abaa53f9df080615978debc5e26300a5a
-test "$(git -C "$core_dir" hash-object tools/bootstrap_tests.rs)" = 74d9715a34137214d521152e78b376d37c76ffeb
+test "$(git -C "$core_dir" hash-object tools/bootstrap.rs)" = a5e2723444690dfc61461eb744fa6f5c37891a84
+test "$(git -C "$core_dir" hash-object tools/bootstrap_tests.rs)" = 9593ee9c2236c7c28cd6ec366201f6f33a0a683d
 # Only the separately built bootstrap overlay opts into the new deny probe.
 # Keep the main CLI source at its reviewed pre-probe bytes.
 test "$(git -C "$repo_root" hash-object tools/bootstrap.rs)" = a38ba1e8f792e7c0ed019c92f0ffd08a5d74a7a3
@@ -231,8 +231,8 @@ const read = (directory, name) => readFileSync(path.join(directory, name), 'utf8
 const digest = filename => createHash('sha256').update(readFileSync(filename)).digest('hex');
 const proof = JSON.parse(read(evidence, 'native-result.json'));
 const image = read(evidence, 'image-id.txt').trim();
-const fixedSource = '64d6fb4614b6674284a32cee2f4f84179dfb2a2f';
-const fixture = '325b650f4c9e5a7611d3773dc599e06e7ef133fc';
+const fixedSource = '207d15fab685d3adb9c5d51a048982c2236ae75c';
+const fixture = '4b7a1e1933083232fb8305a60a47bdd3c32e6689';
 assert(proof.passed === true && proof.image_id === image &&
     proof.source_commit === fixedSource && proof.packaging_commit === fixture &&
     proof.browser_acceptance_verified === false, 'Native proof identity differs');

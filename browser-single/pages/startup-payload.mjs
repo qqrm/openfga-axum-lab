@@ -1,5 +1,5 @@
 const startupFiles = ['guest.sh', 'entrypoint.sh', 'runtime/openfga', 'runtime/bootstrap'];
-const bootstrapSourceCommit = '64d6fb4614b6674284a32cee2f4f84179dfb2a2f';
+const bootstrapSourceCommit = '207d15fab685d3adb9c5d51a048982c2236ae75c';
 const sha256Pattern = /^[0-9a-f]{64}$/;
 
 // One reviewed native CLI supplies initial provisioning and its opt-in deny

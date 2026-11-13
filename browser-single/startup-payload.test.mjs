@@ -18,7 +18,7 @@ function fixture() {
     }]))
   };
   manifest.bootstrap_build = {
-    schema_version:1,source_commit:'64d6fb4614b6674284a32cee2f4f84179dfb2a2f',
+    schema_version:1,source_commit:'207d15fab685d3adb9c5d51a048982c2236ae75c',
     target:'linux/amd64',image_id:'sha256:'+'a'.repeat(64),
     binary_bytes:manifest.files['runtime/bootstrap'].bytes,
     binary_sha256:manifest.files['runtime/bootstrap'].sha256,
