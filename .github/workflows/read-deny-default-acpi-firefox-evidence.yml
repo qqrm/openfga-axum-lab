@@ -1,20 +1,20 @@
-name: Read completed Chromium default-ACPI deny-probe evidence 43464079526
+name: Read completed Firefox default-ACPI deny-probe evidence 43464079526
 on:
   push:
-    branches: [diag/read-deny-default-acpi-chromium-43464079526]
-    paths: [.github/workflows/read-deny-default-acpi-chromium-evidence.yml]
+    branches: [diag/read-deny-default-acpi-firefox-43464079526]
+    paths: [.github/workflows/read-deny-default-acpi-firefox-evidence.yml]
 permissions:
   actions: read
 concurrency:
-  group: read-deny-default-acpi-chromium-43464079526
+  group: read-deny-default-acpi-firefox-43464079526
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-deny-default-acpi-chromium-43464079526'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-deny-default-acpi-firefox-43464079526'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
-      - name: Read only the fixed completed Chromium job artifact
+      - name: Read only the fixed completed Firefox job artifact
         shell: bash
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
@@ -29,27 +29,27 @@ jobs:
           PREFIX = "source-candidate/artifacts/browser-wasm/"
           SPECS = [
               {
-                  "engine": "chromium",
-                  "job": 132018400428,
-                  "artifact": 14058896022,
-                  "artifact_name": "browser-deny-default-acpi-chromium",
-                  "zip_bytes": 3877414,
-                  "zip_sha256": "40ac3237482f911928f16befd770a4e259e7fd2043bb2d0e94c29ef481120fc9",
+                  "engine": "firefox",
+                  "job": 132018399792,
+                  "artifact": 14058962579,
+                  "artifact_name": "browser-deny-default-acpi-firefox",
+                  "zip_bytes": 3691414,
+                  "zip_sha256": "aeac1a34b2ad018fcaccbf746ffc43e197b5752f5869bc52e7f1c6903defd554",
                   "members": {
                       "console": [
-                          "chromium-console.txt",
-                          116249,
-                          "e4eb761c6c3e9ae4d54f0753004857cefa44b7c01f79fe4cde92e5f125b7b2ab"
+                          "firefox-console.txt",
+                          353622,
+                          "0b901d355157c354c559954b7b85fa56ea5c927cafc69b3b9de5d5f19fee0aff"
                       ],
                       "stream": [
-                          "chromium-stream.jsonl",
-                          3020512,
-                          "2614fa3015e2c7a51269c422ff3dfaf32669fff3551cf50b14bee3f1c5834049"
+                          "firefox-stream.jsonl",
+                          794397,
+                          "a4efff2e3f146807e2b57609a05355c8ba06ece9433dace172ee4c314fc5bda9"
                       ],
                       "result": [
-                          "chromium.json",
-                          19512,
-                          "9107c97af7153cd9d16a3523a3321b8b43946e38b9efe46302e15de1631a58b2"
+                          "firefox.json",
+                          19500,
+                          "75ba11b832cac3ed5e45c0aa1a6df055b2f4321e892b6d1708046b71c26c6fcb"
                       ]
                   }
               }
@@ -86,7 +86,7 @@ jobs:
                   "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "retained-chromium-default-acpi-reader"})
+                  "User-Agent": "retained-firefox-default-acpi-reader"})
           
           def api(suffix):
               try:
@@ -269,9 +269,8 @@ jobs:
               run = api("/actions/runs/" + str(RUN))
               require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
                       and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-deny-default-acpi-e381"
-                      and ((run["status"] == "in_progress" and run["conclusion"] is None)
-                           or (run["status"] == "completed" and run["conclusion"] == "failure")),
-                      "Expected the exact source run with the completed failed Chromium job")
+                      and run["status"] == "completed" and run["conclusion"] == "failure",
+                      "Expected the exact source run with the completed failed Firefox job")
               jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
               results = [inspect_engine(spec, run, jobs) for spec in SPECS]
               emit("finished", {"data_integrity_valid": True, "acceptance_verified": False,
