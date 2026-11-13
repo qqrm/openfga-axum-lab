@@ -36,6 +36,13 @@ if [[ ! -x "$openfga_binary" ]]; then
     echo "OpenFGA executable is unavailable: $openfga_binary" >&2
     exit 66
 fi
+# The browser overlay selects only initial bootstrap. Native startup keeps the
+# original CLI and its default model budget unless explicitly configured.
+bootstrap_binary=${BROWSER_LAB_BOOTSTRAP_BINARY:-/usr/local/bin/lab-tool}
+if [[ ! -x "$bootstrap_binary" ]]; then
+    echo "Bootstrap executable is unavailable: $bootstrap_binary" >&2
+    exit 66
+fi
 
 mkdir -p "$runtime_dir"
 chmod 0700 "$runtime_dir"
@@ -109,7 +116,7 @@ if [[ "$http_listening" != true ]]; then
 fi
 
 echo "[browser-single] binding the pinned Lakekeeper model and seeding real SQL data"
-/usr/local/bin/lab-tool bootstrap
+"$bootstrap_binary" bootstrap
 
 # Never put the password in the image, workflow logs, command line or git.
 od -An -tx1 -N24 /dev/urandom | tr -d '[:space:]' >"$DEMO_PASSWORD_FILE"

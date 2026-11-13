@@ -38,17 +38,24 @@ if [[ "$allowed_cpus" != 0-1 ]]; then
 fi
 printf '[browser-guest] confirmed service CPU availability: %s\n' "$allowed_cpus"
 # The archived rootfs keeps PostgreSQL, Axum, lab-tool and the model unchanged.
-# Copy the verified browser-only OpenFGA build out of the read-only host mount.
+# Only initial bootstrap uses the separately verified CLI. Probe and acceptance
+# below continue to execute the original absolute /usr/local/bin/lab-tool.
 export BROWSER_LAB_OPENFGA_BINARY=/tmp/browser-lab-runtime/openfga
-printf '[browser-guest] staging the verified OpenFGA executable\n'
+export BROWSER_LAB_BOOTSTRAP_BINARY=/tmp/browser-lab-runtime/bootstrap
+printf '[browser-guest] staging the verified OpenFGA and bootstrap executables\n'
 if ! mkdir -m 0700 /tmp/browser-lab-runtime || \
-    ! timeout --kill-after=5 900 cp /browser-host/openfga "$BROWSER_LAB_OPENFGA_BINARY" || \
-    ! chmod 0500 "$BROWSER_LAB_OPENFGA_BINARY"; then
+    ! timeout --kill-after=5 900 cp /browser-host/openfga /browser-host/bootstrap /tmp/browser-lab-runtime/ || \
+    ! chmod 0500 "$BROWSER_LAB_OPENFGA_BINARY" "$BROWSER_LAB_BOOTSTRAP_BINARY"; then
     printf 'LAB|boot-failed\n'
     exit 1
 fi
-printf '[browser-guest] executable staged; starting the real services\n'
-/bin/bash /browser-host/entrypoint.sh > >(tee /tmp/browser-lab-startup.log) 2>&1 &
+printf '[browser-guest] executables staged; starting the real services\n'
+# Only bootstrap model POST/GET extend their setup budget. A single real
+# empty-store deny Check uses the ordinary five-second client deadline.
+# Original probe/acceptance and all authorization deadlines remain unchanged.
+BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS=30 \
+BROWSER_BOOTSTRAP_EMPTY_STORE_CHECK=yes \
+    /bin/bash /browser-host/entrypoint.sh > >(tee /tmp/browser-lab-startup.log) 2>&1 &
 lab_pid=$!
 trap 'kill -TERM "$lab_pid" 2>/dev/null || true' EXIT
 trap 'exit 130' INT
