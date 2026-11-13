@@ -49,7 +49,7 @@ jobs:
           root.mkdir(exist_ok=False)
           source_root = pathlib.Path("source-candidate")
           # Fill only from the completed, verified native gate; missing pins forbid VM startup.
-          native = {"run": None, "head": None, "artifact": None, "name": None, "bytes": None, "sha256": None}
+          native = {"run":43433122340,"head":"c051d07bcdb83991de923782accfb51db302a3c2","artifact":14040871235,"name":"browser-bootstrap","bytes":3306577,"sha256":"225eab0937c6b51c36f3c9ad900864f065979d9662a9a9bca2525050e0e3974c"}
           if (not all(native.values()) or any(type(native[key]) is not int or native[key] <= 0 for key in ["run", "artifact", "bytes"])
               or native["bytes"] > 192*M or not isinstance(native["name"], str)
               or re.fullmatch(r"[0-9a-f]{40}", native["head"]) is None
