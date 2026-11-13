@@ -34,6 +34,7 @@ jobs:
           CONCLUSION = os.environ["EVIDENCE_RUN_CONCLUSION"]
           EXPECTED_STATUSES = [403, 204, 200, 204, 403]
           EXPECTED_ENTRYPOINT = {"bytes": 5019, "sha256": "7763b800c5f4bed8df12c6498b13474ef6adafdc4442694b7271f0b16fe3f5ed"}
+          EXPECTED_CAPTURE_MEMBERS = {"chromium":{"console":{"bytes":61889,"sha256":"49be06a6330c0cc02210928e1442b515ae873fb8b2edb5b6cb63d3c3a051a2a5"},"stream":{"bytes":660899,"sha256":"3236655bc22d2cb68a9bdf947aae272e6caa2228ce3612a9c781b41c11ab0517"}},"firefox":{"console":{"bytes":262137,"sha256":"11922e702b45ecb9afe75d592b4b643ee71e1554a7b6add7ad50756c193f15eb"},"stream":{"bytes":691761,"sha256":"a99056aa8898b008ad123fed78067f23bd461b32e7292ea758b4395161b582d9"}}}
 
           def require(ok, message):
               if not ok:
@@ -97,7 +98,7 @@ jobs:
               if len(text) > 12000:
                   text = json.dumps({"label": label, "truncated": True, "json_prefix": text[:5500]})
               used += len(text.encode()) + 1
-              require(used <= 160 * 1024, "Diagnostic output budget exhausted")
+              require(used <= 3 * 1024**2, "Diagnostic output budget exhausted")
               print(text, flush=True)
 
           with tempfile.TemporaryFile() as archive:
@@ -226,18 +227,20 @@ jobs:
                                   "recorded_cutoff_matches": capture.get("expectedSequence") == count,
                                   "recorded_complete": capture.get("complete"), "recorded_error": capture.get("error")}
                               emit(engine + ".stream_integrity", integrity)
-                          # Emit exact small consoles for kernel/startup diagnosis only.
-                          # Large captures are still fully validated above; do not dump them.
-                          if len(raw) <= 16 * 1024:
-                              encoded = base64.b64encode(raw).decode("ascii")
-                              emit(engine + ".small_console", {"bytes": len(raw), "encoding": "base64",
-                                  "sha256": hashlib.sha256(raw).hexdigest(), "encoded_characters": len(encoded)})
+                          # Fixed, independently verified captures only. This emits data,
+                          # never artifact code, for host/guest clock correlation.
+                          for kind, payload in [("console", raw), ("stream", stream)]:
+                              require(isinstance(payload, bytes), "Missing pinned capture member")
+                              expected = EXPECTED_CAPTURE_MEMBERS[engine][kind]
+                              require(len(payload) == expected["bytes"] and
+                                  hashlib.sha256(payload).hexdigest() == expected["sha256"],
+                                  "Pinned capture member byte identity changed")
+                              encoded = base64.b64encode(payload).decode("ascii")
+                              emit(engine + ".full_" + kind, {**expected, "encoding": "base64",
+                                  "encoded_characters": len(encoded)})
                               for offset in range(0, len(encoded), 4096):
-                                  emit(engine + ".small_console_chunk", {"offset": offset,
+                                  emit(engine + ".full_" + kind + "_chunk", {"offset": offset,
                                       "base64": encoded[offset:offset + 4096]})
-                          else:
-                              emit(engine + ".small_console_omitted", {"bytes": len(raw),
-                                  "reason": "full raw console exceeds 16 KiB display limit"})
                           text = raw.decode("utf-8")
                           # Validate full records. Mixed console LAB lines are corroboration only:
                           # the pinned page parser consumes PTY bytes separately from emulator stderr.
