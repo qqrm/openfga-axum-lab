@@ -200,7 +200,7 @@ jobs:
               if label == "native":
                   native_job = api("/actions/jobs/" + str(native["job"]))
                   require(native_job["id"] == native["job"] and native_job["run_id"] == run_id
-                          and native_job["head_sha"] == head and native_job["run_attempt"] == 1
+                          and native_job["head_sha"] == head
                           and native_job["name"] == "native" and native_job["status"] == "completed"
                           and native_job["conclusion"] == "success", "The fresh native job did not succeed")
                   for expected_step in [
@@ -364,8 +364,9 @@ jobs:
               provenance = {"label": label, "run": run_id, "head": head, "artifact": aid, "artifact_name": name,
                             "archive": {"bytes": count, "sha256": sha}, "members": members}
               if native_job is not None:
+                  provenance["native_run_attempt"] = run["run_attempt"]
                   provenance["native_job"] = {key: native_job[key] for key in [
-                      "id", "run_id", "head_sha", "run_attempt", "name", "status", "conclusion",
+                      "id", "run_id", "head_sha", "name", "status", "conclusion",
                       "started_at", "completed_at", "steps"]}
               (root / (label + "-archive-provenance.json")).write_text(json.dumps(provenance, indent=2) + "\n")
               archive_path.unlink()

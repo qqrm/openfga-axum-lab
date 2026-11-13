@@ -104,13 +104,18 @@ assert.equal(command('git',['rev-parse','HEAD^'],{cwd:nativeSource,stdio:'pipe'}
 command('git',['diff','--exit-code','HEAD','--'],{cwd:nativeSource});
 const trackedTree = directory => Object.fromEntries(command('git',['ls-tree','-r','-z','HEAD'],
   {cwd:directory,stdio:'pipe'}).split('\0').filter(Boolean).map(row=>{
-    const match=/^([0-7]{6}) blob ([0-9a-f]{40})\t(.+)$/.exec(row);
-    assert(match,'Expected only tracked regular-source blobs');
-    return [match[3],{mode:match[1],git_blob:match[2]}];
+    const match=/^([0-7]{6}) (blob|commit) ([0-9a-f]{40})\t(.+)$/.exec(row);
+    assert(match && ((match[2]==='blob' && ['100644','100755'].includes(match[1])) ||
+      (match[2]==='commit' && match[1]==='160000')),'Expected a regular-source blob or gitlink');
+    return [match[4],{mode:match[1],type:match[2],git_blob:match[3]}];
   }));
 const runtimeTree = trackedTree(source);
 const producerTree = trackedTree(nativeSource);
 assert.deepEqual(Object.keys(runtimeTree).sort(),Object.keys(producerTree).sort());
+for (const tree of [runtimeTree,producerTree]) {
+  assert.deepEqual(Object.entries(tree).filter(([,record])=>record.type==='commit'),
+    [['vendor/rust-skills',{mode:'160000',type:'commit',git_blob:'fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9'}]]);
+}
 const reachabilityFiles = {
   'browser-single/openfga/README.md':'2411eb30e6a3b9f1b2e1ef3fd7bf2d88b386897e',
   'browser-single/openfga/browser_model_validation.go':'caf992f9463541cc91d5e747ee00e68a626620b6',
@@ -173,7 +178,8 @@ const changedFiles = {
   }
 };
 assert.deepEqual(Object.keys(runtimeTree).filter(name=>
-  runtimeTree[name].git_blob!==producerTree[name].git_blob || runtimeTree[name].mode!==producerTree[name].mode).sort(),
+  runtimeTree[name].git_blob!==producerTree[name].git_blob || runtimeTree[name].mode!==producerTree[name].mode ||
+  runtimeTree[name].type!==producerTree[name].type).sort(),
   Object.keys(changedFiles).sort(),'Native/runtime differences exceed the seven reviewed UI/diagnostic/RNG files');
 assert.deepEqual(command('git',['diff','--name-only',transportSourceCommit,kernelSourceCommit],{stdio:'pipe'})
   .trim().split('\n').sort(),['browser-single/Kernel.Dockerfile','browser-single/pages/launcher.js',
@@ -422,8 +428,14 @@ const openfgaInputPaths = [".dockerignore","browser-single/OpenFGA.Dockerfile","
 const relevantInput = name => name === '.dockerignore' || name === 'fga/model.json' ||
   name === 'browser-single/OpenFGA.Dockerfile' || name === 'browser-single/OpenFGA.Dockerfile.dockerignore' ||
   (name.startsWith('browser-single/openfga/') && name !== 'browser-single/openfga/README.md');
-const listedInputs = Object.fromEntries(Object.entries(runtimeTree).filter(([name])=>relevantInput(name)));
-const producerInputs = Object.fromEntries(Object.entries(producerTree).filter(([name])=>relevantInput(name)));
+const regularInputs = tree => Object.fromEntries(Object.entries(tree).filter(([name])=>relevantInput(name))
+  .map(([name,record])=>{
+    assert.equal(record.type,'blob','Expected a regular OpenFGA source input: '+name);
+    assert(['100644','100755'].includes(record.mode),'Unexpected OpenFGA source mode: '+name);
+    return [name,{mode:record.mode,git_blob:record.git_blob}];
+  }));
+const listedInputs = regularInputs(runtimeTree);
+const producerInputs = regularInputs(producerTree);
 assert.deepEqual(Object.keys(listedInputs).sort(),openfgaInputPaths.slice().sort());
 assert.deepEqual(listedInputs,producerInputs,'Fresh native/runtime OpenFGA source identities differ');
 const verifiedInputs = {};
@@ -496,8 +508,9 @@ for (const [name,packages] of [
     'Existing Go regression package did not pass: '+name+' '+pkg);
 }
 const job = nativeArchive.native_job;
+assert.equal(nativeArchive.native_run_attempt,1);
 for (const [key,value] of Object.entries({
-  id:132069573580,run_id:nativeArchive.run,head_sha:nativeArchive.head,run_attempt:1,
+  id:132069573580,run_id:nativeArchive.run,head_sha:nativeArchive.head,
   name:'native',status:'completed',conclusion:'success'
 })) assert.equal(job[key],value,'Fresh native job identity differs: '+key);
 const requiredNativeSteps = [
