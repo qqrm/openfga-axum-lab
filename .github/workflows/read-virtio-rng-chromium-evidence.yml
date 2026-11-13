@@ -1,16 +1,16 @@
-name: Read completed Chromium coalesced capture evidence 43471167424
+name: Read completed Chromium VirtIO RNG evidence 43476279151
 on:
   push:
-    branches: [diag/read-coalesced-chromium-43471167424]
-    paths: [.github/workflows/read-coalesced-chromium-evidence.yml]
+    branches: [diag/read-virtio-rng-chromium-43476279151]
+    paths: [.github/workflows/read-virtio-rng-chromium-evidence.yml]
 permissions:
   actions: read
 concurrency:
-  group: read-coalesced-chromium-43471167424
+  group: read-virtio-rng-chromium-43476279151
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-coalesced-chromium-43471167424'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/read-virtio-rng-chromium-43476279151'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -24,32 +24,32 @@ jobs:
           from urllib.parse import urlsplit
           
           REPO = "qqrm/openfga-axum-lab"
-          RUN = 43471167424
-          HEAD = "b1df9be1d353768a456dde58666622f5cb71d61d"
+          RUN = 43476279151
+          HEAD = "0b7431bf861d2b96ef305620f10fc619832ab961"
           PREFIX = "source-candidate/artifacts/browser-wasm/"
           SPECS = [
               {
                   "engine": "chromium",
-                  "job": 132043136968,
-                  "artifact": 14060702857,
-                  "artifact_name": "browser-coalesced-chromium",
-                  "zip_bytes": 3640539,
-                  "zip_sha256": "f31f53c0290284cdac6f8f720ef17e203bed83f0c4de11873de01d13c7ae3376",
+                  "job": 132060806770,
+                  "artifact": 14064157017,
+                  "artifact_name": "browser-virtio-rng-chromium",
+                  "zip_bytes": 3681340,
+                  "zip_sha256": "f2e687876cf260f92fbb96100d21fb3f370452aeef7ca34b6d3ac17fc7ddafe3",
                   "members": {
                       "console": [
                           "chromium-console.txt",
-                          118872,
-                          "9a1116365f3fe1217ddb5d00fc7b8e121b5cc41680eb9d34c7da56fbe4ce89a5"
+                          107164,
+                          "1f6b55b7151d8ee4480393fd740b361d819527daac54ede333ccbed0306297ad"
                       ],
                       "stream": [
                           "chromium-stream.jsonl",
-                          347091,
-                          "859bcd5d0c4c94350c935455b6868900de6ec697c2f8df560d4a34182abeabe4"
+                          347066,
+                          "a2733b9fa7431d7847bc161fb725a241991c129d8341685e8937744357cf4774"
                       ],
                       "result": [
                           "chromium.json",
-                          19510,
-                          "14aa3a6ee318f7a8b9ddf07d417cebb657fbeac8a2b14f46bcaea67dc4429215"
+                          19845,
+                          "d7f92d973ddb30a2d066d4d2257f6f371507e679ac869888ecc65174fd6e8650"
                       ]
                   }
               }
@@ -86,7 +86,7 @@ jobs:
                   "Authorization": "Bearer " + os.environ["ARTIFACT_READ_TOKEN"],
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "retained-chromium-coalesced-reader"})
+                  "User-Agent": "retained-chromium-virtio-rng-reader"})
           
           def api(suffix):
               try:
@@ -110,7 +110,7 @@ jobs:
               require(len(matches) == 1, "Pinned browser job is absent or ambiguous")
               job = matches[0]
               require(job["run_id"] == RUN and job["head_sha"] == HEAD and job["run_attempt"] == 1
-                      and job["name"] == ("Coalesced UI/capture browser gate (" + ENGINE + ")")
+                      and job["name"] == ("VirtIO RNG browser gate (" + ENGINE + ")")
                       and job["status"] == "completed" and job["conclusion"] == "failure",
                       "Pinned browser job is not the completed failed attempt")
               steps = {step["number"]: step for step in job["steps"]}
@@ -235,10 +235,17 @@ jobs:
               relevant = re.compile(r"LAB[|_]|browser-(?:guest|single|openfga)|initdb|postgres|Guest diagnostic|Guest process|MemTotal|MemAvailable|Swap|utime_ticks|stime_ticks|wchan|Name:|State:|Pid:|PPid:|VmRSS|Threads:|Listening|ERROR|FATAL|panic|Error:|failed|timed out", re.I)
               matched = [entry for entry in complete if relevant.search(entry["text"]) and "[browser-qemu]" not in entry["text"]]
               tail = [entry for entry in complete[-240:] if "[browser-qemu]" not in entry["text"]][-80:]
-              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail}
+              entropy = [entry for entry in complete if re.search(r"random:|crng|virtio_rng|hwrng", entry["text"], re.I)]
+              replay_start = next((entry["line"] for entry in complete if "Guest diagnostic:" in entry["text"]), None)
+              prefix_matches = [entry for entry in matched if replay_start is not None and entry["line"] < replay_start]
+              selected = {entry["line"]: entry for entry in matched[:12] + matched[-36:] + tail +
+                          entropy[:8] + entropy[-8:] + prefix_matches[:96] + prefix_matches[-32:]}
               emit((ENGINE + ".selection"), {"complete_lines": len(complete), "relevant_lines": len(matched),
                                          "selected_lines": len(selected), "omitted_lines": len(complete) - len(selected),
                                          "partial_final_line": bool(lines[-1]),
+                                         "first_recorded_diagnostic_header": replay_start,
+                                         "prefix_relevant_lines": len(prefix_matches),
+                                         "prefix_scope": "Rows before the first recorded Guest diagnostic header, if present; no independent RPC/pass count is inferred.",
                                          "scope": "Host receipt completing each line; diagnostic tails may replay prior output. Full raw console follows."})
               for number in sorted(selected):
                   entry = selected[number]
@@ -268,9 +275,8 @@ jobs:
           try:
               run = api("/actions/runs/" + str(RUN))
               require(run["id"] == RUN and run["head_sha"] == HEAD and run["event"] == "push"
-                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-coalesced-037a"
-                      and ((run["status"] == "in_progress" and run["conclusion"] is None)
-                           or (run["status"] == "completed" and run["conclusion"] == "failure")),
+                      and run["run_attempt"] == 1 and run["head_branch"] == "diag/browser-virtio-rng-716b"
+                      and run["status"] == "completed" and run["conclusion"] == "failure",
                       "Expected the exact source run with the completed failed Chromium job")
               jobs = api("/actions/runs/" + str(RUN) + "/jobs?filter=latest&per_page=100")
               results = [inspect_engine(spec, run, jobs) for spec in SPECS]
