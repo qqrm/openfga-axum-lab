@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {chromiumLaunchOptions} from './chromium-launch.mjs';
 
 const serverScript = fileURLToPath(new URL('./serve.mjs', import.meta.url));
 const runnerScript = fileURLToPath(new URL('./run.mjs', import.meta.url));
@@ -64,6 +65,15 @@ function assertIsolation(headers) {
   assert.equal(headers['cross-origin-resource-policy'], 'same-origin');
   assert.equal(headers['x-content-type-options'], 'nosniff');
 }
+
+test('Chromium sandbox remains enabled unless explicitly opted out', () => {
+  const safe = chromiumLaunchOptions('/usr/bin/chromium');
+  assert.equal(safe.chromiumSandbox, true);
+  assert.equal(safe.args.includes('--no-sandbox'), false);
+  const unsafe = chromiumLaunchOptions('/usr/bin/chromium', true);
+  assert.equal(unsafe.chromiumSandbox, false);
+  assert.ok(unsafe.args.includes('--no-sandbox'));
+});
 
 test('loopback server serves only probe and artifact files with isolation headers', async t => {
   const {root, artifact} = await fixture(t);
@@ -132,6 +142,7 @@ test('runner records launch failures and stops its owned Node.js server', async 
   assert.equal(report.outcome, 'infrastructure-failure');
   assert.equal(report.authorizationVerified, false);
   assert.equal(report.httpBridgeImplemented, false);
+  assert.equal(report.chromiumSandboxEnabled, true);
   assert.ok(report.events.some(event => event.kind === 'server.ready'));
   assert.ok(report.events.some(event => event.kind === 'server.exit'));
   await assert.rejects(http(new URL(report.url), '/'), {code: 'ECONNREFUSED'});

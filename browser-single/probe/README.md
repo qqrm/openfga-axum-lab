@@ -71,6 +71,12 @@ when a fixed port is needed. To connect to an
 already running manual server, replace `--artifact` with
 `--url http://127.0.0.1:8765/`.
 
+The runner explicitly enables Chromium sandboxing (`chromiumSandbox: true`),
+which Playwright otherwise disables by default. Run it as an unprivileged user
+with a functional Chromium sandbox. Only for a trusted artifact inside a separate
+isolated environment, append `--no-sandbox` to explicitly opt out; the choice is
+recorded in `result.json`. Do not disable the sandbox for untrusted artifacts.
+
 The runner writes `serial.log`, `events.jsonl`, and `result.json`. The JSON records
 the browser version, original and effective arguments, isolation support, elapsed
 time, guest serial output and browser errors. It waits for the time limit or

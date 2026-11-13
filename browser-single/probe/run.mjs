@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import {chromiumLaunchOptions} from './chromium-launch.mjs';
 
 const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
@@ -16,6 +17,7 @@ const directory = path.resolve(option('--out', 'probe-results'));
 const timeout = Number(option('--timeout', '180')) * 1000;
 const artifact = option('--artifact', null);
 const chromiumPath = option('--chromium', process.env.CHROMIUM || '/usr/bin/chromium');
+const noSandbox = args.includes('--no-sandbox');
 let url = option('--url', 'http://127.0.0.1:8765/');
 fs.mkdirSync(directory, {recursive: true});
 fs.writeFileSync(path.join(directory, 'events.jsonl'), '');
@@ -98,11 +100,8 @@ try {
   if (query) { const parsed = new URL(url); parsed.search = query; url = parsed.href; }
   phase = 'browser-launch';
   const {chromium} = require('playwright');
-  browser = await chromium.launch({
-    executablePath: chromiumPath,
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-background-timer-throttling'],
-  });
+  record('browser-sandbox', {enabled: !noSandbox, explicitOptOut: noSandbox});
+  browser = await chromium.launch(chromiumLaunchOptions(chromiumPath, noSandbox));
   browserVersion = browser.version();
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -170,6 +169,7 @@ try {
   else { outcome = 'capture-timeout'; exitCode = 4; }
   const result = {
     url, artifact: artifact ? path.resolve(artifact) : null, chromiumPath,
+    chromiumSandboxEnabled: !noSandbox,
     browser: browserVersion, elapsedMs: Date.now()-started,
     outcome, exitCode, phase, interrupted, runError, guestFailure, hostRuntimeFailure,
     authorizationVerified: false, httpBridgeImplemented: false,
