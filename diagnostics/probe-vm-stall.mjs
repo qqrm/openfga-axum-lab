@@ -10,6 +10,12 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const engineName = process.env.BROWSER_DIAGNOSTIC_ENGINE;
 assert.ok(['chromium', 'firefox'].includes(engineName), 'Choose one browser engine');
+const chromiumChannel = process.env.PROBE_CHROMIUM_CHANNEL ?? '';
+assert.ok(chromiumChannel === '' || (engineName === 'chromium' && chromiumChannel === 'chrome'),
+  'The only diagnostic browser override is system Chrome for Chromium');
+const stopAfterHmpInput = process.env.PROBE_STOP_AFTER_HMP ?? 'false';
+assert.ok(['true', 'false'].includes(stopAfterHmpInput), 'PROBE_STOP_AFTER_HMP must be true or false');
+const stopAfterHmp = stopAfterHmpInput === 'true';
 const source = path.resolve(process.env.PROBE_SOURCE_ROOT ?? 'source-candidate');
 const root = path.join(source, 'browser-output');
 const output = path.resolve(process.env.PROBE_OUTPUT_ROOT ?? `artifacts/pr36-host-probe/${engineName}`);
@@ -36,6 +42,7 @@ async function hashFile(filename) {
 }
 const result = {kind: 'instrumented_vm_stall_diagnostic', engine: engineName, startedAt: now(),
   acceptanceVerified: false, browserStarts: 0, pageErrors: [], observationErrors: [],
+  requestedChromiumChannel: chromiumChannel || null, stopAfterHmp,
   configuredHostBudgetMs: budget, firstInterventionAt: null, hmpRounds: 0, completed: false};
 let endAt = Date.now() + budget;
 if (process.env.PROBE_JOB_TIMING_FILE) {
@@ -103,6 +110,13 @@ try {
   result.provenance = {runtimeSourceCommit: commit, harness: await hashFile(fileURLToPath(import.meta.url)),
     originalFiles: identities, startupManifest: manifest, derivedRuntime: derived, servedOverlays: {},
     instrumentation: 'JS-only read-only worker observer and allowlisted serial monitor input; not pristine browser acceptance'};
+  if (chromiumChannel === 'chrome') {
+    assert.equal(process.platform, 'linux', 'System Chrome diagnostic is scoped to the Linux runner');
+    const executable = '/opt/google/chrome/chrome';
+    result.provenance.browserOverride = {channel:'chrome', executable,
+      realPath:await fs.realpath(executable), ...await hashFile(executable),
+      comparisonScope:'Runner system Chrome/new headless; not the pinned Playwright headless-shell engine'};
+  }
   for (const [url, bytes] of overlay) {
     const name = path.basename(url);
     result.provenance.servedOverlays[url] = {bytes: bytes.length, sha256: digest(bytes)};
@@ -130,7 +144,8 @@ try {
   });
   await bounded('HTTP listen', new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }), 5000);
   const engine = engineName === 'chromium' ? chromium : firefox;
-  const launchOptions = {headless:true, timeout:30000, ...(engineName === 'chromium' ? {chromiumSandbox:true} : {})};
+  const launchOptions = {headless:true, timeout:30000, ...(engineName === 'chromium' ? {chromiumSandbox:true} : {}),
+    ...(chromiumChannel ? {channel:chromiumChannel} : {})};
   result.launchOptions = launchOptions;
   result.browserStarts++;
   browser = await bounded('browser launch', engine.launch(launchOptions), 35000);
@@ -174,8 +189,12 @@ try {
   result.vmStartRequestedAt = now();
   const vmStart = Date.now();
   await page.locator('#start').click({timeout:5000});
-  let nextSample = 0, nextHmp = 0, pageObservationTimedOut = false, hmpDisabled = false;
+  let nextSample = 0, nextHmp = 0, lastHmpFinished = null, pageObservationTimedOut = false, hmpDisabled = false;
   while (Date.now() < endAt) {
+    if (stopAfterHmp && result.hmpRounds === 3 && lastHmpFinished !== null && Date.now()-lastHmpFinished >= 30000) {
+      result.stopReason = 'three_monitor_snapshots_collected';
+      break;
+    }
     if (Date.now() >= nextSample && !pageObservationTimedOut) {
       const sample = {at:now(), kind:'main_page_heartbeat', hostSequence:sequence, silentHostMs:Date.now()-lastChunkAt};
       try {
@@ -240,6 +259,7 @@ try {
       }
       await sleep(700);
       round.finishedAt = now();
+      lastHmpFinished = Date.now();
       round.sourceSequenceAfter = sequence;
       round.consoleTailAfter = tail;
       append('hmp.jsonl', {direction:'observation', ...round});

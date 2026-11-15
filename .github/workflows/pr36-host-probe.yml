@@ -1,7 +1,7 @@
-name: PR36 host-driven VM stall probe
+name: PR36 system Chrome VM stall probe
 on:
   push:
-    branches: [diag/pr36-host-probe-20261115]
+    branches: [diag/pr36-chrome-probe-20261115]
     paths:
       - .github/workflows/pr36-host-probe.yml
       - diagnostics/prepare-openfga10-bfs-browser.mjs
@@ -10,19 +10,19 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: pr36-host-probe-20261115
+  group: pr36-chrome-probe-20261115
   cancel-in-progress: false
 jobs:
   browser:
     name: PR36 VM stall probe (${{ matrix.engine }})
-    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/pr36-host-probe-20261115'
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/pr36-chrome-probe-20261115'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
-        engine: [chromium, firefox]
+        engine: [chromium]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -192,7 +192,7 @@ jobs:
           observe({"kind": "current_run", **{key: current_info.get(key) for key in [
               "id", "head_sha", "head_branch", "run_attempt", "event", "status"]}})
           require(current_info["id"] == current_run and current_info["head_sha"] == os.environ["GITHUB_SHA"]
-                  and current_info["head_branch"] == "diag/pr36-host-probe-20261115"
+                  and current_info["head_branch"] == "diag/pr36-chrome-probe-20261115"
                   and current_info["run_attempt"] == current_attempt and current_info["event"] == "push",
                   "Current run immutable identity mismatch")
           job_name = "PR36 VM stall probe (" + engine + ")"
@@ -420,19 +420,72 @@ jobs:
           node --check diagnostics/prepare-openfga10-bfs-browser.mjs
           node --check diagnostics/probe-vm-stall.mjs
           node diagnostics/prepare-openfga10-bfs-browser.mjs
-      - name: Install the locked test runtime for this engine
+      - name: Install the locked test runtime for the existing system Chrome
         working-directory: source-candidate/e2e
         timeout-minutes: 3
-        env:
-          BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
+        run: npm ci --ignore-scripts
+      - name: Inspect and smoke-test the runner system Chrome with sandbox
+        timeout-minutes: 2
+        shell: bash
         run: |
-          npm ci --ignore-scripts
-          npx --no-install playwright install --with-deps "$BROWSER_DIAGNOSTIC_ENGINE"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {createReadStream, promises as fs, writeFileSync} from 'node:fs';
+          import {createRequire} from 'node:module';
+          import path from 'node:path';
+          const output = 'artifacts/pr36-host-probe/chromium/system-chrome-smoke.json';
+          await fs.mkdir(path.dirname(output), {recursive:true});
+          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000};
+          const report = {kind:'system_chrome_sandbox_smoke', startedAt:new Date().toISOString(),
+            passed:false, vmStarted:false, acceptanceVerified:false, uid:process.getuid(), launchOptions};
+          const save = () => writeFileSync(output, JSON.stringify(report,null,2));
+          const hardStop = setTimeout(() => { report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
+          let browser;
+          try {
+            assert.notEqual(report.uid,0,'The smoke must run as the unprivileged runner user');
+            const executable = '/opt/google/chrome/chrome';
+            const stat = await fs.stat(executable);
+            assert.ok(stat.isFile() && (stat.mode & 0o111),'System Chrome is not executable');
+            const hash = createHash('sha256');
+            for await (const bytes of createReadStream(executable)) hash.update(bytes);
+            report.executable = {path:executable, realPath:await fs.realpath(executable), bytes:stat.size,
+              sha256:hash.digest('hex'), uid:stat.uid, gid:stat.gid, mode:stat.mode & 0o7777};
+            report.hostPolicy = {};
+            for (const file of ['/proc/sys/kernel/apparmor_restrict_unprivileged_userns','/etc/apparmor.d/chrome']) {
+              try { report.hostPolicy[file] = await fs.readFile(file,'utf8'); }
+              catch (error) { report.hostPolicy[file] = {readError:String(error)}; }
+            }
+            const require = createRequire(path.resolve('source-candidate/e2e/package.json'));
+            const {chromium} = require('@playwright/test');
+            browser = await chromium.launch(launchOptions);
+            report.actualVersion = browser.version();
+            const session = await browser.newBrowserCDPSession();
+            report.commandLine = await session.send('Browser.getBrowserCommandLine');
+            assert.ok(!report.commandLine.arguments.some(arg => /^--(?:no-sandbox|disable-(?:setuid|namespace|seccomp-filter)-sandbox)(?:=|$)/.test(arg)),
+              'Browser command line disabled a sandbox boundary');
+            const page = await browser.newPage();
+            await page.goto('chrome://sandbox',{timeout:10000});
+            report.sandboxStatus = await page.locator('body').innerText({timeout:5000});
+            report.passed = true;
+          } catch (error) { report.error=String(error); process.exitCode=1; }
+          finally {
+            report.finishedAt=new Date().toISOString();
+            save();
+            if (browser) await browser.close();
+            clearTimeout(hardStop);
+            console.log(JSON.stringify({passed:report.passed, actualVersion:report.actualVersion,
+              vmStarted:false, acceptanceVerified:false, error:report.error, output}));
+            process.exit(process.exitCode ?? 0);
+          }
+          JS
       # Diagnostic only: no acceptance/deployment decision is made by this probe.
       - name: Collect bounded host-driven progress and HMP evidence from one real VM
         timeout-minutes: 14
         env:
           BROWSER_DIAGNOSTIC_ENGINE: ${{ matrix.engine }}
+          PROBE_CHROMIUM_CHANNEL: chrome
+          PROBE_STOP_AFTER_HMP: 'true'
           PROBE_SOURCE_ROOT: source-candidate
           PROBE_OUTPUT_ROOT: artifacts/pr36-host-probe/${{ matrix.engine }}
           PROBE_HOST_TIMEOUT_MS: '660000'
@@ -442,7 +495,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: pr36-host-probe-${{ matrix.engine }}
+          name: pr36-chrome-probe-${{ matrix.engine }}
           path: |
             artifacts/pr36-host-probe/
             diagnostics/probe-vm-stall.mjs
