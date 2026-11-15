@@ -144,7 +144,8 @@ try {
   });
   await bounded('HTTP listen', new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }), 5000);
   const engine = engineName === 'chromium' ? chromium : firefox;
-  const launchOptions = {headless:true, timeout:30000, ...(engineName === 'chromium' ? {chromiumSandbox:true} : {}),
+  const launchOptions = {headless:true, timeout:30000,
+    ...(engineName === 'chromium' ? {chromiumSandbox:true, args:['--enable-automation']} : {}),
     ...(chromiumChannel ? {channel:chromiumChannel} : {})};
   result.launchOptions = launchOptions;
   result.browserStarts++;
@@ -191,7 +192,7 @@ try {
   await page.locator('#start').click({timeout:5000});
   let nextSample = 0, nextHmp = 0, lastHmpFinished = null, pageObservationTimedOut = false, hmpDisabled = false;
   while (Date.now() < endAt) {
-    if (stopAfterHmp && result.hmpRounds === 3 && lastHmpFinished !== null && Date.now()-lastHmpFinished >= 30000) {
+    if (stopAfterHmp && !hmpDisabled && result.hmpRounds === 3 && lastHmpFinished !== null && Date.now()-lastHmpFinished >= 30000) {
       result.stopReason = 'three_monitor_snapshots_collected';
       break;
     }

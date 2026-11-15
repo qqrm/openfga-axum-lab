@@ -436,11 +436,12 @@ jobs:
           import path from 'node:path';
           const output = 'artifacts/pr36-host-probe/chromium/system-chrome-smoke.json';
           await fs.mkdir(path.dirname(output), {recursive:true});
-          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000};
+          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000,
+            args:['--enable-automation']};
           const report = {kind:'system_chrome_sandbox_smoke', startedAt:new Date().toISOString(),
             passed:false, vmStarted:false, acceptanceVerified:false, uid:process.getuid(), launchOptions};
           const save = () => writeFileSync(output, JSON.stringify(report,null,2));
-          const hardStop = setTimeout(() => { report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
+          const hardStop = setTimeout(() => { report.passed=false; report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
           let browser;
           try {
             assert.notEqual(report.uid,0,'The smoke must run as the unprivileged runner user');
