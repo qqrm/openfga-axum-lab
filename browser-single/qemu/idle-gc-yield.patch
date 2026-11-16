@@ -1,0 +1,94 @@
+diff --git a/include/tcg/wasm32-gc.h b/include/tcg/wasm32-gc.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c3b9c7b9e3c65191cba9cc0cca117f45965a6a58
+--- /dev/null
++++ b/include/tcg/wasm32-gc.h
+@@ -0,0 +1,10 @@
++#ifndef TCG_WASM32_GC_H
++#define TCG_WASM32_GC_H
++
++#include <stdbool.h>
++
++bool wasm32_has_pending_gc(void);
++/* Call only with the iothread lock released, outside TB execution. */
++void wasm32_yield_for_gc(void);
++
++#endif
+diff --git a/system/cpus.c b/system/cpus.c
+index a444a747f0164ee9a998ef4b25b49a2efc4607a8..9252d9478b067a88a776a47ca746e097591bf695 100644
+--- a/system/cpus.c
++++ b/system/cpus.c
+@@ -47,6 +47,11 @@
+ #include "hw/hw.h"
+ #include "trace.h"
+ 
++#if defined(EMSCRIPTEN) && defined(CONFIG_TCG) && !defined(CONFIG_TCG_INTERPRETER)
++#include "tcg/wasm32-gc.h"
++#define WASM_IDLE_GC_POLL_MS 20
++#endif
++
+ #ifdef CONFIG_LINUX
+ 
+ #include <sys/prctl.h>
+@@ -428,7 +433,23 @@ void qemu_wait_io_event(CPUState *cpu)
+             slept = true;
+             qemu_plugin_vcpu_idle_cb(cpu);
+         }
+-        qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
++#if defined(EMSCRIPTEN) && defined(CONFIG_TCG) && !defined(CONFIG_TCG_INTERPRETER)
++        if (wasm32_has_pending_gc()) {
++            qemu_cond_timedwait(cpu->halt_cond, &qemu_global_mutex,
++                                WASM_IDLE_GC_POLL_MS);
++            if (cpu_thread_is_idle(cpu)) {
++                /* Finalizers belong to this worker; do not hold the BQL
++                 * while returning to its JS event loop. Recheck idle on
++                 * the next iteration so a kick during the yield is kept. */
++                qemu_mutex_unlock_iothread();
++                wasm32_yield_for_gc();
++                qemu_mutex_lock_iothread();
++            }
++        } else
++#endif
++        {
++            qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
++        }
+     }
+     if (slept) {
+         qemu_plugin_vcpu_resume_cb(cpu);
+diff --git a/tcg/wasm32.c b/tcg/wasm32.c
+index e0b26bdc8d6d5b987061f9090ae0b62b76c34e16..5b6be92da27d573577854f6badf7fbbb1082f83f 100644
+--- a/tcg/wasm32.c
++++ b/tcg/wasm32.c
+@@ -29,6 +29,7 @@
+ #include <emscripten.h>
+ #include <emscripten/threading.h>
+ #include "wasm32.h"
++#include "tcg/wasm32-gc.h"
+ 
+ __thread uintptr_t tci_tb_ptr;
+ 
+@@ -273,6 +274,24 @@ static int get_instance_running_local(void *tb_ptr)
+     return elm->fidx;
+ }
+ 
++bool wasm32_has_pending_gc(void)
++{
++    if (!initdone) {
++        return false;
++    }
++    check_instance_garbage_collected();
++    return instance_pending_gc_local() > 0;
++}
++
++void wasm32_yield_for_gc(void)
++{
++    if (wasm32_has_pending_gc()) {
++        /* A futex wait does not service this worker's JS finalization jobs. */
++        emscripten_sleep(0);
++        check_instance_garbage_collected();
++    }
++}
++
+ #define MAX_EXEC_NUM 50000
+ __thread int exec_cnt = MAX_EXEC_NUM;
+ static inline void trysleep()

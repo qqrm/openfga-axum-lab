@@ -17,7 +17,7 @@ for (const [key,value] of Object.entries({
   converter_commit:'087c313479d51cdf255e4f28ded6ae7d8141297b',
   converter_dockerfile_sha256:'f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508',
   qemu_commit:'8604ed49a3cde392890b014a8d5a959c8a2fe72a',
-  backend_postimage_blob:'e0b26bdc8d6d5b987061f9090ae0b62b76c34e16',
+  backend_postimage_blob:'5b6be92da27d573577854f6badf7fbbb1082f83f',
   emscripten_version:'4.0.10',
   emsdk_image:'emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7',
   max_instance_alive_before:15000,
@@ -39,8 +39,22 @@ for (const [key,value] of Object.entries({
   barrier_emitter_preimage_blob:'d4078f5adac57d9ccc7d792773fff2ea65a33d6a',
   barrier_emitter_postimage_blob:'4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355',
   memory_barrier_tests:'passed',
+  idle_gc_policy:'pending_local_finalizers_timed_idle_wait',
+  idle_gc_poll_ms:20,
+  idle_gc_tests:'passed',
+  idle_gc_bridge_tests:'passed',
   instantiate_num:1500
 })) assert.equal(build[key],value,`Unexpected emulator ${key}`);
+assert.deepEqual(build.idle_gc_preimages,{
+  'tcg/wasm32.c':'e0b26bdc8d6d5b987061f9090ae0b62b76c34e16',
+  'system/cpus.c':'a444a747f0164ee9a998ef4b25b49a2efc4607a8',
+  'include/tcg/wasm32-gc.h':null,
+});
+assert.deepEqual(build.idle_gc_postimages,{
+  'tcg/wasm32.c':'5b6be92da27d573577854f6badf7fbbb1082f83f',
+  'system/cpus.c':'9252d9478b067a88a776a47ca746e097591bf695',
+  'include/tcg/wasm32-gc.h':'c3b9c7b9e3c65191cba9cc0cca117f45965a6a58',
+});
 assert.equal(await hashFile(path.join(buildDirectory,'upstream.Dockerfile')),build.converter_dockerfile_sha256,
   'Changed upstream emulator build recipe');
 for (const [key,name] of [
@@ -53,7 +67,10 @@ for (const [key,name] of [
   ['multiply_patch_sha256','i32-multiply.patch'],
   ['multiply_test_sha256','check-i32-multiply.mjs'],
   ['barrier_patch_sha256','memory-barrier.patch'],
-  ['barrier_test_sha256','check-memory-barrier.mjs']
+  ['barrier_test_sha256','check-memory-barrier.mjs'],
+  ['idle_gc_patch_sha256','idle-gc-yield.patch'],
+  ['idle_gc_test_sha256','check-idle-gc.mjs'],
+  ['idle_gc_bridge_test_sha256','check-idle-gc.mjs']
 ]) {
   assert.equal(build[key],await hashFile(`browser-single/qemu/${name}`),`Changed emulator source: ${name}`);
   assert.equal(build[key],await hashFile(path.join(buildDirectory,name)),`Missing emulator source: ${name}`);
@@ -89,7 +106,7 @@ assert.equal(barrier.source_blob,build.multiply_emitter_postimage_blob);
 assert.equal(barrier.source_blob,build.barrier_emitter_preimage_blob);
 assert.equal(barrier.candidate_blob,build.barrier_emitter_postimage_blob);
 assert.equal(barrier.header_blob,'37ad4b93c8ab721639e4cd8603a5dbbe69c07105');
-assert.equal(barrier.backend_blob,build.backend_postimage_blob);
+assert.equal(barrier.backend_blob,build.idle_gc_preimages['tcg/wasm32.c']);
 assert.equal(barrier.patch_sha256,build.barrier_patch_sha256);
 assert.equal(barrier.checker_sha256,build.barrier_test_sha256);
 assert.equal(barrier.patch_apply_reverse,true);
@@ -119,7 +136,7 @@ assert.equal(digest(bridgeBytes),build.budget_bridge_proof_sha256,'Changed budge
 const bridge = JSON.parse(bridgeBytes);
 assert.equal(bridge.kind,'compiled_emscripten_budget_bridge');
 assert.equal(bridge.emscripten_version,build.emscripten_version);
-assert.equal(bridge.source_blob,build.backend_postimage_blob);
+assert.equal(bridge.source_blob,build.idle_gc_preimages['tcg/wasm32.c']);
 assert.equal(bridge.region_sha256,'c509e30e97063cec1a3aa483006f10e6e8cddb22b7c6f013f4a607d8e433d59c');
 assert.equal(bridge.checker_sha256,build.budget_bridge_test_sha256);
 assert.deepEqual(bridge.candidate,{total:2,passed:2});
@@ -130,6 +147,48 @@ for (const [name,expected] of Object.entries(bridge.files)) {
   const bytes = await fs.readFile(path.join(bridgeDirectory,name));
   assert.equal(bytes.length,expected.bytes,`Changed bridge proof size: ${name}`);
   assert.equal(digest(bytes),expected.sha256,`Changed bridge proof file: ${name}`);
+}
+const idleProofDirectories = [];
+for (const [directory,kind,proofKey,checkerKey,scenarios] of [
+  ['idle-gc-proof','compiled_native_idle_gc_locking','idle_gc_proof_sha256','idle_gc_test_sha256',[0,1,2,3,4,5]],
+  ['idle-gc-bridge-proof','compiled_emscripten_idle_gc_queue','idle_gc_bridge_proof_sha256','idle_gc_bridge_test_sha256',[0,1,2,5]],
+]) {
+  const proofDirectory = path.join(buildDirectory,directory);
+  const bytes = await fs.readFile(path.join(proofDirectory,'summary.json'));
+  assert.equal(digest(bytes),build[proofKey],`Changed ${directory}`);
+  const idle = JSON.parse(bytes);
+  assert.equal(idle.status,'passed');
+  assert.equal(idle.kind,kind);
+  assert.equal(idle.qemu_commit,build.qemu_commit);
+  assert.equal(idle.emscripten_version,directory === 'idle-gc-bridge-proof' ? '4.0.10' : null);
+  assert.deepEqual(idle.preimages,build.idle_gc_preimages);
+  assert.deepEqual(idle.postimages,build.idle_gc_postimages);
+  assert.equal(idle.policy,build.idle_gc_policy);
+  assert.equal(idle.poll_ms,build.idle_gc_poll_ms);
+  assert.equal(idle.patch_sha256,build.idle_gc_patch_sha256);
+  assert.equal(idle.checker_sha256,build[checkerKey]);
+  for (const key of ['patch_apply_reverse','unchanged_budget_region','unchanged_active_dispatch','unchanged_active_yield'])
+    assert.equal(idle[key],true,`${directory} ${key}`);
+  assert.deepEqual(idle.results.map(item => [item.name,item.scenario,item.passed ?? false,item.rejected ?? false]),[
+    ...scenarios.map(scenario => ['candidate',scenario,true,false]),
+    ['baseline',0,true,false],['locked-yield',0,false,true],
+  ]);
+  for (const item of idle.results) {
+    if (item.name !== 'locked-yield') {
+      assert.equal(item.baseline,item.name === 'baseline');
+      assert.equal(item.progressBeforeKick,item.name === 'candidate' && item.scenario === 0);
+    }
+  }
+  assert.deepEqual((await fs.readdir(proofDirectory)).sort(),[...Object.keys(idle.files),'summary.json'].sort());
+  for (const name of ['candidate.c','baseline.c','locked-yield.c','runner.mjs','compiler-version.txt','idle-gc-yield.patch'])
+    assert(Object.hasOwn(idle.files,name),`${directory} is missing ${name}`);
+  for (const [name,expected] of Object.entries(idle.files)) {
+    assert(name === path.basename(name) && !['.','..','summary.json'].includes(name),'Unexpected idle proof path');
+    const bytes = await fs.readFile(path.join(proofDirectory,name));
+    assert.equal(bytes.length,expected.bytes,`Changed idle proof size: ${name}`);
+    assert.equal(digest(bytes),expected.sha256,`Changed idle proof file: ${name}`);
+  }
+  idleProofDirectories.push([directory,proofDirectory]);
 }
 const names = ['out.js','qemu-system-x86_64.wasm'];
 assert.deepEqual(Object.keys(build.files ?? {}).sort(),[...names].sort());
@@ -161,12 +220,15 @@ for (const name of ['build.json','SOURCE.txt','instance-budget.patch','build.sh'
   'check-runtime-diagnostics.mjs','runtime-diagnostics-tests.log',
   'i32-multiply.patch','check-i32-multiply.mjs','i32-multiply-tests.log',
   'memory-barrier.patch','check-memory-barrier.mjs','memory-barrier-tests.log',
+  'idle-gc-yield.patch','check-idle-gc.mjs','idle-gc-tests.log','idle-gc-bridge-tests.log',
   'upstream.Dockerfile','emscripten-version.txt','config-host.mak','submodules.txt','COPYING','COPYING.LIB','LICENSE']) {
   await fs.copyFile(path.join(buildDirectory,name),path.join(provenance,name));
 }
 await fs.cp(proofDirectory,path.join(provenance,'i32-multiply-proof'),{recursive:true});
 await fs.cp(barrierDirectory,path.join(provenance,'memory-barrier-proof'),{recursive:true});
 await fs.cp(bridgeDirectory,path.join(provenance,'instance-budget-bridge-proof'),{recursive:true});
+for (const [name,directory] of idleProofDirectories)
+  await fs.cp(directory,path.join(provenance,name),{recursive:true});
 const derivedPath = path.join(runtime,'derived-runtime.json');
 const derived = JSON.parse(await fs.readFile(derivedPath,'utf8'));
 derived.emulator_build = build;
@@ -174,5 +236,6 @@ derived.changes.push('QEMU: evict at 2048 retained instances per CPU; shared sta
 derived.changes.push('QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged');
 derived.changes.push('QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked');
 derived.changes.push('QEMU: emit atomic.fence for compiled TCG memory barriers; source-derived Wasm encoding and execution checked');
+derived.changes.push('QEMU: service owner-local pending finalizers during idle vCPU waits, releasing the BQL before JS yield; live caps and active dispatch unchanged');
 await fs.writeFile(derivedPath,JSON.stringify(derived,null,2)+'\n');
 console.log('Verified emulator pair overlaid; guest data, loader, arguments and kernel are unchanged');

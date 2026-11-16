@@ -30,7 +30,8 @@ cp -- "$script_dir/build.sh" "$script_dir/Dockerfile.appendix" \
     "$script_dir/check-runtime-diagnostics.mjs" "$script_dir/check-instance-budget-bridge.mjs" \
     "$script_dir/i32-multiply.patch" \
     "$script_dir/check-i32-multiply.mjs" \
-    "$script_dir/memory-barrier.patch" "$script_dir/check-memory-barrier.mjs" "$context_dir/"
+    "$script_dir/memory-barrier.patch" "$script_dir/check-memory-barrier.mjs" \
+    "$script_dir/idle-gc-yield.patch" "$script_dir/check-idle-gc.mjs" "$context_dir/"
 cat "$context_dir/upstream.Dockerfile" "$context_dir/Dockerfile.appendix" > "$context_dir/Dockerfile"
 
 git -C "$source_dir" init -q
@@ -44,10 +45,12 @@ check_clean_source() {
     test "$(git -C "$source_dir" hash-object tcg/wasm32.h)" = 82ac7e37677a57b27c95e9efe4741a4cec39cf46
     test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = 3c85588be97b6c53a451e30c0593e8b433ede7b6
     test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.h)" = 37ad4b93c8ab721639e4cd8603a5dbbe69c07105
+    test "$(git -C "$source_dir" hash-object system/cpus.c)" = a444a747f0164ee9a998ef4b25b49a2efc4607a8
+    test ! -e "$source_dir/include/tcg/wasm32-gc.h"
     git -C "$source_dir" diff --quiet --exit-code HEAD --
 }
 check_clean_source
-# Validate all three exact patches before spending work on dependencies, then supply a
+# Validate all four exact patches before spending work on dependencies, then supply a
 # clean checkout. The Docker target independently validates and applies them.
 git -C "$source_dir" apply --unidiff-zero --check --whitespace=error-all "$context_dir/instance-budget.patch"
 git -C "$source_dir" apply --unidiff-zero --whitespace=error-all "$context_dir/instance-budget.patch"
@@ -67,6 +70,18 @@ git -C "$source_dir" apply --whitespace=error-all "$context_dir/memory-barrier.p
 test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = 4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355
 git -C "$source_dir" diff --check HEAD --
 node "$script_dir/check-memory-barrier.mjs" "$source_dir/tcg/wasm32/tcg-target.c.inc"
+git -C "$source_dir" apply --check --whitespace=error-all "$context_dir/idle-gc-yield.patch"
+git -C "$source_dir" apply --whitespace=error-all "$context_dir/idle-gc-yield.patch"
+test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = 5b6be92da27d573577854f6badf7fbbb1082f83f
+test "$(git -C "$source_dir" hash-object system/cpus.c)" = 9252d9478b067a88a776a47ca746e097591bf695
+test "$(git -C "$source_dir" hash-object include/tcg/wasm32-gc.h)" = c3b9c7b9e3c65191cba9cc0cca117f45965a6a58
+test "$(git -C "$source_dir" diff --name-only HEAD --)" = $'system/cpus.c\ntcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc'
+git -C "$source_dir" diff --check HEAD --
+node "$script_dir/check-idle-gc.mjs" "$source_dir"
+git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/idle-gc-yield.patch"
+test "$(git -C "$source_dir" hash-object tcg/wasm32.c)" = e0b26bdc8d6d5b987061f9090ae0b62b76c34e16
+test "$(git -C "$source_dir" hash-object system/cpus.c)" = a444a747f0164ee9a998ef4b25b49a2efc4607a8
+test ! -e "$source_dir/include/tcg/wasm32-gc.h"
 git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/memory-barrier.patch"
 test "$(git -C "$source_dir" hash-object tcg/wasm32/tcg-target.c.inc)" = d4078f5adac57d9ccc7d792773fff2ea65a33d6a
 git -C "$source_dir" apply --reverse --whitespace=error-all "$context_dir/i32-multiply.patch"
@@ -92,7 +107,7 @@ expected = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508",
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
+    "backend_postimage_blob": "5b6be92da27d573577854f6badf7fbbb1082f83f",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
@@ -114,6 +129,20 @@ expected = {
     "barrier_emitter_preimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
     "barrier_emitter_postimage_blob": "4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355",
     "memory_barrier_tests": "passed",
+    "idle_gc_policy": "pending_local_finalizers_timed_idle_wait",
+    "idle_gc_poll_ms": 20,
+    "idle_gc_tests": "passed",
+    "idle_gc_bridge_tests": "passed",
+    "idle_gc_preimages": {
+        "tcg/wasm32.c": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
+        "system/cpus.c": "a444a747f0164ee9a998ef4b25b49a2efc4607a8",
+        "include/tcg/wasm32-gc.h": None,
+    },
+    "idle_gc_postimages": {
+        "tcg/wasm32.c": "5b6be92da27d573577854f6badf7fbbb1082f83f",
+        "system/cpus.c": "9252d9478b067a88a776a47ca746e097591bf695",
+        "include/tcg/wasm32-gc.h": "c3b9c7b9e3c65191cba9cc0cca117f45965a6a58",
+    },
     "instantiate_num": 1500,
     "browser_acceptance": "not_run",
 }
@@ -130,6 +159,9 @@ for key, name in [
     ("multiply_test_sha256", "check-i32-multiply.mjs"),
     ("barrier_patch_sha256", "memory-barrier.patch"),
     ("barrier_test_sha256", "check-memory-barrier.mjs"),
+    ("idle_gc_patch_sha256", "idle-gc-yield.patch"),
+    ("idle_gc_test_sha256", "check-idle-gc.mjs"),
+    ("idle_gc_bridge_test_sha256", "check-idle-gc.mjs"),
 ]:
     assert metadata[key] == hashlib.sha256((source / name).read_bytes()).hexdigest(), key
     assert (output / name).read_bytes() == (source / name).read_bytes(), name
@@ -160,7 +192,7 @@ assert barrier["upstream_blob"] == metadata["multiply_emitter_preimage_blob"]
 assert barrier["source_blob"] == metadata["multiply_emitter_postimage_blob"] == metadata["barrier_emitter_preimage_blob"]
 assert barrier["candidate_blob"] == metadata["barrier_emitter_postimage_blob"]
 assert barrier["header_blob"] == "37ad4b93c8ab721639e4cd8603a5dbbe69c07105"
-assert barrier["backend_blob"] == metadata["backend_postimage_blob"]
+assert barrier["backend_blob"] == metadata["idle_gc_preimages"]["tcg/wasm32.c"]
 assert barrier["patch_sha256"] == metadata["barrier_patch_sha256"]
 assert barrier["checker_sha256"] == metadata["barrier_test_sha256"]
 assert barrier["patch_apply_reverse"] is True and barrier["malformed_fence_controls"] == 3
@@ -190,7 +222,7 @@ assert hashlib.sha256(bridge_bytes).hexdigest() == metadata["budget_bridge_proof
 bridge = json.loads(bridge_bytes)
 assert bridge["kind"] == "compiled_emscripten_budget_bridge"
 assert bridge["emscripten_version"] == metadata["emscripten_version"]
-assert bridge["source_blob"] == metadata["backend_postimage_blob"]
+assert bridge["source_blob"] == metadata["idle_gc_preimages"]["tcg/wasm32.c"]
 assert bridge["checker_sha256"] == metadata["budget_bridge_test_sha256"]
 assert bridge["candidate"] == {"total": 2, "passed": 2}
 assert bridge["negative_controls"] == {"total": 2, "rejected": 2}
@@ -199,6 +231,38 @@ for name, item in bridge["files"].items():
     assert Path(name).name == name and name not in (".", "..", "summary.json")
     data = (bridge_dir / name).read_bytes()
     assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
+for directory, kind, proof_key, checker_key, scenarios in [
+    ("idle-gc-proof", "compiled_native_idle_gc_locking", "idle_gc_proof_sha256", "idle_gc_test_sha256", list(range(6))),
+    ("idle-gc-bridge-proof", "compiled_emscripten_idle_gc_queue", "idle_gc_bridge_proof_sha256", "idle_gc_bridge_test_sha256", [0, 1, 2, 5]),
+]:
+    idle_dir = output / directory
+    idle_bytes = (idle_dir / "summary.json").read_bytes()
+    assert hashlib.sha256(idle_bytes).hexdigest() == metadata[proof_key]
+    idle = json.loads(idle_bytes)
+    assert idle["status"] == "passed" and idle["kind"] == kind
+    assert idle["qemu_commit"] == metadata["qemu_commit"]
+    assert idle["emscripten_version"] == ("4.0.10" if directory == "idle-gc-bridge-proof" else None)
+    assert idle["preimages"] == metadata["idle_gc_preimages"]
+    assert idle["postimages"] == metadata["idle_gc_postimages"]
+    assert idle["policy"] == metadata["idle_gc_policy"] and idle["poll_ms"] == metadata["idle_gc_poll_ms"]
+    assert idle["patch_sha256"] == metadata["idle_gc_patch_sha256"]
+    assert idle["checker_sha256"] == metadata[checker_key]
+    for key in ["patch_apply_reverse", "unchanged_budget_region", "unchanged_active_dispatch", "unchanged_active_yield"]:
+        assert idle[key] is True
+    expected_results = [("candidate", scenario, True, False) for scenario in scenarios]
+    expected_results += [("baseline", 0, True, False), ("locked-yield", 0, False, True)]
+    assert [(item["name"], item["scenario"], item.get("passed", False), item.get("rejected", False))
+            for item in idle["results"]] == expected_results
+    for item in idle["results"]:
+        if item["name"] != "locked-yield":
+            assert item["baseline"] is (item["name"] == "baseline")
+            assert item["progressBeforeKick"] is (item["name"] == "candidate" and item["scenario"] == 0)
+    assert {item.name for item in idle_dir.iterdir()} == set(idle["files"]) | {"summary.json"}
+    assert {"candidate.c", "baseline.c", "locked-yield.c", "runner.mjs", "compiler-version.txt", "idle-gc-yield.patch"} <= set(idle["files"])
+    for name, item in idle["files"].items():
+        assert Path(name).name == name and name not in (".", "..", "summary.json")
+        data = (idle_dir / name).read_bytes()
+        assert len(data) == item["bytes"] and hashlib.sha256(data).hexdigest() == item["sha256"], name
 assert set(metadata["files"]) == {"out.js", "qemu-system-x86_64.wasm"}
 for name, expected_file in metadata["files"].items():
     data = (output / name).read_bytes()

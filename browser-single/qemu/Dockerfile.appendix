@@ -3,13 +3,15 @@
 FROM qemu-emscripten-dev AS browser-qemu-build
 ARG EMSDK_VERSION_QEMU
 ARG EMULATOR_BUILD_JOBS=2
-COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs check-instance-budget-bridge.mjs i32-multiply.patch check-i32-multiply.mjs memory-barrier.patch check-memory-barrier.mjs upstream.Dockerfile /browser-qemu-input/
+COPY build.sh Dockerfile.appendix instance-budget.patch check-instance-budget.mjs check-runtime-diagnostics.mjs check-instance-budget-bridge.mjs i32-multiply.patch check-i32-multiply.mjs memory-barrier.patch check-memory-barrier.mjs idle-gc-yield.patch check-idle-gc.mjs upstream.Dockerfile /browser-qemu-input/
 RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7" \
     && test "$(git -C /qemu rev-parse HEAD)" = 8604ed49a3cde392890b014a8d5a959c8a2fe72a \
     && test "$(git -C /qemu hash-object tcg/wasm32.c)" = d60ce4b5eeb54f4a15b228d57654c52d1cbd1fe6 \
     && test "$(git -C /qemu hash-object tcg/wasm32.h)" = 82ac7e37677a57b27c95e9efe4741a4cec39cf46 \
     && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.c.inc)" = 3c85588be97b6c53a451e30c0593e8b433ede7b6 \
     && test "$(git -C /qemu hash-object tcg/wasm32/tcg-target.h)" = 37ad4b93c8ab721639e4cd8603a5dbbe69c07105 \
+    && test "$(git -C /qemu hash-object system/cpus.c)" = a444a747f0164ee9a998ef4b25b49a2efc4607a8 \
+    && test ! -e /qemu/include/tcg/wasm32-gc.h \
     && git -C /qemu diff --quiet --exit-code HEAD -- \
     && git -C /qemu apply --unidiff-zero --check --whitespace=error-all /browser-qemu-input/instance-budget.patch \
     && git -C /qemu apply --unidiff-zero --whitespace=error-all /browser-qemu-input/instance-budget.patch \
@@ -36,6 +38,17 @@ RUN test "$EMSDK_VERSION_QEMU" = "4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a
     && git -C /qemu diff --check HEAD -- \
     && node /browser-qemu-input/check-memory-barrier.mjs /qemu/tcg/wasm32/tcg-target.c.inc /emulator-out/memory-barrier-proof > /emulator-out/memory-barrier-tests.log \
     && cat /emulator-out/memory-barrier-tests.log \
+    && git -C /qemu apply --check --whitespace=error-all /browser-qemu-input/idle-gc-yield.patch \
+    && git -C /qemu apply --whitespace=error-all /browser-qemu-input/idle-gc-yield.patch \
+    && test "$(git -C /qemu hash-object tcg/wasm32.c)" = 5b6be92da27d573577854f6badf7fbbb1082f83f \
+    && test "$(git -C /qemu hash-object system/cpus.c)" = 9252d9478b067a88a776a47ca746e097591bf695 \
+    && test "$(git -C /qemu hash-object include/tcg/wasm32-gc.h)" = c3b9c7b9e3c65191cba9cc0cca117f45965a6a58 \
+    && test "$(git -C /qemu diff --name-only HEAD --)" = "$(printf 'system/cpus.c\ntcg/wasm32.c\ntcg/wasm32/tcg-target.c.inc')" \
+    && git -C /qemu diff --check HEAD -- \
+    && node /browser-qemu-input/check-idle-gc.mjs /qemu /emulator-out/idle-gc-proof > /emulator-out/idle-gc-tests.log \
+    && cat /emulator-out/idle-gc-tests.log \
+    && node /browser-qemu-input/check-idle-gc.mjs /qemu /emulator-out/idle-gc-bridge-proof --emscripten > /emulator-out/idle-gc-bridge-tests.log \
+    && cat /emulator-out/idle-gc-bridge-tests.log \
     && emcc --version > /emulator-out/emscripten-version.txt
 
 # Same configure/compiler/linker flags as pinned converter lines 866-870.
@@ -71,7 +84,7 @@ metadata = {
     "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
     "converter_dockerfile_sha256": digest("upstream.Dockerfile"),
     "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
-    "backend_postimage_blob": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
+    "backend_postimage_blob": "5b6be92da27d573577854f6badf7fbbb1082f83f",
     "emscripten_version": "4.0.10",
     "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
     "max_instance_alive_before": 15000,
@@ -93,8 +106,22 @@ metadata = {
     "barrier_emitter_preimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
     "barrier_emitter_postimage_blob": "4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355",
     "memory_barrier_tests": "passed",
+    "idle_gc_policy": "pending_local_finalizers_timed_idle_wait",
+    "idle_gc_poll_ms": 20,
+    "idle_gc_tests": "passed",
+    "idle_gc_bridge_tests": "passed",
+    "idle_gc_preimages": {
+        "tcg/wasm32.c": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
+        "system/cpus.c": "a444a747f0164ee9a998ef4b25b49a2efc4607a8",
+        "include/tcg/wasm32-gc.h": None,
+    },
+    "idle_gc_postimages": {
+        "tcg/wasm32.c": "5b6be92da27d573577854f6badf7fbbb1082f83f",
+        "system/cpus.c": "9252d9478b067a88a776a47ca746e097591bf695",
+        "include/tcg/wasm32-gc.h": "c3b9c7b9e3c65191cba9cc0cca117f45965a6a58",
+    },
     "instantiate_num": 1500,
-    "change_kind": "separate_retention_and_live_instance_budget_candidate",
+    "change_kind": "wasm_idle_gc_scheduling_candidate",
     "patch_sha256": digest("instance-budget.patch"),
     "builder_sha256": digest("build.sh"),
     "dockerfile_appendix_sha256": digest("Dockerfile.appendix"),
@@ -108,6 +135,11 @@ metadata = {
     "barrier_patch_sha256": digest("memory-barrier.patch"),
     "barrier_test_sha256": digest("check-memory-barrier.mjs"),
     "barrier_proof_sha256": digest("memory-barrier-proof/summary.json"),
+    "idle_gc_patch_sha256": digest("idle-gc-yield.patch"),
+    "idle_gc_test_sha256": digest("check-idle-gc.mjs"),
+    "idle_gc_proof_sha256": digest("idle-gc-proof/summary.json"),
+    "idle_gc_bridge_test_sha256": digest("check-idle-gc.mjs"),
+    "idle_gc_bridge_proof_sha256": digest("idle-gc-bridge-proof/summary.json"),
     "files": files,
     "browser_acceptance": "not_run",
 }
@@ -127,8 +159,8 @@ metadata = {
     "INSTANTIATE_NUM remains 1500 and MAX_EXEC_NUM remains 50000. "
     "Passive per-worker numeric module lifecycle counters use the [browser-qemu] "
     "prefix, including the frozen live_limit, every 1024 completed registrations and on an exception. "
-    "The original exception is rethrown unchanged. No additional GC/yield or "
-    "Wasm object retention is introduced. Encoded sizes are input bytes, not "
+    "The original exception is rethrown unchanged. The diagnostic counters "
+    "introduce no additional GC/yield or Wasm object retention. Encoded sizes are input bytes, not "
     "native memory. Stale per-worker live estimates are not a global bound. "
     "The separate i32-multiply.patch normalizes each i32 input before the "
     "signed/unsigned widening multiply. Its intermediate C emitter postimage is "
@@ -149,8 +181,19 @@ metadata = {
     "The bridge proof uses the extracted C with actual preRun/proxy-main/two-pthread "
     "glue, a 64 MiB fixture heap and EXIT_RUNTIME=1; it does not run complete QEMU. "
     "Raw bridge inputs, outputs and negative controls are in instance-budget-bridge-proof/. "
-    "This is an unproven browser memory-budget "
-    "candidate; browser acceptance is required separately.\n"
+    "Those legacy proofs run on backend e0b26bdc8d6d5b987061f9090ae0b62b76c34e16 "
+    "before the separate idle-gc-yield.patch. That patch adds a 20 ms timed "
+    "idle-vCPU wait only while the owner has detached instances pending "
+    "finalization; it releases the BQL before emscripten_sleep(0), then accounts "
+    "delivered callbacks and rechecks the idle predicate after reacquiring the BQL. "
+    "It preserves the live caps, retained threshold, active dispatch and active yield. "
+    "The final backend is 5b6be92da27d573577854f6badf7fbbb1082f83f. "
+    "idle-gc-proof/ and idle-gc-bridge-proof/ retain source-derived native locks "
+    "and SDK 4.0.10 worker JS-task regressions, including the unchanged blocking "
+    "baseline and locked-yield negative control. The JS callback payload is a "
+    "deterministic finalization test double, not a real-GC timing guarantee. "
+    "The exact patch reverse and unchanged regions bind both proof stages. "
+    "This remains an unproven full-browser candidate; browser acceptance is required separately.\n"
     "Rebuild with browser-single/qemu/build.sh in qqrm/openfga-axum-lab.\n"
     "See COPYING, COPYING.LIB, LICENSE and upstream dependency sources/licenses.\n"
 )

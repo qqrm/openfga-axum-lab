@@ -263,6 +263,72 @@ but increase TCI execution and startup latency; it guarantees neither GC timing
 nor freedom from OOM. The new C postimage is
 `e0b26bdc8d6d5b987061f9090ae0b62b76c34e16`.
 
+## Pending finalizers on an idle vCPU
+
+The `idle-gc-yield.patch` candidate addresses an event-loop gap in the pinned
+runtime. Each vCPU owns its JS `FinalizationRegistry`, while live-instance
+admission uses a shared C budget. An idle vCPU enters `qemu_wait_io_event`, then
+`pthread_cond_wait`; SDK 4.0.10 implements the worker wait with
+`memory.atomic.wait32`. That wait does not return to the worker's JS event loop.
+The existing `trysleep()` is reached only while executing translated blocks.
+An idle core can therefore hold detached instances and shared budget credits
+without providing an opportunity to deliver its own finalization callbacks.
+Yielding on another vCPU does not service this worker's registry.
+
+Only an initialized WASM-JIT vCPU with local `alive - retained > 0` uses the
+new branch. It waits on the same halt condition for at most 20 ms per wait.
+If it remains idle, it releases the iothread lock, calls `emscripten_sleep(0)`,
+accounts callbacks that were actually delivered, and reacquires the lock.
+The normal idle predicate is checked again before another wait. A kick during
+the condition wait wakes it normally; a kick during the unlocked JS yield is
+observed after the lock is reacquired. No-pending and non-WASM/non-TCG paths
+retain the original indefinite condition wait. Already delivered callbacks
+are accounted before deciding whether a timed wait is needed.
+
+When waits expire, the 20 ms timeout gives roughly 50 polling opportunities
+per second per pending core; browser scheduling and early wakes can vary that
+rate. It is not a guest deadline or a guaranteed GC latency. No credits are
+released on detach or elapsed time, and no forced-GC API is used. Both engine
+caps, retention, active dispatch, active yielding, kernel, guest workload and
+authorization deadlines remain unchanged. ECMAScript does not guarantee that finalization callbacks
+will run: this candidate removes one source of callback starvation and still
+requires complete browser validation.
+
+The patch is applied after the existing budget/arithmetic/barrier stages.
+Its backend preimage is `e0b26bdc8d6d5b987061f9090ae0b62b76c34e16` and final
+backend is `5b6be92da27d573577854f6badf7fbbb1082f83f`. The final `system/cpus.c`
+blob is `9252d9478b067a88a776a47ca746e097591bf695`; the new target-independent
+`include/tcg/wasm32-gc.h` blob is `c3b9c7b9e3c65191cba9cc0cca117f45965a6a58`.
+Historical bridge/barrier proofs refer to the preimage stage. The idle checker
+verifies exact patch reversal and byte equality of the budget, active-yield
+and active-dispatch regions between those stages.
+
+`check-idle-gc.mjs` extracts the actual idle loop and accounting helpers.
+Native pthread cases exercise BQL ownership, actual-callback accounting,
+no-pending/uninitialized paths, and kicks during waiting and yielding. The
+kick-during-wait fixture deliberately waits for the controlled kick instead
+of requiring the controller to be scheduled within 20 ms; the queued-callback
+case exercises real timed waits. A mutant that yields with the BQL held must
+fail. The SDK mode uses the pinned 4.0.10 compiler, `PROXY_TO_PTHREAD`, Asyncify
+and a real `setTimeout` task queued on the idle worker. Its payload is a
+deterministic finalization test double: it cannot release a credit before
+delivery. The old idle loop keeps that task blocked until an external kick
+and an explicit post-kick yield; the candidate delivers it and makes the
+credit available to another thread before the kick. This tests the JS queue
+bridge without pretending to establish when a browser will perform real GC.
+The small fixture uses a 64 MiB heap and `EXIT_RUNTIME=1`; full-QEMU browser
+acceptance remains separate.
+
+```sh
+node browser-single/qemu/check-idle-gc.mjs /path/to/patched-qemu /tmp/idle-gc-proof
+node browser-single/qemu/check-idle-gc.mjs /path/to/patched-qemu /tmp/idle-gc-bridge-proof --emscripten
+```
+
+Primary references: [pinned QEMU idle loop](https://github.com/ktock/qemu-wasm/blob/8604ed49a3cde392890b014a8d5a959c8a2fe72a/system/cpus.c),
+[SDK 4.0.10 futex wait](https://github.com/emscripten-core/emscripten/blob/4.0.10/system/lib/pthread/emscripten_futex_wait.c),
+[SDK async sleep](https://github.com/emscripten-core/emscripten/blob/4.0.10/src/lib/libasync.js),
+and [ECMAScript finalization scheduling](https://tc39.es/ecma262/2026/multipage/executable-code-and-execution-contexts.html#sec-weakref-processing-model).
+
 ## Build and provenance
 
 After authorizing the build, run from the repository:
@@ -276,9 +342,10 @@ bash browser-single/qemu/build.sh /path/to/emulator-output
 The script downloads the pinned upstream Dockerfile into a temporary directory
 and verifies its SHA256, fetches the exact QEMU commit, verifies the backend and
 emitter/header preimages, and checks the exact patched C postimages at each stage. Only
-`tcg/wasm32.c` and `tcg/wasm32/tcg-target.c.inc` may change.
+`tcg/wasm32.c`, `tcg/wasm32/tcg-target.c.inc`, `system/cpus.c` and the new
+`include/tcg/wasm32-gc.h` may change.
 A named `qemu-repo` build context supplies the clean checkout. The appended
-target independently verifies and applies all three patches. Focused native tests
+target independently verifies and applies all four patches. Focused native tests
 extract the actual patched accounting/eviction functions, exercise competing
 reservations at both limits, configuration/freeze races, the actual yield
 condition, delayed GC accounting and FIFO eviction, and retain
