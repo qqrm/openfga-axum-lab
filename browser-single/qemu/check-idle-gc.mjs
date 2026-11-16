@@ -223,8 +223,11 @@ static void *idle_worker(void *unused) {
 #ifdef __EMSCRIPTEN__
     if (scenario == QUEUED) {
         EM_ASM({
-            const callbackCount = $0 >> 2, delivered = $1 >> 2;
-            const allow = $2 >> 2, bql = $3 >> 2, badLock = $4 >> 2;
+            const callbackCount = $0 >> 2;
+            const delivered = $1 >> 2;
+            const allow = $2 >> 2;
+            const bql = $3 >> 2;
+            const badLock = $4 >> 2;
             function deliver() {
                 if (!Atomics.load(HEAP32, allow)) { setTimeout(deliver, 1); return; }
                 if (Atomics.load(HEAP32, bql)) Atomics.store(HEAP32, badLock, 1);
