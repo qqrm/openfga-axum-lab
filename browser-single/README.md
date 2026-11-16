@@ -3,7 +3,8 @@
 This is **one Linux image** containing three **real** processes:
 
 - PostgreSQL 17 (SQL source, sessions, and the OpenFGA datastore in separate databases)
-- OpenFGA 1.10.3 (official release archive checked against a pinned SHA-256)
+- OpenFGA 1.10.3 (checksummed official release in the native image; the browser
+  startup adaptation is documented below)
 - The existing Rust/Axum application and `lab-tool`, built with the HTTP adapter
 
 It does **not** contain Docker, a fake authorization engine, JavaScript
@@ -25,7 +26,8 @@ docker exec -e SMOKE_ALLOW_MUTATIONS=true authz-browser-one /usr/local/bin/lab-t
 The entrypoint starts PostgreSQL first, migrates its OpenFGA database, starts
 OpenFGA, verifies/binds the exact FGA model, seeds the catalog via actual SQL
 migration, then starts Axum. Each process runs as the unprivileged `postgres`
-OS user. Both PostgreSQL and OpenFGA bind to guest loopback only. Only Axum is
+OS user. PostgreSQL and OpenFGA restrict their TCP listeners to guest loopback;
+OpenFGA uses PostgreSQL's private Unix socket at `/tmp/browser-lab`. Only Axum is
 exposed on container port 3000. The native smoke test asserts actual access
 denial, grant, allow, revocation and denial again.
 
@@ -57,9 +59,10 @@ The executable artifact is retained for one day, and `browser-one-report` for
 seven days. This does not bypass GitHub's own storage limits or quotas, and
 never publishes a converted executable to Pages automatically.
 
-**Not yet established:** whether the emulated Linux kernel supports the
-PostgreSQL shared-memory/process semantics; whether all three daemons can boot
-and complete a Check/Write within browser memory and CPU limits; how to bridge
+The original converter kernel lacked System V IPC. The separately rebuilt,
+checksummed kernel enables `SYSVIPC` and `IPC_NS`; an actual Chromium run reached
+PostgreSQL startup. **Not yet established by that run:** whether all three daemons
+can boot and complete a Check/Write within browser memory and CPU limits; how to bridge
 browser Fetch requests into port 3000 without an external server; and whether
 the result works in Firefox/Chrome. A successful `c2w` conversion alone is
 **not** a successful browser deployment.
@@ -67,7 +70,7 @@ the result works in Firefox/Chrome. A successful `c2w` conversion alone is
 ## Deliberate security and durability limits
 
 - `BROWSER_LAB_EPHEMERAL=yes` must be set explicitly. The DB uses trust
-  authentication *only on the guest loopback*. Never connect this image to
+  authentication on guest loopback and its private local Unix socket. Never connect this image to
   public networks or production data.
 - Passwords are generated locally on startup, not baked into image layers;
   the generated demo password is stored in the unprivileged user's private
@@ -80,3 +83,302 @@ the result works in Firefox/Chrome. A successful `c2w` conversion alone is
   Pages; that demo checks lifecycle rules, not OpenFGA decisions.
 
 Related prior experiment: [docs/browser-feasibility.md](../docs/browser-feasibility.md).
+
+## Pages startup adaptation and acceptance gate
+
+The Pages experiment retains the verified `99f00cc` source artifact.
+Its filesystem still supplies PostgreSQL, Axum, `lab-tool`, and the pinned
+Lakekeeper model. Changing this directory's Dockerfile alone cannot update that
+artifact. `prepare-pages.sh` supplies exactly four verified startup files through
+the converter's read-only host mount: the guest wrapper, current entrypoint,
+adapted OpenFGA executable, and a separately built bootstrap executable.
+The last executable runs only initial model provisioning. Probe and both
+acceptance executions continue to use the original absolute
+`/usr/local/bin/lab-tool` from the retained rootfs.
+
+Before starting QEMU, the launcher checks all four payload sizes and SHA-256
+digests and requires the reviewed bootstrap source, native-test result and
+binary identity. The materializer also verifies the bootstrap source/test,
+Dockerfile, Cargo lockfile and native-test-log hashes.
+`runtime/startup-manifest.json` records these separate build identities; the
+original source archive and application filesystem keep their existing identity.
+
+The [QEMU adaptation](qemu/README.md) rebuilds only the emulator JS/WASM pair
+with separate early eviction and total live-instance limits. It releases half
+of a CPU's retained compiled instances at 2048, while an atomic reservation
+limits live instances, including those awaiting browser GC, to 8192 for Firefox
+and the original 15000 backstop for other engines, including Chromium. The
+launcher configures one shared C value before main starts; the backend freezes
+it at its first initialization. Invalid or late changes are rejected. The
+returned value is recorded in VM evidence and each worker's diagnostics.
+Earlier lower-cap Chromium runs blocked compilation for long intervals while
+awaiting GC. Firefox previously reached OpenFGA with 8192, but the current
+combination still needs acceptance. Early detachment remains at 2048 per CPU.
+The derived data, loader,
+arguments and separately reviewed kernel are checked before and after the
+emulator overlay.
+The derived manifest records this separate emulator build; it does not rewrite
+the identity of the original source ZIP. This memory-budget candidate still
+requires real browser acceptance.
+
+The candidate kernel enables ACPI and `X86_PM_TIMER` while retaining SYSVIPC,
+IPC namespaces and `HPET_TIMER`. Its build records the full resolved configuration
+difference, including dependencies selected by ACPI. The launcher removes the
+exact Linux `acpi=off` token before the init-argument separator so Linux can
+discover the advertised ACPI timers. It retains two sockets with one CPU each,
+512 MiB and the existing MTTCG configuration. No clocksource is forced.
+
+The guest verifies `online=0-1` before starting services; requested QEMU arguments
+alone do not prove that Linux discovered both CPUs.
+Before downloading the VM, the launcher requires a valid browser report of at
+least two logical CPUs and records that report in VM evidence. This pinned
+backend sizes per-CPU vectors from that value, so a smaller report cannot
+safely accommodate the two requested vCPUs.
+The guest also verifies `Cpus_allowed_list=0-1` before starting any service.
+Ordinary scheduling across both CPUs is preserved. The previous candidate
+pinned all services and clients to CPU 0, but
+[run 43358719645](https://github.com/qqrm/openfga-axum-lab/actions/runs/43358719645)
+still failed in both browsers: Chromium's first tuple Write returned
+`validation_error`, and Firefox ran out of memory compiling a WASM module during
+PostgreSQL initialization. That pinning is removed. Successive CI runs are not
+a controlled performance comparison.
+
+The [OpenFGA adaptation](openfga/README.md) changes HTTP gateway startup
+self-dial from three seconds to a bounded 60 seconds. A separate bounded
+startup phase exercises the codecs and fully validates the exact pinned
+model once under one total 60-second budget, before opening listeners.
+The validity of that conditionless model body is retained. A real model
+write compares every protobuf field, including unknown fields, except the
+generated ID; a match reuses the already established schema validity and still
+writes PostgreSQL. In browser build `.8`, one fully validated TypeSystem is
+retained privately for a single matching resolver cache miss. The resolver must
+first obtain the actual model through its existing datastore accessor; the
+claim requires nonempty store/resolved model IDs, equality of the resolved ID
+with the returned model's ID, and the complete pinned body.
+An atomic claim gives one caller exclusive ownership, and the real model ID
+replaces the warmup ID before the object can escape. Cancellation discards a
+claimed object. Other callers retain the existing validation/construction path;
+no graph is shared between separately constructed TypeSystems. The upstream
+store/model resolver cache remains. Its accessor can use an existing model
+cache, so this does not promise a physical SQL read for every request.
+Real tuple operations, datastore writes and Check decisions still run.
+The successful startup also prepares a private JSON-to-protobuf decoder entry.
+Only the exact pinned JSON body reuses an independent decoded request; the
+original streaming parser and all mismatching inputs keep the default behavior.
+The URL still supplies the real store ID, and the real gRPC/validation/auth
+and PostgreSQL write path remains mandatory.
+
+The `.8` HTTP encoder can retain one successful serialization, at most 1 MiB,
+of a real `ReadAuthorizationModelResponse` for the pinned conditionless policy.
+A hit requires full `proto.Equal` equality with the newly returned response,
+including its actual model ID and unknown fields, and the exact intended
+JSONPb options. The private deep key and private byte copies prevent aliasing.
+The real RPC/model retrieval still runs; errors, other IDs, models, response
+types and options keep the original path. Warmup's `NewEncoder` path cannot
+populate this entry. Encoding duration and hit status are observed separately;
+neither this reuse nor the TypeSystem transfer has established browser success.
+
+Tuple Write now passes the TypeSystem already resolved and authorized for that
+request into the write command. It reuses it only for the exact nonempty
+store/model binding, preserving the schema-version guard and every tuple
+validation and datastore write. Other bindings take the original read/build
+path. This removes a second graph construction within the same request; it does
+not cache Check results or raise request deadlines.
+
+Compact HTTP and gRPC transport traces record request boundaries and timing
+without reading request bodies or changing the handler's context, writer,
+response or error. Fixed labels distinguish an expired/canceled RPC context and
+the exact upstream resolver error that maps cancellation to `validation_error`;
+other error messages are not logged. The browser build omits the upstream unary raw-payload
+logger, which otherwise serializes payloads even when INFO is disabled.
+The unused Prometheus exporter is disabled; authentication, validation,
+authorization and timeout middleware remain in place.
+
+PostgreSQL initialization and OpenFGA migration remain sequential. `initdb`
+uses the same 60 connections and 16 MiB shared buffers as the running server;
+its actual IPC probes and durability settings remain enabled. A bounded
+180-second listener wait includes the additional OpenFGA startup phase and
+schedules bootstrap. Only its real `SERVING` health, unchanged model and
+successful operations permit Axum startup.
+
+`BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS` defaults to 5 and accepts only ASCII
+integers from 5 through 30. Invalid settings fail before provisioning. The
+browser wrapper opts in to 30 for its child entrypoint. Only the model POST and
+model-verification GET use that budget, applied both to the individual reqwest
+request and its enclosing Tokio timeout, including response-body consumption.
+Health, store creation/verification and tuple reads retain five-second limits.
+The application authorization client remains at two seconds, OpenFGA requests
+at three seconds, and each acceptance request at five seconds; migration
+behavior and its limits are unchanged.
+
+The bootstrap still requires exact response status and URL, bounded JSON
+responses, the pinned model and matching readback, and a confirmed empty new
+store before publishing its configuration. An uncertain write is not retried.
+A failed verification neither resets an existing binding nor publishes an
+unverified one; atomic configuration publication remains unchanged.
+
+The guest's 900-second startup budget includes payload staging. On failure,
+a bounded diagnostic snapshot records logs, memory and PostgreSQL process state
+without reading command lines or environment variables.
+
+The browser checker requires two sequential, indexed executions of the existing
+native `lab-tool acceptance` in each Chromium and Firefox. Both executions must
+return `403 → 204 → 200 → 204 → 403`. Duplicate, malformed or out-of-order serial
+results cannot satisfy the gate. A service exit clears the live accepted state.
+Uncaught browser/worker errors and unhandled rejections also clear readiness and
+acceptance. The checker stops waiting when a page error or crash is observed.
+Both browsers are attempted independently, including Firefox after a Chromium
+failure. Any failed browser keeps the combined gate failed; neither a skipped
+browser nor a single successful execution satisfies it.
+
+The checker subscribes to each original serial/print log chunk before starting
+the VM. One pump sends batches of up to 1024 original chunks; a JSONL batch
+records its first source sequence, host-receipt time and every original text.
+This reconstructs the exact ordered stream independently of the UI's
+120000-character tail. A sequence gap, failed delivery or the host capture
+limits of 16 MiB/1000000 source chunks prevent a passing gate. The browser queue,
+including its in-flight batch, is bounded at 4 MiB/65536 chunks. A host timer
+bounds cutoff and drain to ten seconds; a delivery failure retains the guest
+snapshot taken at cutoff and still fails the gate.
+
+The earlier two-CPU ACPI diagnostic,
+[run 43424228941](https://github.com/qqrm/openfga-axum-lab/actions/runs/43424228941),
+started PostgreSQL and OpenFGA in both Chromium and Firefox, then canceled the
+initial model POST at the existing five-second client limit. Both browsers
+completed **zero acceptance passes**. The diagnostic workflow's successful
+completion records observations; it is not a passing backend acceptance gate.
+
+The [data-only reader 43427570912](https://github.com/qqrm/openfga-axum-lab/actions/runs/43427570912)
+verified both complete console byte streams against their captures. Chromium
+reported the outer `Elapsed(())` timeout; Firefox reported reqwest `TimedOut`.
+These observations establish the client boundary reached in that run, without
+proving the cause of its elapsed time.
+
+The [native proof 43433122340](https://github.com/qqrm/openfga-axum-lab/actions/runs/43433122340)
+and the versioned [Node producer verification 43435460160](https://github.com/qqrm/openfga-axum-lab/actions/runs/43435460160)
+both passed the 19 bootstrap Rust tests, default five-second failures while
+genuine model responses remained withheld, opt-in 30-second provisioning with
+six-second delays on both model operations, and two real native acceptance
+sequences. The Node producer also passed all seven startup-payload tests and
+the production payload validator. It exported the executable from that tested
+image: 7415568 bytes, SHA-256
+`d47425c10ebc1d2c1501e86dd7a1f3e8e5b6d2c9a6e4cf8123f20bd5d8c1866f`.
+Its bytes match the bootstrap used by
+[Chromium/Firefox run 43434436745](https://github.com/qqrm/openfga-axum-lab/actions/runs/43434436745).
+
+That completed run used OpenFGA `.7`; **both browsers passed zero of the two
+required acceptance executions**. Chromium completed model POST/GET and two
+real Read calls, then failed the first tuple Write with RPC Code 2000,
+`context_state=deadline` and `error_kind=model_resolution_deadline`. The RPC
+observer reported about 3300 ms; HTTP reported 3814 ms. Firefox completed model
+provisioning and started Axum's startup path, then the application's separate
+model GET exceeded its unchanged five-second client budget: the
+`ReadAuthorizationModel` RPC succeeded in 56 ms, while HTTP ended canceled
+after 5644 ms. Both captures were complete and neither page recorded an error.
+The interval after Firefox's RPC includes gateway protobuf decoding, JSON
+encoding, writing and scheduling; these observations do not isolate one cause.
+Guest-observer durations are not a controlled host-time comparison.
+
+The `.8` candidate addresses the first resolver construction and repeated exact
+model-response encoding without changing those deadlines. Its Go and race
+checks passed in [43440821229](https://github.com/qqrm/openfga-axum-lab/actions/runs/43440821229).
+That run then stopped before the native backend proof because the service
+could not access the mounted OpenFGA executable. The producer now stages the
+already verified executable in its own traversable directory and checks its
+hash again, keeping the service user, startup guard and original input intact.
+
+[Native verification 43445129977](https://github.com/qqrm/openfga-axum-lab/actions/runs/43445129977)
+reused that exact Go-tested `.8` binary and passed seven payload tests,
+19 Rust tests, both default-five-second causal failure cases, opt-in 30-second
+provisioning with genuine six-second-delayed model responses, and two real
+native acceptance sequences. A deliberately inaccessible input-directory
+fixture remained unchanged while the staged copy worked. These native results
+do not establish browser acceptance. The current PR's **Browser preview**
+checks remain authoritative and must confirm two genuine consecutive
+`403 → 204 → 200 → 204 → 403` executions in each engine before publication.
+See the [retained timing and provenance](../docs/browser-startup-review.md).
+
+The original full-log implementation failed the Chromium check in
+[run 43373341199](https://github.com/qqrm/openfga-axum-lab/actions/runs/43373341199):
+10558 of its 10567 retained chunks were single characters, and one serial host
+call per character overflowed its 4096-chunk queue. Batching addresses that
+observed transport defect. Firefox's complete 79419-byte capture reached Linux
+boot and PostgreSQL initialization, then recorded a Module OOM. At the exact
+throw, one worker alone had 8895 registered instances without a delivered GC
+callback; early detach and GC were active. The Firefox-only 8192 cap prevents
+that admission under the same history, but is not a native-memory byte bound
+or a guarantee of successful startup. Neither browser completed acceptance.
+
+Full capture was introduced after an observed evidence loss in
+[run 43364708449](https://github.com/qqrm/openfga-axum-lab/actions/runs/43364708449):
+both browsers timed out after 1200 seconds; Chromium had not emitted the guest
+boot marker, and Firefox emitted it but never became ready. Firefox's UI tail
+contained only emulator counters, overwriting the earlier service logs. Its
+retained counters show continued registration, detachment and GC callbacks;
+they do not establish absent GC, OOM, or the service phase at timeout.
+The existing kernel `loglevel=0` token is replaced in place by `loglevel=7`,
+before the init-argument separator, so ordinary boot diagnostics remain visible.
+This log level is included in the observed VM configuration.
+
+The current QEMU candidate also corrects eight operand-normalization calls in
+the signed/unsigned 32-bit multiply emitters. Extracted upstream C emits real
+Wasm for the regression tests: the original fails 42 of 96 arithmetic cases,
+and the correction passes all 96, including signed negative operands, dirty
+upper bits and register aliases. This separately demonstrated instruction
+defect is not established as the cause of the preceding browser timeouts, and
+the actual corrected build still encountered the Firefox OOM recorded above.
+See the [emulator source and proof](qemu/README.md).
+
+The compiled QEMU memory-barrier path also emitted a `nop` where its interpreter
+used a full barrier. The correction emits Wasm `atomic.fence` and preserves the
+interpreter path. Extracted C-to-Wasm tests and tiny actual Chromium/Firefox
+fixtures verify the encoding and stack/shared-memory behavior. This separate
+correctness repair can add execution cost; it does not establish the cause of
+the model POST delay or satisfy browser acceptance.
+
+The versioned `bootstrap/build.sh` consumes the already verified OpenFGA build,
+builds one native service image from the fixed Rust source, and requires the
+Rust tests, real delayed-response proof and two native acceptance sequences
+before exporting its executable. It writes exactly four files under
+`artifacts/browser-bootstrap`: `bootstrap`, `build.json`, `native-tests.log`
+and `SOURCE.txt`. Source, fixture, tested image, executable, OpenFGA input and
+proof hashes are recorded; no unverified executable fallback exists.
+
+Prepare and check locally from this source revision on an x86_64 Docker/Buildx
+host with the pinned Rust toolchain, Git, Node, ShellCheck and Playwright.
+Use fresh worktree paths and build-output directories: the producer refuses
+existing proof/output directories and existing containers with its reserved names.
+The fixed source and packaging fixture must remain unmodified.
+
+```sh
+git fetch origin 53ff85cfdd3d84c26ae432189790e1e0f72d61db d7f7ead003c774e30584798adfde38afb854528d
+git worktree add --detach ../openfga-bootstrap-core 53ff85cfdd3d84c26ae432189790e1e0f72d61db
+git worktree add --detach ../openfga-bootstrap-fixture d7f7ead003c774e30584798adfde38afb854528d
+```
+
+Run the producer after OpenFGA and before runtime preparation:
+
+```sh
+bash scripts/build-browser-demo.sh
+docker buildx build -f browser-single/OpenFGA.Dockerfile \
+  --output type=local,dest=artifacts/browser-openfga .
+bash browser-single/bootstrap/build.sh ../openfga-bootstrap-core ../openfga-bootstrap-fixture
+bash browser-single/qemu/build.sh
+bash browser-single/prepare-kernel.sh
+# Optional: set BROWSER_RUNTIME_ARCHIVE to a retained original ZIP.
+# Its pinned checksum is still mandatory.
+bash browser-single/prepare-pages.sh
+npm --prefix e2e ci --ignore-scripts
+(cd e2e && npx --no-install playwright install chromium firefox)
+node browser-single/check-pages.mjs
+```
+
+`.github/workflows/pages.yml` (Browser preview) is the browser acceptance gate;
+Browser lab verification exercises a native Dev Container instead. Browser
+evidence and prepared OpenFGA, bootstrap and emulator build records must be
+retained even on failure.
+Pages deployment requires a separate manual run on `main` with `publish=true`,
+and still depends on successful browser acceptance. Ordinary pushes, PR
+validation and the default manual run do not publish Pages.
+
+See [the review and observed limitations](../docs/browser-startup-review.md).

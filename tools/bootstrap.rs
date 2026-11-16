@@ -4,10 +4,11 @@ use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, path::Path, time::Duration};
+use std::{ffi::OsStr, fs, io::Write, path::Path, time::Duration};
 use tokio::time::{sleep, timeout};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_MODEL_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 // Lakekeeper authorization schema v4.15, also enforced by the SQL migration.
 const PINNED_MODEL_SHA256: &str =
@@ -81,12 +82,36 @@ fn validate_existing(config: &Config, model: &[u8]) -> ToolResult {
     Ok(())
 }
 
+fn model_request_timeout(value: Option<&OsStr>) -> ToolResult<Duration> {
+    let Some(value) = value else {
+        return Ok(REQUEST_TIMEOUT);
+    };
+    let error = "BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS must be an integer from 5 to 30";
+    let value = value.to_str().ok_or(error)?;
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(error.into());
+    }
+    let seconds = value.parse::<u64>().map_err(|_| error)?;
+    if !(REQUEST_TIMEOUT.as_secs()..=MAX_MODEL_REQUEST_TIMEOUT_SECONDS).contains(&seconds) {
+        return Err(error.into());
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
 async fn send_json<T: DeserializeOwned>(
     builder: RequestBuilder,
     expected: StatusCode,
 ) -> ToolResult<T> {
-    timeout(REQUEST_TIMEOUT, async {
-        let (client, request) = builder.build_split();
+    send_json_with_timeout(builder, expected, REQUEST_TIMEOUT).await
+}
+
+async fn send_json_with_timeout<T: DeserializeOwned>(
+    builder: RequestBuilder,
+    expected: StatusCode,
+    request_timeout: Duration,
+) -> ToolResult<T> {
+    timeout(request_timeout, async {
+        let (client, request) = builder.timeout(request_timeout).build_split();
         let request = request?;
         let requested_url = request.url().clone();
         let mut response = client.execute(request).await?;
@@ -153,7 +178,13 @@ async fn wait_ready(client: &Client, base: &str) -> ToolResult {
     Ok(())
 }
 
-async fn verify_target(client: &Client, base: &str, config: &Config, model: &Value) -> ToolResult {
+async fn verify_target(
+    client: &Client,
+    base: &str,
+    config: &Config,
+    model: &Value,
+    model_timeout: Duration,
+) -> ToolResult {
     let store: Store = send_json(
         client.get(format!("{base}/stores/{}", config.store_id)),
         StatusCode::OK,
@@ -165,12 +196,13 @@ async fn verify_target(client: &Client, base: &str, config: &Config, model: &Val
     if store.id != config.store_id {
         return Err("persisted OpenFGA store identity differs; refusing silent reset".into());
     }
-    let actual: ModelResponse = send_json(
+    let actual: ModelResponse = send_json_with_timeout(
         client.get(format!(
             "{base}/stores/{}/authorization-models/{}",
             config.store_id, config.model_id
         )),
         StatusCode::OK,
+        model_timeout,
     )
     .await
     .map_err(|error| {
@@ -218,7 +250,12 @@ fn write_config(path: &Path, config: &Config) -> ToolResult {
     result
 }
 
-async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
+async fn provision(
+    base: &str,
+    path: &Path,
+    model_path: &Path,
+    model_timeout: Duration,
+) -> ToolResult {
     let model_bytes = fs::read(model_path)?;
     let model_hash = digest(&model_bytes);
     if model_hash != PINNED_MODEL_SHA256 {
@@ -236,7 +273,7 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
             let config: Config = serde_json::from_slice(&bytes)?;
             validate_existing(&config, &model_bytes)?;
             wait_ready(&client, base).await?;
-            verify_target(&client, base, &config, &model).await?;
+            verify_target(&client, base, &config, &model, model_timeout).await?;
             println!("Using existing store and pinned model");
             return Ok(());
         }
@@ -256,11 +293,12 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
     if !valid_id(&store.id) {
         return Err("OpenFGA returned an invalid store identifier".into());
     }
-    let created: CreatedModel = send_json(
+    let created: CreatedModel = send_json_with_timeout(
         client
             .post(format!("{base}/stores/{}/authorization-models", store.id))
             .json(&model),
         StatusCode::CREATED,
+        model_timeout,
     )
     .await?;
     if !valid_id(&created.authorization_model_id) {
@@ -271,7 +309,7 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
         model_id: created.authorization_model_id,
         model_sha256: model_hash,
     };
-    verify_target(&client, base, &config, &model).await?;
+    verify_target(&client, base, &config, &model, model_timeout).await?;
     let page: ReadPage = send_json(
         client
             .post(format!("{base}/stores/{}/read", config.store_id))
@@ -293,10 +331,14 @@ async fn provision(base: &str, path: &Path, model_path: &Path) -> ToolResult {
 }
 
 pub async fn run() -> ToolResult {
+    // Opt in only the two administrative model operations. Health, store
+    // identity, tuple reads and all other CLI commands retain their deadlines.
+    let configured_timeout = std::env::var_os("BROWSER_BOOTSTRAP_MODEL_TIMEOUT_SECONDS");
+    let model_timeout = model_request_timeout(configured_timeout.as_deref())?;
     let base = std::env::var("FGA_URL").unwrap_or_else(|_| "http://openfga:8080".into());
     let path = std::env::var("FGA_CONFIG").unwrap_or_else(|_| "/data/config.json".into());
     let model = std::env::var("FGA_MODEL").unwrap_or_else(|_| "/app/fga/model.json".into());
-    provision(&base, Path::new(&path), Path::new(&model)).await
+    provision(&base, Path::new(&path), Path::new(&model), model_timeout).await
 }
 
 #[cfg(test)]
