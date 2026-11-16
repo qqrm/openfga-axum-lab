@@ -1,0 +1,98 @@
+diff --git a/.github/workflows/pages.yml b/.github/workflows/pages.yml
+index a13c7ac..04226cf 100644
+--- a/.github/workflows/pages.yml
++++ b/.github/workflows/pages.yml
+@@ -144,6 +144,41 @@ jobs:
+           path: artifacts/browser-kernel/
+           if-no-files-found: error
+           retention-days: 7
++      - name: Reuse the pinned runtime ZIP from retained browser evidence when available
++        timeout-minutes: 8
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          set -euo pipefail
++          inner_sha=fd7511caa98399d245adce39feb3398884f8dc56a82aa44c625e6fa46bf0acee
++          manifest_sha=$(jq -er '.archive_sha256' browser-single/pages/runtime-manifest.json)
++          if [[ "$manifest_sha" != "$inner_sha" ]]; then
++            echo 'The runtime manifest changed; use the existing archive resolver.'
++            exit 0
++          fi
++          retained_dir=$(mktemp -d "${RUNNER_TEMP:?}/browser-runtime-retained.XXXXXX")
++          verified_runtime=false
++          trap 'rm -f -- "$retained_dir/outer.zip"; if [[ "$verified_runtime" != true ]]; then rm -rf -- "$retained_dir"; fi' EXIT
++          # Exact evidence retained by Browser preview run 43402635950.
++          if ! timeout --kill-after=5s 360s \
++            gh api repos/qqrm/openfga-axum-lab/actions/artifacts/14029511154/zip \
++              >"$retained_dir/outer.zip"; then
++            echo 'Retained evidence is unavailable; use the existing artifact/Pages resolver.'
++            exit 0
++          fi
++          test "$(stat -c %s "$retained_dir/outer.zip")" = 260830150
++          printf '%s  %s\n' \
++            73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e \
++            "$retained_dir/outer.zip" | sha256sum --check --status
++          unzip -p "$retained_dir/outer.zip" browser-output/wasm/runtime-source.zip \
++            >"$retained_dir/runtime.zip.partial"
++          test "$(stat -c %s "$retained_dir/runtime.zip.partial")" = 226321852
++          printf '%s  %s\n' "$inner_sha" "$retained_dir/runtime.zip.partial" \
++            | sha256sum --check --status
++          mv -- "$retained_dir/runtime.zip.partial" "$retained_dir/runtime.zip"
++          printf 'BROWSER_RUNTIME_ARCHIVE=%s\n' "$retained_dir/runtime.zip" >>"$GITHUB_ENV"
++          verified_runtime=true
++          echo 'Verified the retained original runtime ZIP; normal preparation will verify it again.'
+       - name: Restore and verify the pinned browser VM artifact
+         env:
+           GH_TOKEN: ${{ github.token }}
+diff --git a/browser-single/prepare-kernel.sh b/browser-single/prepare-kernel.sh
+index 224d033..5e4ec7c 100755
+--- a/browser-single/prepare-kernel.sh
++++ b/browser-single/prepare-kernel.sh
+@@ -3,18 +3,42 @@
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ recipe=browser-single/Kernel.Dockerfile
+-expected_recipe=3335b9ee06c3b299b6fbc701b943fc0f494a8fb2ac1b5573c0cec239fbe7783a
+-archive_sha=17a12602844ca7671ada3f0201e1e91b3d43a7b0020e9f361663a9a4a628b4ae
++expected_recipe=9232b9e18ddf0df757fe5b57c6db9c953f1fde06ae68537dfc7d78039454a7a7
++archive_sha=c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad
+ output=artifacts/browser-kernel
+ temporary=$(mktemp -d)
+ trap 'rm -rf -- "$temporary"' EXIT
+ actual_recipe=$(sha256sum "$recipe" | cut -d' ' -f1)
+ if [[ "$actual_recipe" == "$expected_recipe" ]] && \
+-    gh api repos/qqrm/openfga-axum-lab/actions/artifacts/13887514892/zip >"$temporary/kernel.zip"; then
++    gh api repos/qqrm/openfga-axum-lab/actions/artifacts/14061334425/zip >"$temporary/kernel.zip"; then
++    test "$(stat -c %s "$temporary/kernel.zip")" = 3689588
+     printf '%s  %s\n' "$archive_sha" "$temporary/kernel.zip" | sha256sum --check --status
++    unzip -q "$temporary/kernel.zip" -d "$temporary/candidate"
++    cmp "$recipe" "$temporary/candidate/Kernel.Dockerfile"
++    # Exact kernel-only producer run 43473084506; these are build proofs,
++    # not a claim that browser acceptance or entropy delivery has passed.
++    jq -e '
++      .source_commit == "716b77356dd4aab2747d4e37c5da723f3b7a764f" and
++      .workflow_commit == "84af5832aed519e7f0628e36afd8d2fc3e4cc270" and
++      .run_id == "43473084506" and .run_attempt == "1" and
++      .recipe_git_blob == "aeb75dc1f17528939559ffe8f8dd15746c0c2a0e" and
++      .linux_source == "830b3c68c1fb1e9176028d02ef86f3cf76aa2476" and
++      .source_checks_outcome == "success" and .build_outcome == "success" and
++      .kernel_candidate_built == true and .kernel_hash_manifest_matches == true and
++      .baseline_matches_previous_kernel_config == true and .exactly_one_config_change == true and
++      .exact_rng_config_diff == true and .previous_acpi_diff_preserved == true and
++      .missing_files == [] and .missing_config == [] and
++      .entropy_delivery_verified == false and .browser_acceptance_verified == false
++    ' "$temporary/candidate/metadata.json" >/dev/null
++    jq -er '.files | to_entries[] | "\(.value.sha256)  \(.key)"' \
++        "$temporary/candidate/metadata.json" >"$temporary/files.sha256"
++    (cd "$temporary/candidate" && sha256sum --check "$temporary/files.sha256")
++    test ! -e "$output"
+     mkdir -p "$output"
+-    unzip -q "$temporary/kernel.zip" -d "$output"
+-    echo 'Reused the checksummed kernel built from the identical recipe.'
++    cp -a "$temporary/candidate/kernel/." "$output/"
++    cp "$temporary/candidate/metadata.json" "$temporary/candidate/Kernel.Dockerfile" \
++       "$temporary/candidate/source-commit.txt" "$temporary/candidate/workflow-commit.txt" "$output/"
++    echo 'Reused the checksummed VirtIO RNG kernel and its original producer provenance.'
+ else
+     docker buildx build --file "$recipe" --output "type=local,dest=$output" .
+ fi

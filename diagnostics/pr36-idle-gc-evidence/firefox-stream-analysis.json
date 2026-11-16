@@ -1,0 +1,351 @@
+{
+  "engine": "firefox",
+  "browser": "159.0",
+  "jobStartedAt": "2026-11-16T22:31:45Z",
+  "checkerLaunch": "2026-11-16T22:33:38.169Z",
+  "checkerLaunchJobElapsedMs": 113169,
+  "resultStartedAt": "2026-11-16T22:33:38.421Z",
+  "resultFinishedAt": "2026-11-16T22:43:27.652Z",
+  "firstVmSourceReceivedAt": "2026-11-16T22:33:45.335Z",
+  "firstVmSourceJobElapsedMs": 120335,
+  "lastSourceReceivedAt": "2026-11-16T22:43:27.592Z",
+  "finalSourceSilenceMs": 60,
+  "logCapture": {
+    "format": "browser-lab-log-batches-v1",
+    "complete": true,
+    "chunks": 38415,
+    "batches": 872,
+    "bytes": 230526,
+    "expectedSequence": 38415
+  },
+  "guest": {
+    "booted": true,
+    "ready": false,
+    "accepted": false,
+    "checks": 0,
+    "error": "LAB|boot-failed",
+    "passes": []
+  },
+  "phases": [
+    {
+      "phase": "guest_boot",
+      "receivedAt": "2026-11-16T22:35:24.040Z",
+      "streamLine": 197,
+      "offset": 28115,
+      "line": "LAB|boot"
+    },
+    {
+      "phase": "executables_staged",
+      "receivedAt": "2026-11-16T22:35:38.981Z",
+      "streamLine": 218,
+      "offset": 33946,
+      "line": "[browser-guest] executables staged; starting the real services"
+    },
+    {
+      "phase": "postgres_init",
+      "receivedAt": "2026-11-16T22:35:41.014Z",
+      "streamLine": 219,
+      "offset": 34000,
+      "line": "[browser-single] initializing isolated PostgreSQL 17"
+    },
+    {
+      "phase": "postgres_started",
+      "receivedAt": "2026-11-16T22:40:14.138Z",
+      "streamLine": 554,
+      "offset": 143898,
+      "line": "server started"
+    },
+    {
+      "phase": "openfga_migrate_start",
+      "receivedAt": "2026-11-16T22:41:11.987Z",
+      "streamLine": 620,
+      "offset": 166378,
+      "line": "[browser-single] migrating and starting real OpenFGA 1.10.3"
+    },
+    {
+      "phase": "openfga_listener_wait",
+      "receivedAt": "2026-11-16T22:41:48.026Z",
+      "streamLine": 660,
+      "offset": 180843,
+      "line": "[browser-single] waiting for the OpenFGA HTTP listener"
+    },
+    {
+      "phase": "warmup_start",
+      "receivedAt": "2026-11-16T22:42:12.886Z",
+      "streamLine": 689,
+      "offset": 189674,
+      "line": "[browser-openfga] 2026/11/16 22:40:39.213679 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60"
+    },
+    {
+      "phase": "warmup_end",
+      "receivedAt": "2026-11-16T22:42:32.540Z",
+      "streamLine": 709,
+      "offset": 195752,
+      "line": "[browser-openfga] 2026/11/16 22:40:58.796079 warmup_end duration_ms=19584 failed=false"
+    },
+    {
+      "phase": "grpc_dial_start",
+      "receivedAt": "2026-11-16T22:42:34.210Z",
+      "streamLine": 713,
+      "offset": 196327,
+      "line": "[browser-openfga] 2026/11/16 22:41:00.563699 grpc_dial_start timeout_seconds=60"
+    },
+    {
+      "phase": "grpc_dial_end",
+      "receivedAt": "2026-11-16T22:42:35.058Z",
+      "streamLine": 715,
+      "offset": 196756,
+      "line": "[browser-openfga] 2026/11/16 22:41:01.428140 grpc_dial_end duration_ms=864 failed=false context_error=<nil>"
+    },
+    {
+      "phase": "model_bind_start",
+      "receivedAt": "2026-11-16T22:42:39.540Z",
+      "streamLine": 719,
+      "offset": 197583,
+      "line": "[browser-single] binding the pinned Lakekeeper model and seeding real SQL data"
+    },
+    {
+      "phase": "service_error",
+      "receivedAt": "2026-11-16T22:43:08.166Z",
+      "streamLine": 792,
+      "offset": 213902,
+      "line": "Error: \"OpenFGA did not confirm this operation: HTTP 500 Internal Server Error; expected 200 OK\""
+    },
+    {
+      "phase": "diagnostic_tail_begin",
+      "receivedAt": "2026-11-16T22:43:24.301Z",
+      "streamLine": 812,
+      "offset": 219990
+    },
+    {
+      "phase": "boot_failed",
+      "receivedAt": "2026-11-16T22:43:27.592Z",
+      "streamLine": 872,
+      "offset": 230499
+    }
+  ],
+  "checkRpcsBeforeReplay": [
+    {
+      "receivedAt": "2026-11-16T22:43:04.521Z",
+      "streamLine": 783,
+      "offset": 212417,
+      "line": "[browser-openfga] 2026/11/16 22:41:30.895559 rpc_start method=\"/openfga.v1.OpenFGAService/Check\""
+    },
+    {
+      "receivedAt": "2026-11-16T22:43:07.659Z",
+      "streamLine": 788,
+      "offset": 213631,
+      "line": "[browser-openfga] 2026/11/16 22:41:34.028659 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"Code(4004)\" duration_ms=3132 context_state=\"deadline\" error_kind=\"other\""
+    }
+  ],
+  "cores": [
+    {
+      "core": 0,
+      "snapshots": 293,
+      "first": {
+        "receivedAt": "2026-11-16T22:33:53.372Z",
+        "streamLine": 77,
+        "offset": 10905,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 687,
+        "live_limit": 8192,
+        "attempted_total": 1024,
+        "module_created_total": 1024,
+        "instance_created_total": 1024,
+        "registered_total": 1024,
+        "detached_total": 0,
+        "gc_total": 0,
+        "encoded_bytes_total": 861854,
+        "encoded_bytes_max": 2594
+      },
+      "last": {
+        "receivedAt": "2026-11-16T22:43:24.398Z",
+        "streamLine": 814,
+        "offset": 220676,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 653,
+        "live_limit": 8192,
+        "attempted_total": 300032,
+        "module_created_total": 300032,
+        "instance_created_total": 300032,
+        "registered_total": 300032,
+        "detached_total": 297984,
+        "gc_total": 297984,
+        "encoded_bytes_total": 276896276,
+        "encoded_bytes_max": 13614
+      },
+      "last_before_diagnostic_tail": {
+        "receivedAt": "2026-11-16T22:43:22.991Z",
+        "streamLine": 810,
+        "offset": 219665,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 950,
+        "live_limit": 8192,
+        "attempted_total": 299008,
+        "module_created_total": 299008,
+        "instance_created_total": 299008,
+        "registered_total": 299008,
+        "detached_total": 296960,
+        "gc_total": 294912,
+        "encoded_bytes_total": 275952747,
+        "encoded_bytes_max": 13614
+      },
+      "registration_delta": 299008,
+      "gc_delta": 297984,
+      "gc_increase_intervals": 93,
+      "counter_regressions": 0
+    },
+    {
+      "core": 1,
+      "snapshots": 314,
+      "first": {
+        "receivedAt": "2026-11-16T22:35:12.348Z",
+        "streamLine": 167,
+        "offset": 23895,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 1,
+        "wasm_size": 2094,
+        "live_limit": 8192,
+        "attempted_total": 1024,
+        "module_created_total": 1024,
+        "instance_created_total": 1024,
+        "registered_total": 1024,
+        "detached_total": 0,
+        "gc_total": 0,
+        "encoded_bytes_total": 921845,
+        "encoded_bytes_max": 3689
+      },
+      "last": {
+        "receivedAt": "2026-11-16T22:43:24.518Z",
+        "streamLine": 815,
+        "offset": 220996,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 1,
+        "wasm_size": 687,
+        "live_limit": 8192,
+        "attempted_total": 321536,
+        "module_created_total": 321536,
+        "instance_created_total": 321536,
+        "registered_total": 321536,
+        "detached_total": 319488,
+        "gc_total": 316416,
+        "encoded_bytes_total": 297375341,
+        "encoded_bytes_max": 13614
+      },
+      "last_before_diagnostic_tail": {
+        "receivedAt": "2026-11-16T22:43:23.063Z",
+        "streamLine": 811,
+        "offset": 219986,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 1,
+        "wasm_size": 1978,
+        "live_limit": 8192,
+        "attempted_total": 319488,
+        "module_created_total": 319488,
+        "instance_created_total": 319488,
+        "registered_total": 319488,
+        "detached_total": 317440,
+        "gc_total": 316416,
+        "encoded_bytes_total": 295478363,
+        "encoded_bytes_max": 13614
+      },
+      "registration_delta": 320512,
+      "gc_delta": 316416,
+      "gc_increase_intervals": 93,
+      "counter_regressions": 0
+    }
+  ],
+  "largestSourceGaps": [
+    {
+      "milliseconds": 13771,
+      "from": "2026-11-16T22:34:53.353Z",
+      "to": "2026-11-16T22:35:07.124Z",
+      "fromStreamLine": 136,
+      "toStreamLine": 137
+    },
+    {
+      "milliseconds": 13567,
+      "from": "2026-11-16T22:34:12.138Z",
+      "to": "2026-11-16T22:34:25.705Z",
+      "fromStreamLine": 128,
+      "toStreamLine": 129
+    },
+    {
+      "milliseconds": 13375,
+      "from": "2026-11-16T22:34:25.833Z",
+      "to": "2026-11-16T22:34:39.208Z",
+      "fromStreamLine": 130,
+      "toStreamLine": 131
+    },
+    {
+      "milliseconds": 11336,
+      "from": "2026-11-16T22:34:00.802Z",
+      "to": "2026-11-16T22:34:12.138Z",
+      "fromStreamLine": 127,
+      "toStreamLine": 128
+    },
+    {
+      "milliseconds": 10786,
+      "from": "2026-11-16T22:34:42.438Z",
+      "to": "2026-11-16T22:34:53.224Z",
+      "fromStreamLine": 133,
+      "toStreamLine": 134
+    },
+    {
+      "milliseconds": 4834,
+      "from": "2026-11-16T22:39:15.716Z",
+      "to": "2026-11-16T22:39:20.550Z",
+      "fromStreamLine": 481,
+      "toStreamLine": 482
+    },
+    {
+      "milliseconds": 3912,
+      "from": "2026-11-16T22:42:52.879Z",
+      "to": "2026-11-16T22:42:56.791Z",
+      "fromStreamLine": 760,
+      "toStreamLine": 761
+    },
+    {
+      "milliseconds": 3733,
+      "from": "2026-11-16T22:43:13.965Z",
+      "to": "2026-11-16T22:43:17.698Z",
+      "fromStreamLine": 802,
+      "toStreamLine": 803
+    }
+  ],
+  "method": "Receive timestamp of the batch completing each first original marker; service events restricted to before first Guest diagnostic: replay. QEMU counters deduplicated per core by increasing registered_total, never summed across cores. Source gaps use consecutive nonempty-text batches, not the host checker heartbeat.",
+  "sourceEvidence": {
+    "runId": 43969702163,
+    "jobId": 133662483218,
+    "artifactId": 14279046719,
+    "artifactZipSha256": "ec9a4e3e6a39cb13c2518aeff2c2d5164d64a7d9630442d4a07b10e8c4c49c81",
+    "workflowCommit": "a12b8799fed16e6efc93ab55498e8f165fb1a139",
+    "candidateSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+    "rawFiles": {
+      "firefox-console.txt": {
+        "bytes": 230526,
+        "sha256": "2e696fa94d754722a7e2c876af740dfa9cf8a59a17047ea79e903f99fe402a57"
+      },
+      "firefox-stream.jsonl": {
+        "bytes": 430390,
+        "sha256": "428b802fc66200a6aea9fd6df7347ffff10e5f5426bfee08d8daacf29e8218fc"
+      },
+      "firefox.json": {
+        "bytes": 22576,
+        "sha256": "511886473e05b6b984fdddfc951cdf39796a8613e4315f8aa71197f1fd42b29d"
+      }
+    },
+    "pageErrors": [],
+    "passes": [],
+    "twoRealSequencesPassed": false
+  }
+}
