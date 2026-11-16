@@ -14,7 +14,7 @@ permissions:
   actions: read
 # Replace this only with the reviewed source-only commit. The pin step fails closed while unset.
 env:
-  EMULATOR_SOURCE_SHA: 00994b12ea606c68ba1f81765f393a1f7424b2b9
+  EMULATOR_SOURCE_SHA: 6f35f24b7ca345cf47c873becee6a41ef94e65a9
 concurrency:
   group: pr36-idle-worker-gc-20261117
   cancel-in-progress: false
