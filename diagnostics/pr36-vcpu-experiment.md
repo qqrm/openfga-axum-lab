@@ -86,3 +86,20 @@ Retaining those bytes does not relabel the original producers or make a failed
 browser gate successful.
 
 Results are recorded in a separate findings file after the finite run completes.
+
+## Setup failure and finite replacement
+
+In the first matrix run
+[44663922895](https://github.com/qqrm/openfga-axum-lab/actions/runs/44663922895),
+Firefox with one vCPU stopped during `playwright install --with-deps firefox`:
+the three-minute installation step expired while apt was downloading packages.
+No browser VM or acceptance checker ran in job `136048514037`. That job is not
+a runtime-hypothesis result.
+
+A separate Firefox/one-vCPU-only workflow replaces that missing observation.
+It allows six minutes for installation, eight minutes from the actual job start
+to launch, and a 35-minute outer job. The maximum original runtime waits remain
+20 + 3 minutes, so the outer budget still allows evidence retention. These are
+setup/supervision allowances only: every guest service deadline, production
+assertion, runtime input and browser acceptance wait is unchanged. The other
+three VM cases are not repeated.
