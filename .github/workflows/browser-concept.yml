@@ -1,0 +1,284 @@
+name: Browser concept with real PostgreSQL and OpenFGA
+on:
+  push:
+    branches: [feat/browser-concept-20261120]
+    paths:
+      - .github/workflows/browser-concept.yml
+      - browser-concept/Dockerfile
+      - browser-concept/*.sh
+      - browser-concept/*.mjs
+      - browser-concept/*.py
+      - browser-concept/*.json
+      - browser-concept/pages/**
+      - browser-concept/retained/**
+      - src/bin/browser-concept.rs
+      - src/bin/browser_concept/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: browser-concept-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  EMULATOR_SOURCE_SHA: 6f35f24b7ca345cf47c873becee6a41ef94e65a9
+jobs:
+  native:
+    name: Build browser concept binary
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/feat/browser-concept-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.native_upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.native_upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate concept shell, browser protocol and runtime tooling before building
+        timeout-minutes: 1
+        run: |
+          bash -n browser-concept/build-native.sh browser-concept/guest.sh browser-concept/entrypoint.sh
+          shellcheck -S warning browser-concept/build-native.sh browser-concept/guest.sh browser-concept/entrypoint.sh
+          node --test browser-concept/protocol.test.mjs browser-concept/startup-payload.test.mjs
+          node --check browser-concept/prepare-runtime.mjs
+          node --check browser-concept/check-native.mjs
+          node --check browser-concept/check-browser.mjs
+          python3 -c "import ast,pathlib; ast.parse(pathlib.Path('browser-concept/fetch-runtime-inputs.py').read_text())"
+      - name: Build and test only the new Rust concept executable in Bookworm
+        timeout-minutes: 17
+        run: bash browser-concept/build-native.sh
+      - name: Retain the exact tested concept executable and producer proof
+        id: native_upload
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-concept-native
+          path: artifacts/browser-concept-native/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve native failure diagnostics
+        if: failure()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-concept-native-failure
+          path: artifacts/browser-concept-native/
+          if-no-files-found: warn
+          retention-days: 30
+  chromium:
+    name: Browser concept (chromium)
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      site_artifact_id: ${{ steps.site_upload.outputs.artifact-id }}
+      site_artifact_digest: ${{ steps.site_upload.outputs.artifact-digest }}
+    env:
+      BROWSER_CONCEPT_ENGINE: chromium
+      BROWSER_CONCEPT_ROOT: browser-output/concept
+      BROWSER_DIAGNOSTIC_ENGINE: chromium
+      BROWSER_DIAGNOSTIC_VCPUS: '2'
+      BROWSER_DIAGNOSTIC_JOB_NAME: Browser concept (chromium)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 444b069daf16e9606a0bbf1ea0aea7f4d61b97d8
+          fetch-depth: 6
+          path: source-candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: bb8fed250bdee9931f7702ae2475d28e5e9eed8f
+          fetch-depth: 3
+          path: source-native
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 207d15fab685d3adb9c5d51a048982c2236ae75c
+          path: source-candidate/browser-bootstrap-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EMULATOR_SOURCE_SHA }}
+          fetch-depth: 0
+          path: emulator-source
+          persist-credentials: false
+      - name: Record the actual browser runner
+        run: |
+          mkdir -p artifacts/pr36-vcpu-gate
+          lscpu > artifacts/pr36-vcpu-gate/host-cpu.txt
+          cat /proc/meminfo > artifacts/pr36-vcpu-gate/host-memory.txt
+      - name: Restore pinned VM inputs and the exact same-run concept binary
+        timeout-minutes: 6
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+          CONCEPT_NATIVE_ARTIFACT_ID: ${{ needs.native.outputs.artifact_id }}
+          CONCEPT_NATIVE_ARTIFACT_DIGEST: ${{ needs.native.outputs.artifact_digest }}
+        run: python3 browser-concept/fetch-runtime-inputs.py --runtime
+      - name: Verify the new application against real native PostgreSQL and OpenFGA
+        timeout-minutes: 4
+        run: node browser-concept/check-native.mjs
+      - name: Materialize the unchanged verified runtime and emulator
+        timeout-minutes: 3
+        run: |
+          node browser-concept/retained/prepare-openfga10-bfs-browser.mjs
+          node browser-concept/retained/overlay-retained-emulator.mjs
+      - name: Assemble the separately proven concept binary, model and interactive page
+        timeout-minutes: 2
+        run: node browser-concept/prepare-runtime.mjs
+      - name: Install the locked browser test runtime
+        working-directory: e2e
+        timeout-minutes: 2
+        run: npm ci --ignore-scripts
+      - name: Inspect and smoke-test the runner system Chrome with sandbox
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {createReadStream, promises as fs, writeFileSync} from 'node:fs';
+          import {createRequire} from 'node:module';
+          import path from 'node:path';
+          const output = 'artifacts/pr36-vcpu-gate/chromium/system-chrome-smoke.json';
+          await fs.mkdir(path.dirname(output), {recursive:true});
+          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000,
+            args:['--enable-automation']};
+          const report = {kind:'system_chrome_sandbox_smoke', startedAt:new Date().toISOString(),
+            passed:false, vmStarted:false, acceptanceVerified:false, uid:process.getuid(), launchOptions};
+          const save = () => writeFileSync(output, JSON.stringify(report,null,2));
+          const hardStop = setTimeout(() => { report.passed=false; report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
+          let browser;
+          try {
+            assert.notEqual(report.uid,0,'The smoke must run as the unprivileged runner user');
+            const executable = '/opt/google/chrome/chrome';
+            const stat = await fs.stat(executable);
+            assert.ok(stat.isFile() && (stat.mode & 0o111),'System Chrome is not executable');
+            const hash = createHash('sha256');
+            for await (const bytes of createReadStream(executable)) hash.update(bytes);
+            report.executable = {path:executable, realPath:await fs.realpath(executable), bytes:stat.size,
+              sha256:hash.digest('hex'), uid:stat.uid, gid:stat.gid, mode:stat.mode & 0o7777};
+            report.hostPolicy = {};
+            for (const file of ['/proc/sys/kernel/apparmor_restrict_unprivileged_userns','/etc/apparmor.d/chrome']) {
+              try { report.hostPolicy[file] = await fs.readFile(file,'utf8'); }
+              catch (error) { report.hostPolicy[file] = {readError:String(error)}; }
+            }
+            const require = createRequire(path.resolve('e2e/package.json'));
+            const {chromium} = require('@playwright/test');
+            browser = await chromium.launch(launchOptions);
+            report.actualVersion = browser.version();
+            const session = await browser.newBrowserCDPSession();
+            report.commandLine = await session.send('Browser.getBrowserCommandLine');
+            assert.ok(!report.commandLine.arguments.some(arg => /^--(?:no-sandbox|disable-(?:setuid|namespace|seccomp-filter)-sandbox)(?:=|$)/.test(arg)),
+              'Browser command line disabled a sandbox boundary');
+            const page = await browser.newPage();
+            await page.goto('chrome://sandbox',{timeout:10000});
+            report.sandboxStatus = await page.locator('body').innerText({timeout:5000});
+            report.passed = true;
+          } catch (error) { report.error=String(error); process.exitCode=1; }
+          finally {
+            report.finishedAt=new Date().toISOString();
+            save();
+            if (browser) await browser.close();
+            clearTimeout(hardStop);
+            console.log(JSON.stringify({passed:report.passed, actualVersion:report.actualVersion,
+              vmStarted:false, acceptanceVerified:false, error:report.error, output}));
+            process.exit(process.exitCode ?? 0);
+          }
+          JS
+      # The new concept has a separate declared ten-minute setup budget, which
+      # includes native integration. The checker uses the actual Actions start.
+      - name: Exercise real user actions in one fresh Chromium VM
+        timeout-minutes: 22
+        run: node browser-concept/check-browser.mjs
+      - name: Retain the exact Chromium-tested interactive site
+        id: site_upload
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-concept-site-chromium
+          path: browser-output/concept/
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain complete Chromium and producer evidence
+        if: always()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-concept-chromium-evidence
+          path: |
+            artifacts/browser-concept-browser/
+            artifacts/browser-concept-native-proof/
+            artifacts/browser-concept-runtime/
+            artifacts/browser-concept-native/build.json
+            artifacts/pr36-vcpu-gate/
+            artifacts/pr36-idle-gc-gate/emulator-overlay.json
+            artifacts/openfga10-bfs-browser-gate/materialization.json
+            prepared/*-archive-provenance.json
+            prepared/retained-input-mirror-provenance.json
+            prepared/retained-producer-provenance/
+            prepared/job-timing.json
+            prepared/job-start-observations.jsonl
+            prepared/native-evidence/
+            browser-concept/
+            browser-output/concept/provenance/
+          if-no-files-found: warn
+          retention-days: 30
+  firefox:
+    name: Browser concept (firefox)
+    needs: chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BROWSER_CONCEPT_ENGINE: firefox
+      BROWSER_CONCEPT_ROOT: browser-output/concept
+      BROWSER_DIAGNOSTIC_ENGINE: firefox
+      BROWSER_DIAGNOSTIC_VCPUS: '2'
+      BROWSER_DIAGNOSTIC_JOB_NAME: Browser concept (firefox)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Record the separate Firefox runner
+        run: |
+          mkdir -p artifacts/browser-concept-browser/firefox
+          lscpu > artifacts/browser-concept-browser/firefox/host-cpu.txt
+          cat /proc/meminfo > artifacts/browser-concept-browser/firefox/host-memory.txt
+      - name: Verify the exact Chromium-tested bundle and obtain fresh Firefox job timing
+        timeout-minutes: 6
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+          CONCEPT_SITE_ARTIFACT_ID: ${{ needs.chromium.outputs.site_artifact_id }}
+          CONCEPT_SITE_ARTIFACT_DIGEST: ${{ needs.chromium.outputs.site_artifact_digest }}
+        run: python3 browser-concept/fetch-runtime-inputs.py --bundle
+      - name: Install the locked Firefox test runtime
+        working-directory: e2e
+        timeout-minutes: 3
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps firefox
+      - name: Exercise real user actions in one fresh Firefox VM
+        timeout-minutes: 22
+        run: node browser-concept/check-browser.mjs
+      - name: Retain complete Firefox evidence and exact bundle provenance
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-concept-firefox-evidence
+          path: |
+            artifacts/browser-concept-browser/firefox/
+            prepared/concept-chromium-site-archive-provenance.json
+            prepared/job-timing.json
+            prepared/job-start-observations.jsonl
+            browser-output/concept/provenance/
+            browser-concept/check-browser.mjs
+          if-no-files-found: warn
+          retention-days: 30

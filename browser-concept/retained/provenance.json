@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "kind": "frozen_verified_browser_runtime_tooling",
+  "sourceCommit": "8abc70fc732af6955a9c1ce9473e5bca25229467",
+  "unchangedFiles": {
+    "prepare-openfga10-bfs-browser.mjs": {
+      "sourcePath": "diagnostics/prepare-openfga10-bfs-browser.mjs",
+      "bytes": 58242,
+      "sha256": "1baaec7628003647ceb542590f4620cba109eac028e87a5733f6e5e332d9ba8f"
+    },
+    "overlay-retained-emulator.mjs": {
+      "sourcePath": "diagnostics/overlay-retained-emulator.mjs",
+      "bytes": 7409,
+      "sha256": "a617a48fd2cf692dd33b2438c9f04d373d29494967afee2a84c52aec0f38c0fb"
+    },
+    "candidate-emulator.mjs": {
+      "sourcePath": "diagnostics/candidate-emulator.mjs",
+      "bytes": 6534,
+      "sha256": "420f3bd40f9ae39b542b069e59847a50486bcd6c01ffbfe538e6605b0cff0ce2"
+    }
+  },
+  "readerOrigin": {
+    "sourcePath": "diagnostics/fetch-memory-component-inputs.py",
+    "bytes": 33997,
+    "sha256": "dff4bae93b0479d035b5f0442257688cbacf70178d21ec9768ca12b06224c111"
+  },
+  "readerAdaptationScope": [
+    "strict concept workflow consumer identities",
+    "same-run concept binary artifact",
+    "same-run Chromium site artifact and fresh Firefox job timing",
+    "executable permission for the verified OpenFGA native integration input"
+  ],
+  "producerArtifactPinsUnchanged": true,
+  "emulatorBuildRequested": false,
+  "rootfsBuildRequested": false
+}

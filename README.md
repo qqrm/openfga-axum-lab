@@ -15,6 +15,10 @@ Rust-каталога Apache Iceberg. Исходный файл закреплё
 [Статический обозреватель модели](https://qqrm.github.io/openfga-axum-lab/) ·
 [English overview](README.en.md)
 
+Отдельный [небольшой браузерный концепт](browser-concept/README.md) показывает
+выдачу и отзыв доступа к одному документу через реальные Rust/Axum, PostgreSQL
+и OpenFGA внутри вкладки; у него собственная модель и отдельный browser Check.
+
 ## Run the live lab
 
 Для нового изолированного стенда нужны Docker Engine, Compose v2 и OpenSSL.

@@ -1,0 +1,9 @@
+{
+  "actors": ["alice", "bob"],
+  "owner": "alice",
+  "document": {
+    "id": "demo",
+    "title": "Browser authorization demo",
+    "body": "Only an owner or viewer can read this document. Alice owns it; Bob starts without access."
+  }
+}

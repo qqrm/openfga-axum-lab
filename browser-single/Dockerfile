@@ -10,6 +10,7 @@ COPY assets ./assets
 COPY db ./db
 COPY migrations ./migrations
 COPY fga ./fga
+COPY browser-concept/model.json browser-concept/fixtures.json ./browser-concept/
 COPY benches ./benches
 RUN cargo build --locked --release --bins --no-default-features --features http
 

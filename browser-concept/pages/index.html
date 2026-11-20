@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>Permission Studio · OpenFGA in your browser</title>
+  <link rel="stylesheet" href="site.css">
+  <script type="module" src="launcher.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="../"><span class="brand-mark" aria-hidden="true">p<span>·</span></span><span>Authorization Lab<span class="brand-subtitle">Permission Studio</span></span></a>
+    <span class="local-label"><span class="status-dot" aria-hidden="true"></span>Runs inside this tab</span>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div><p class="eyebrow">ONE DOCUMENT · TWO PEOPLE</p><h1 id="page-title">Give access.<br>See what changes.</h1></div>
+      <p class="intro-copy">Alice owns a document. Bob can read it when Alice shares it. Switch between them and see the real server response to every action.</p>
+    </section>
+
+    <section class="boot-panel" aria-labelledby="phase">
+      <div class="boot-copy"><div class="phase-heading"><span id="runtime-state" class="state-label">Not running</span><h2 id="phase">Start your private playground</h2></div>
+        <p id="detail">The backend runs locally in your browser. Starting may take a few minutes.</p>
+        <p class="download-note"><span id="download-size">A large Linux runtime will download when you start.</span> Desktop browser recommended; the running VM can use several GiB of memory. Resetting discards this demo’s data.</p>
+        <p id="isolation" class="isolation-note" role="status">Preparing browser isolation…</p>
+      </div>
+      <div class="boot-actions"><button id="start" class="button button-primary" disabled>Start the playground <span aria-hidden="true">↗</span></button><button id="reset" class="button button-quiet">Reset this tab</button></div>
+    </section>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <section class="card people-card" aria-labelledby="people-title">
+          <div class="section-heading"><span class="section-number">01</span><h2 id="people-title">Choose a person</h2></div>
+          <fieldset id="actor-picker" disabled><legend class="sr-only">Active demo session</legend>
+            <label id="actor-alice" class="person"><input type="radio" name="actor" value="alice"><span class="avatar avatar-alice" aria-hidden="true">A</span><span class="person-description"><strong>Alice</strong><span>Document owner</span></span><span class="selection-mark" aria-hidden="true"></span></label>
+            <div class="permission-pair" data-person="alice"><div><span>Can read</span><output id="alice-read" class="permission unknown">Not checked</output></div><div><span>Can share</span><output id="alice-share" class="permission unknown">Not checked</output></div><p id="alice-observed" class="observed-at">Waiting for a server observation</p></div>
+            <label id="actor-bob" class="person"><input type="radio" name="actor" value="bob" checked><span class="avatar avatar-bob" aria-hidden="true">B</span><span class="person-description"><strong>Bob</strong><span>Can be given viewer access</span></span><span class="selection-mark" aria-hidden="true"></span></label>
+            <div class="permission-pair" data-person="bob"><div><span>Can read</span><output id="bob-read" class="permission unknown">Not checked</output></div><div><span>Can share</span><output id="bob-share" class="permission unknown">Not checked</output></div><p id="bob-observed" class="observed-at">Waiting for a server observation</p></div>
+          </fieldset>
+          <button id="permissions" class="button button-outline full-width" disabled>Check permissions</button>
+          <p class="small-note">Badges show the latest completed server Check. Selecting a person uses their separate demo session.</p>
+        </section>
+
+        <section class="card policy-card" aria-labelledby="policy-title">
+          <div class="section-heading"><span class="section-number">02</span><h2 id="policy-title">The whole policy</h2></div>
+          <p class="policy-intro">Two types: <code>user</code> and <code>document</code>.<br>Four relations on the document:</p>
+          <dl class="policy"><div><dt>owner</dt><dd>a user</dd></div><div><dt>viewer</dt><dd>a user</dd></div><div><dt>can_read</dt><dd><code>owner</code> or <code>viewer</code></dd></div><div><dt>can_share</dt><dd><code>owner</code></dd></div></dl>
+          <p class="policy-footnote">OpenFGA evaluates this policy for real. Alice starts as the owner; Bob starts without access.</p>
+        </section>
+      </aside>
+
+      <div class="main-column">
+        <section class="card document-card" aria-labelledby="document-title">
+          <div class="document-header"><div class="document-icon" aria-hidden="true"><svg viewBox="0 0 32 38" fill="none"><path d="M5 1h14l8 8v27H5z"/><path d="M19 1v9h8M10 17h12M10 23h12M10 29h7"/></svg></div><div><p class="eyebrow">DOCUMENT / DEMO</p><h2 id="document-title">Browser authorization demo</h2></div><span class="document-owner">Owned by Alice</span></div>
+          <div class="document-content" id="document-content"><span class="document-placeholder-mark" aria-hidden="true">↳</span><h3 id="document-state">What will Bob see?</h3><p id="document-body">Start the playground, then try reading the document as Bob.</p><p id="read-receipt" class="read-receipt" hidden></p></div>
+          <div class="document-actions"><p id="acting-as"><span class="tiny-avatar avatar-bob" aria-hidden="true">B</span>Using Bob’s demo session</p><button id="read" class="button button-primary" disabled>Read as Bob <span aria-hidden="true">→</span></button></div>
+          <div class="sharing"><div><h3>Viewer access for Bob</h3><p>Try sharing as Alice. Try the same action as Bob.</p></div><div class="sharing-buttons"><button id="grant" class="button button-outline" disabled><span aria-hidden="true">+</span> Grant access</button><button id="revoke" class="button button-outline" disabled><span aria-hidden="true">−</span> Revoke access</button></div></div>
+          <p id="action-message" class="action-message" aria-live="polite">Nothing has been requested yet.</p>
+        </section>
+
+        <section class="card history-card" aria-labelledby="history-title">
+          <div class="history-heading"><div class="section-heading"><span class="section-number">03</span><h2 id="history-title">Actual server responses</h2></div><span id="response-count" class="response-count">0 requests</span></div>
+          <p class="history-note">Every row records a real request attempt, its HTTP response, or a transport error.</p>
+          <div id="history-empty" class="history-empty"><span aria-hidden="true">↔</span><p>Your first response will appear here.</p><small>No request has run in this tab.</small></div>
+          <div id="history-scroll" class="history-scroll" hidden><table><thead><tr><th scope="col">Request</th><th scope="col">Person</th><th scope="col">Action</th><th scope="col">Response</th><th scope="col" class="duration">Time</th></tr></thead><tbody id="history"></tbody></table></div>
+        </section>
+      </div>
+    </div>
+
+    <details class="diagnostics"><summary><span>Runtime &amp; diagnostics</span><span class="diagnostic-hint">Model identity, provenance and guest logs</span></summary><div class="diagnostics-body"><p id="backend-identity">No backend has reported ready.</p><p>This separate concept uses real Rust/Axum, OpenFGA with an in-memory authorization store, and PostgreSQL for the document and demo sessions. All data is synthetic and local to this tab. The full Lakekeeper scenario has its own acceptance checks.</p><nav class="provenance-links" aria-label="Runtime provenance"><a href="runtime/startup-manifest.json">Startup manifest</a><a href="model.json">Model JSON</a><a href="provenance/concept-build.json">Native build</a><a href="provenance/native-proof.json">Native validation</a><a href="provenance/assembly.json">Runtime assembly</a><a href="https://github.com/qqrm/openfga-axum-lab/tree/55fb279741aa47ae813e5b7d5aff73dbd2692cc1/browser-single">Lakekeeper scenario source</a></nav><pre id="log" aria-label="Complete source is recorded separately; this is a bounded guest console display"></pre></div></details>
+    <footer><span>Real decisions. Ephemeral demo data.</span><a href="https://github.com/qqrm/openfga-axum-lab">View the project <span aria-hidden="true">↗</span></a></footer>
+  </main>
+</body>
+</html>
