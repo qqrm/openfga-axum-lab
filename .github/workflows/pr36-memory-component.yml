@@ -1,0 +1,199 @@
+name: PR36 OpenFGA memory browser component
+on:
+  push:
+    branches: [diag/pr36-vcpu-20261120]
+    paths:
+      - .github/workflows/pr36-memory-component.yml
+      - diagnostics/fetch-memory-component-inputs.py
+      - diagnostics/prepare-openfga-memory-browser.mjs
+      - diagnostics/check-openfga-memory-browser.mjs
+      - diagnostics/memory-component-protocol.mjs
+      - diagnostics/openfga-memory-*
+permissions:
+  contents: read
+  actions: read
+# Reuse the exact previously built and regression-tested idle-GC emulator.
+env:
+  EMULATOR_SOURCE_SHA: 6f35f24b7ca345cf47c873becee6a41ef94e65a9
+concurrency:
+  group: pr36-memory-component-20261120
+  cancel-in-progress: false
+jobs:
+  browser:
+    name: OpenFGA memory browser component
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/pr36-vcpu-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BROWSER_DIAGNOSTIC_ENGINE: chromium
+      BROWSER_DIAGNOSTIC_VCPUS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 444b069daf16e9606a0bbf1ea0aea7f4d61b97d8
+          fetch-depth: 6
+          path: source-candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: bb8fed250bdee9931f7702ae2475d28e5e9eed8f
+          fetch-depth: 3
+          path: source-native
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 207d15fab685d3adb9c5d51a048982c2236ae75c
+          path: source-candidate/browser-bootstrap-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EMULATOR_SOURCE_SHA }}
+          fetch-depth: 0
+          path: emulator-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: e0e577d25103cd4d8013fcccafa8db4e3a8bd601
+          fetch-depth: 2
+          path: cpu-source
+          persist-credentials: false
+      - name: Record the host configuration for the component experiment
+        run: |
+          mkdir -p artifacts/pr36-vcpu-gate
+          lscpu > artifacts/pr36-vcpu-gate/host-cpu.txt
+          cat /proc/meminfo > artifacts/pr36-vcpu-gate/host-memory.txt
+      - name: Validate diagnostic protocol and shell before downloading inputs
+        timeout-minutes: 1
+        run: |
+          node --test diagnostics/openfga-memory-protocol.test.mjs
+          node --check diagnostics/check-openfga-memory-browser.mjs
+          node --check diagnostics/prepare-openfga-memory-browser.mjs
+          bash -n diagnostics/openfga-memory-guest.sh
+          shellcheck -S warning diagnostics/openfga-memory-guest.sh
+      - name: Restore exact original runtime and emulator inputs, with verified expiry recovery
+        timeout-minutes: 6
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        run: python3 diagnostics/fetch-memory-component-inputs.py
+      - name: Run the unchanged production materializer and verify preserved application segments
+        timeout-minutes: 3
+        run: |
+          node --check diagnostics/prepare-openfga10-bfs-browser.mjs
+          node --check diagnostics/check-openfga-memory-browser.mjs
+          node --check diagnostics/prepare-openfga-memory-browser.mjs
+          node diagnostics/prepare-openfga10-bfs-browser.mjs
+      - name: Overlay only the candidate emulator and verify every preserved runtime file
+        timeout-minutes: 2
+        run: node diagnostics/overlay-retained-emulator.mjs
+      - name: Apply only the selected guest CPU topology and verify the complete served runtime
+        timeout-minutes: 1
+        run: node diagnostics/overlay-vcpu-topology.mjs
+      - name: Overlay the diagnostic-only OpenFGA memory guest
+        timeout-minutes: 1
+        run: node diagnostics/prepare-openfga-memory-browser.mjs
+      - name: Install the locked test runtime
+        working-directory: source-candidate/e2e
+        timeout-minutes: 3
+        run: npm ci --ignore-scripts
+      - name: Inspect and smoke-test the runner system Chrome with sandbox
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {createReadStream, promises as fs, writeFileSync} from 'node:fs';
+          import {createRequire} from 'node:module';
+          import path from 'node:path';
+          const output = 'artifacts/pr36-vcpu-gate/chromium/system-chrome-smoke.json';
+          await fs.mkdir(path.dirname(output), {recursive:true});
+          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000,
+            args:['--enable-automation']};
+          const report = {kind:'system_chrome_sandbox_smoke', startedAt:new Date().toISOString(),
+            passed:false, vmStarted:false, acceptanceVerified:false, uid:process.getuid(), launchOptions};
+          const save = () => writeFileSync(output, JSON.stringify(report,null,2));
+          const hardStop = setTimeout(() => { report.passed=false; report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
+          let browser;
+          try {
+            assert.notEqual(report.uid,0,'The smoke must run as the unprivileged runner user');
+            const executable = '/opt/google/chrome/chrome';
+            const stat = await fs.stat(executable);
+            assert.ok(stat.isFile() && (stat.mode & 0o111),'System Chrome is not executable');
+            const hash = createHash('sha256');
+            for await (const bytes of createReadStream(executable)) hash.update(bytes);
+            report.executable = {path:executable, realPath:await fs.realpath(executable), bytes:stat.size,
+              sha256:hash.digest('hex'), uid:stat.uid, gid:stat.gid, mode:stat.mode & 0o7777};
+            report.hostPolicy = {};
+            for (const file of ['/proc/sys/kernel/apparmor_restrict_unprivileged_userns','/etc/apparmor.d/chrome']) {
+              try { report.hostPolicy[file] = await fs.readFile(file,'utf8'); }
+              catch (error) { report.hostPolicy[file] = {readError:String(error)}; }
+            }
+            const require = createRequire(path.resolve('source-candidate/e2e/package.json'));
+            const {chromium} = require('@playwright/test');
+            browser = await chromium.launch(launchOptions);
+            report.actualVersion = browser.version();
+            const session = await browser.newBrowserCDPSession();
+            report.commandLine = await session.send('Browser.getBrowserCommandLine');
+            assert.ok(!report.commandLine.arguments.some(arg => /^--(?:no-sandbox|disable-(?:setuid|namespace|seccomp-filter)-sandbox)(?:=|$)/.test(arg)),
+              'Browser command line disabled a sandbox boundary');
+            const page = await browser.newPage();
+            await page.goto('chrome://sandbox',{timeout:10000});
+            report.sandboxStatus = await page.locator('body').innerText({timeout:5000});
+            report.passed = true;
+          } catch (error) { report.error=String(error); process.exitCode=1; }
+          finally {
+            report.finishedAt=new Date().toISOString();
+            save();
+            if (browser) await browser.close();
+            clearTimeout(hardStop);
+            console.log(JSON.stringify({passed:report.passed, actualVersion:report.actualVersion,
+              vmStarted:false, acceptanceVerified:false, error:report.error, output}));
+            process.exit(process.exitCode ?? 0);
+          }
+          JS
+      # The component checker records productionAcceptance=false. It runs one
+      # VM, excludes PostgreSQL/Axum, and never replaces the full browser gate.
+      - name: Execute the bounded real OpenFGA component diagnostic
+        timeout-minutes: 22
+        run: node diagnostics/check-openfga-memory-browser.mjs
+      - name: Retain full browser evidence and exact input provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pr36-openfga-memory-component
+          path: |
+            artifacts/pr36-memory-component/
+            artifacts/pr36-vcpu-gate/
+            artifacts/pr36-idle-gc-gate/
+            candidate-emulator/
+            diagnostics/candidate-emulator.mjs
+            diagnostics/overlay-retained-emulator.mjs
+            diagnostics/check-openfga-memory-browser.mjs
+            diagnostics/memory-component-protocol.mjs
+            diagnostics/prepare-openfga-memory-browser.mjs
+            diagnostics/openfga-memory-*
+            diagnostics/fetch-memory-component-inputs.py
+            diagnostics/overlay-vcpu-topology.mjs
+            artifacts/openfga10-bfs-browser-gate/
+            prepared/*-archive-provenance.json
+            prepared/retained-input-mirror-provenance.json
+            prepared/retained-producer-provenance/
+            prepared/job-timing.json
+            prepared/job-start-observations.jsonl
+            prepared/native-evidence/
+            prepared/lightweight-evidence/
+            source-candidate/artifacts/browser-openfga/build.json
+            source-candidate/artifacts/browser-openfga/model-reuse-race-tests.log
+            source-candidate/artifacts/browser-wasm/
+            source-candidate/artifacts/browser-bootstrap/
+            source-candidate/browser-output/wasm/runtime/startup-manifest.json
+            source-candidate/browser-output/wasm/runtime/derived-runtime.json
+            source-candidate/artifacts/browser-kernel/metadata.json
+            source-candidate/artifacts/browser-kernel/linux.config
+            source-candidate/artifacts/browser-kernel/acpi-baseline.config
+            source-candidate/artifacts/browser-kernel/rng.config.diff
+          if-no-files-found: warn
+          retention-days: 30
