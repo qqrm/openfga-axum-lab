@@ -1,0 +1,332 @@
+name: PR36 browser full-stack datastore comparison
+on:
+  push:
+    branches: [diag/pr36-stack-20261120]
+    paths:
+      - .github/workflows/pr36-stack-continuation.yml
+      - diagnostics/fetch-memory-component-inputs.py
+      - diagnostics/prepare-stack-browser.mjs
+      - diagnostics/check-stack-browser.mjs
+      - diagnostics/memory-component-protocol.mjs
+      - diagnostics/stack-runtime-transform.mjs
+      - diagnostics/stack-runtime-transform.test.mjs
+permissions:
+  contents: read
+  actions: read
+# Reuse the exact successful component inputs, including the retained emulator.
+env:
+  EMULATOR_SOURCE_SHA: 6f35f24b7ca345cf47c873becee6a41ef94e65a9
+concurrency:
+  group: pr36-stack-continuation-20261120
+  cancel-in-progress: false
+jobs:
+  browser:
+    name: Browser full-stack datastore comparison
+    if: github.repository == 'qqrm/openfga-axum-lab' && github.ref == 'refs/heads/diag/pr36-stack-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      BROWSER_DIAGNOSTIC_ENGINE: chromium
+      BROWSER_DIAGNOSTIC_VCPUS: '2'
+      BROWSER_DIAGNOSTIC_JOB_NAME: Browser full-stack datastore comparison
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 444b069daf16e9606a0bbf1ea0aea7f4d61b97d8
+          fetch-depth: 6
+          path: source-candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: bb8fed250bdee9931f7702ae2475d28e5e9eed8f
+          fetch-depth: 3
+          path: source-native
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 207d15fab685d3adb9c5d51a048982c2236ae75c
+          path: source-candidate/browser-bootstrap-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EMULATOR_SOURCE_SHA }}
+          fetch-depth: 0
+          path: emulator-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: e0e577d25103cd4d8013fcccafa8db4e3a8bd601
+          fetch-depth: 2
+          path: cpu-source
+          persist-credentials: false
+      - name: Record the shared runner configuration
+        run: |
+          mkdir -p artifacts/pr36-vcpu-gate
+          lscpu > artifacts/pr36-vcpu-gate/host-cpu.txt
+          cat /proc/meminfo > artifacts/pr36-vcpu-gate/host-memory.txt
+      - name: Validate both stack transformations before downloading inputs
+        timeout-minutes: 1
+        run: |
+          node --test diagnostics/stack-runtime-transform.test.mjs
+          node --check diagnostics/prepare-stack-browser.mjs
+          node --check diagnostics/check-stack-browser.mjs
+          node --input-type=module <<'JS'
+          import {promises as fs} from 'node:fs';
+          import {transformStackRuntime} from './diagnostics/stack-runtime-transform.mjs';
+          const directory = 'artifacts/pr36-stack-continuation/shell-preflight';
+          const inputs = {
+            guest:await fs.readFile('source-candidate/browser-single/pages/guest.sh','utf8'),
+            entrypoint:await fs.readFile('source-candidate/browser-single/entrypoint.sh','utf8'),
+          };
+          await fs.mkdir(directory,{recursive:true});
+          for (const datastore of ['memory','postgres']) {
+            const transformed = transformStackRuntime({...inputs,datastore});
+            for (const name of ['guest','entrypoint']) {
+              await fs.writeFile(directory+'/'+datastore+'-'+name+'.sh',transformed[name],{flag:'wx'});
+            }
+            await fs.writeFile(directory+'/'+datastore+'-transform.json',JSON.stringify(transformed.proof,null,2)+'\n',{flag:'wx'});
+          }
+          JS
+          shellcheck -S warning artifacts/pr36-stack-continuation/shell-preflight/*.sh
+      - name: Restore exact original runtime and emulator inputs, with verified expiry recovery
+        timeout-minutes: 6
+        env:
+          ARTIFACT_READ_TOKEN: ${{ github.token }}
+        run: python3 diagnostics/fetch-memory-component-inputs.py
+      - name: Run the unchanged production materializer and verify preserved application segments
+        timeout-minutes: 3
+        run: |
+          node --check diagnostics/prepare-openfga10-bfs-browser.mjs
+          node diagnostics/prepare-openfga10-bfs-browser.mjs
+      - name: Overlay only the candidate emulator and verify every preserved runtime file
+        timeout-minutes: 2
+        run: node diagnostics/overlay-retained-emulator.mjs
+      - name: Apply only the selected guest CPU topology and verify the complete served runtime
+        timeout-minutes: 1
+        run: node diagnostics/overlay-vcpu-topology.mjs
+      - name: Install the locked test runtime
+        working-directory: source-candidate/e2e
+        timeout-minutes: 3
+        run: npm ci --ignore-scripts
+      - name: Inspect and smoke-test the runner system Chrome with sandbox
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {createReadStream, promises as fs, writeFileSync} from 'node:fs';
+          import {createRequire} from 'node:module';
+          import path from 'node:path';
+          const output = 'artifacts/pr36-vcpu-gate/chromium/system-chrome-smoke.json';
+          await fs.mkdir(path.dirname(output), {recursive:true});
+          const launchOptions = {channel:'chrome', chromiumSandbox:true, headless:true, timeout:30000,
+            args:['--enable-automation']};
+          const report = {kind:'system_chrome_sandbox_smoke', startedAt:new Date().toISOString(),
+            passed:false, vmStarted:false, acceptanceVerified:false, uid:process.getuid(), launchOptions};
+          const save = () => writeFileSync(output, JSON.stringify(report,null,2));
+          const hardStop = setTimeout(() => { report.passed=false; report.error='Host smoke deadline exceeded'; save(); process.exit(2); },60000);
+          let browser;
+          try {
+            assert.notEqual(report.uid,0,'The smoke must run as the unprivileged runner user');
+            const executable = '/opt/google/chrome/chrome';
+            const stat = await fs.stat(executable);
+            assert.ok(stat.isFile() && (stat.mode & 0o111),'System Chrome is not executable');
+            const hash = createHash('sha256');
+            for await (const bytes of createReadStream(executable)) hash.update(bytes);
+            report.executable = {path:executable, realPath:await fs.realpath(executable), bytes:stat.size,
+              sha256:hash.digest('hex'), uid:stat.uid, gid:stat.gid, mode:stat.mode & 0o7777};
+            report.hostPolicy = {};
+            for (const file of ['/proc/sys/kernel/apparmor_restrict_unprivileged_userns','/etc/apparmor.d/chrome']) {
+              try { report.hostPolicy[file] = await fs.readFile(file,'utf8'); }
+              catch (error) { report.hostPolicy[file] = {readError:String(error)}; }
+            }
+            const require = createRequire(path.resolve('source-candidate/e2e/package.json'));
+            const {chromium} = require('@playwright/test');
+            browser = await chromium.launch(launchOptions);
+            report.actualVersion = browser.version();
+            const session = await browser.newBrowserCDPSession();
+            report.commandLine = await session.send('Browser.getBrowserCommandLine');
+            assert.ok(!report.commandLine.arguments.some(arg => /^--(?:no-sandbox|disable-(?:setuid|namespace|seccomp-filter)-sandbox)(?:=|$)/.test(arg)),
+              'Browser command line disabled a sandbox boundary');
+            const page = await browser.newPage();
+            await page.goto('chrome://sandbox',{timeout:10000});
+            report.sandboxStatus = await page.locator('body').innerText({timeout:5000});
+            report.passed = true;
+          } catch (error) { report.error=String(error); process.exitCode=1; }
+          finally {
+            report.finishedAt=new Date().toISOString();
+            save();
+            if (browser) await browser.close();
+            clearTimeout(hardStop);
+            console.log(JSON.stringify({passed:report.passed, actualVersion:report.actualVersion,
+              vmStarted:false, acceptanceVerified:false, error:report.error, output}));
+            process.exit(process.exitCode ?? 0);
+          }
+          JS
+      # Each checker starts a fresh VM and runs the original Axum migration,
+      # computed checks and lab-tool acceptance. PostgreSQL remains for the app.
+      # The first launch must occur within eight minutes of the actual job start.
+      - name: Prepare the full stack with memory-backed OpenFGA
+        timeout-minutes: 1
+        env:
+          BROWSER_STACK_DATASTORE: memory
+        run: node diagnostics/prepare-stack-browser.mjs
+      - name: Run the original full-stack acceptance with memory-backed OpenFGA
+        id: memory_check
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          BROWSER_STACK_DATASTORE: memory
+        run: node diagnostics/check-stack-browser.mjs
+      - name: Retain the first result before the PostgreSQL comparison
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pr36-stack-memory-first-arm
+          path: |
+            artifacts/pr36-stack-continuation/memory/
+            artifacts/pr36-vcpu-gate/host-cpu.txt
+            prepared/job-timing.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Require complete first-arm evidence and at least 28 remaining job minutes
+        id: comparison_gate
+        timeout-minutes: 1
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          import {promises as fs} from 'node:fs';
+          const directory = 'artifacts/pr36-stack-continuation';
+          const summaryPath = directory+'/memory/summary.json';
+          const gate = {kind:'full_stack_comparison_continuation_gate',checkedAt:new Date().toISOString(),
+            jobTimeoutMilliseconds:65*60000,requiredRemainingMilliseconds:28*60000,proceed:false};
+          try {
+            const timing = JSON.parse(await fs.readFile('prepared/job-timing.json','utf8'));
+            assert.equal(timing.name,'Browser full-stack datastore comparison');
+            assert.equal(timing.run_id,Number(process.env.GITHUB_RUN_ID));
+            assert.equal(timing.run_attempt,1);
+            assert.equal(Number(process.env.GITHUB_RUN_ATTEMPT),1);
+            assert.equal(timing.head_sha,process.env.GITHUB_SHA);
+            assert.equal(timing.source,'GitHub Actions current job API');
+            assert.ok(Number.isSafeInteger(timing.id)&&timing.id>0);
+            gate.job = timing;
+            const raw = await fs.readFile(summaryPath);
+            gate.firstSummary = {path:summaryPath,bytes:raw.length,sha256:createHash('sha256').update(raw).digest('hex')};
+            const summary = JSON.parse(raw.toString('utf8'));
+            assert.equal(summary.engine,'chromium');
+            assert.equal(summary.datastoreEngine,'memory');
+            assert.equal(summary.sourceCommit,'444b069daf16e9606a0bbf1ea0aea7f4d61b97d8');
+            assert.equal(summary.emulatorSource,process.env.EMULATOR_SOURCE_SHA);
+            assert.equal(summary.workflowCommit,process.env.GITHUB_SHA);
+            assert.equal(summary.runId,timing.run_id);
+            assert.equal(summary.runAttempt,1);
+            assert.deepEqual(summary.job,timing);
+            assert.equal(summary.checkerLaunched,true);
+            assert.equal(summary.checkerExited,true);
+            assert.equal(summary.logCaptureComplete,true);
+            assert.equal(summary.productionGatePassed,false);
+            assert.equal(summary.comparisonContinuationPermitted,true,'First result does not permit comparison continuation');
+            gate.firstApplicationAcceptancePassed = summary.applicationAcceptancePassed;
+            gate.firstContinuationReason = summary.comparisonContinuationReason;
+            const elapsed = Date.now()-Date.parse(timing.started_at);
+            assert.ok(Number.isFinite(elapsed)&&elapsed>=0,'Invalid actual job start');
+            gate.jobElapsedMilliseconds = elapsed;
+            gate.jobRemainingMilliseconds = gate.jobTimeoutMilliseconds-elapsed;
+            assert.ok(gate.jobRemainingMilliseconds>=gate.requiredRemainingMilliseconds,
+              'Fewer than 28 actual job minutes remain; refusing the second VM');
+            gate.proceed = true;
+          } catch (error) { gate.error=String(error); }
+          await fs.mkdir(directory,{recursive:true});
+          await fs.writeFile(directory+'/comparison-continuation.json',JSON.stringify(gate,null,2)+'\n');
+          await fs.appendFile(process.env.GITHUB_OUTPUT,'proceed='+String(gate.proceed)+'\n');
+          console.log(JSON.stringify(gate));
+          JS
+      - name: Restore and verify the identical baseline between closed checkers
+        if: steps.comparison_gate.outputs.proceed == 'true'
+        timeout-minutes: 1
+        env:
+          BROWSER_STACK_DATASTORE: postgres
+        run: node diagnostics/prepare-stack-browser.mjs --restore
+      - name: Prepare the original PostgreSQL-backed OpenFGA full stack
+        if: steps.comparison_gate.outputs.proceed == 'true'
+        timeout-minutes: 1
+        env:
+          BROWSER_STACK_DATASTORE: postgres
+        run: node diagnostics/prepare-stack-browser.mjs
+      - name: Run the original full-stack acceptance with PostgreSQL-backed OpenFGA
+        if: steps.comparison_gate.outputs.proceed == 'true'
+        id: postgres_check
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          BROWSER_STACK_DATASTORE: postgres
+        run: node diagnostics/check-stack-browser.mjs
+      - name: Preserve both checker outcomes and require both arms to pass
+        if: always()
+        timeout-minutes: 1
+        env:
+          MEMORY_CHECK_OUTCOME: ${{ steps.memory_check.outcome }}
+          POSTGRES_CHECK_OUTCOME: ${{ steps.postgres_check.outcome }}
+          COMPARISON_CONTINUATION: ${{ steps.comparison_gate.outputs.proceed }}
+        run: |
+          node --input-type=module <<'JS'
+          import {promises as fs} from 'node:fs';
+          const report = {kind:'paired_full_stack_datastore_workflow_outcome',finishedAt:new Date().toISOString(),
+            workflowCommit:process.env.GITHUB_SHA,runId:Number(process.env.GITHUB_RUN_ID),
+            runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),
+            memoryCheckerStepOutcome:process.env.MEMORY_CHECK_OUTCOME,
+            postgresCheckerStepOutcome:process.env.POSTGRES_CHECK_OUTCOME,
+            comparisonContinuationPermitted:process.env.COMPARISON_CONTINUATION==='true',
+            productionGatePassed:false};
+          report.bothCheckerStepsPassed = report.comparisonContinuationPermitted &&
+            report.memoryCheckerStepOutcome==='success' && report.postgresCheckerStepOutcome==='success';
+          await fs.mkdir('artifacts/pr36-stack-continuation',{recursive:true});
+          await fs.writeFile('artifacts/pr36-stack-continuation/comparison-outcome.json',JSON.stringify(report,null,2)+'\n');
+          console.log(JSON.stringify(report));
+          if (!report.bothCheckerStepsPassed) process.exitCode=1;
+          JS
+      - name: Retain both full-stack captures and exact input provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pr36-full-stack-datastore-comparison
+          path: |
+            artifacts/pr36-stack-continuation/
+            artifacts/pr36-vcpu-gate/
+            artifacts/pr36-idle-gc-gate/
+            candidate-emulator/
+            diagnostics/candidate-emulator.mjs
+            diagnostics/overlay-retained-emulator.mjs
+            diagnostics/check-stack-browser.mjs
+            diagnostics/memory-component-protocol.mjs
+            diagnostics/prepare-stack-browser.mjs
+            diagnostics/stack-runtime-transform.mjs
+            diagnostics/stack-runtime-transform.test.mjs
+            diagnostics/fetch-memory-component-inputs.py
+            diagnostics/overlay-vcpu-topology.mjs
+            artifacts/openfga10-bfs-browser-gate/
+            prepared/*-archive-provenance.json
+            prepared/retained-input-mirror-provenance.json
+            prepared/retained-producer-provenance/
+            prepared/job-timing.json
+            prepared/job-start-observations.jsonl
+            prepared/stack-baseline/
+            prepared/native-evidence/
+            prepared/lightweight-evidence/
+            source-candidate/artifacts/browser-openfga/build.json
+            source-candidate/artifacts/browser-openfga/model-reuse-race-tests.log
+            source-candidate/artifacts/browser-wasm/
+            source-candidate/artifacts/browser-bootstrap/
+            source-candidate/browser-output/wasm/runtime/startup-manifest.json
+            source-candidate/browser-output/wasm/runtime/derived-runtime.json
+            source-candidate/artifacts/browser-kernel/metadata.json
+            source-candidate/artifacts/browser-kernel/linux.config
+            source-candidate/artifacts/browser-kernel/acpi-baseline.config
+            source-candidate/artifacts/browser-kernel/rng.config.diff
+          if-no-files-found: warn
+          retention-days: 30

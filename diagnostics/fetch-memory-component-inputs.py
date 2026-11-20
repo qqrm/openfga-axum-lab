@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore pinned browser inputs for one component diagnostic; no VM/build.
+"""Restore pinned browser inputs for an allowlisted diagnostic; no VM/build.
 
 All original producer identities and inner ZIP hashes remain immutable.
 An expired or removed source artifact may be restored from one verified mirror.
@@ -265,7 +265,16 @@ def obtain_archive(label, run_id, head, aid, name, size, sha):
     return destination, actual["bytes"], recovery
 
 engine = os.environ["BROWSER_DIAGNOSTIC_ENGINE"]
-require(engine == "chromium", "This finite component test runs only Chromium")
+require(engine == "chromium", "This finite browser diagnostic runs only Chromium")
+job_name = os.environ.get("BROWSER_DIAGNOSTIC_JOB_NAME", "OpenFGA memory browser component")
+diagnostic_jobs = {
+    "OpenFGA memory browser component": (
+        "diag/pr36-vcpu-20261120", ".github/workflows/pr36-memory-component.yml"),
+    "Browser full-stack datastore comparison": (
+        "diag/pr36-stack-20261120", ".github/workflows/pr36-stack-continuation.yml"),
+}
+require(job_name in diagnostic_jobs, "Unexpected diagnostic job name")
+expected_branch, expected_workflow = diagnostic_jobs[job_name]
 current_run = int(os.environ["GITHUB_RUN_ID"])
 current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
 require(current_run > 0 and current_attempt == 1, "This finite diagnostic forbids workflow reruns")
@@ -282,18 +291,17 @@ current_info = api("/actions/runs/" + str(current_run), observation_deadline)
 observe({"kind": "current_run", **{key: current_info.get(key) for key in [
     "id", "head_sha", "head_branch", "run_attempt", "event", "status"]}})
 require(current_info["id"] == current_run and current_info["head_sha"] == os.environ["GITHUB_SHA"]
-        and current_info["head_branch"] == "diag/pr36-vcpu-20261120"
+        and current_info["head_branch"] == expected_branch and current_info["path"] == expected_workflow
         and current_info["run_attempt"] == current_attempt and current_info["event"] == "push",
         "Current run immutable identity mismatch")
 cpus = os.environ["BROWSER_DIAGNOSTIC_VCPUS"]
-require(cpus == "2", "This finite component test uses exactly two guest CPUs")
-job_name = "OpenFGA memory browser component"
+require(cpus == "2", "This finite browser diagnostic uses exactly two guest CPUs")
 expected_job_id = None
 for observation in range(1, 7):
     jobs = api("/actions/runs/" + str(current_run) + "/attempts/" + str(current_attempt) + "/jobs?per_page=100", observation_deadline)
     require(jobs["total_count"] <= 100, "Current run job list exceeded its bounded page")
     matching = [job for job in jobs["jobs"] if job["name"] == job_name]
-    require(len(matching) == 1, "Expected exactly one current component job")
+    require(len(matching) == 1, "Expected exactly one current diagnostic job")
     job = matching[0]
     observe({"kind": "current_job", "observation": observation,
         **{key: job.get(key) for key in ["id", "name", "run_id", "head_sha", "status", "started_at"]},
