@@ -101,3 +101,12 @@ Failure reason, phase and guest time are emitted before optional diagnostics.
 
 Production branch, acceptance conditions and publication are outside this
 component experiment. Results will be recorded separately after execution.
+
+## Setup-only correction
+
+Run `44672544748`, workflow `3622b7b4`, stopped at ShellCheck before artifact
+downloads or any browser VM. Four warnings identified ambiguous-looking empty
+assignments and unquoted literal `write` assignments in the new diagnostic shell.
+The follow-up spells out the empty strings and quotes the literals; it does not
+change runtime behavior, inputs, requests or deadlines. This setup failure is
+excluded from component-engine results.

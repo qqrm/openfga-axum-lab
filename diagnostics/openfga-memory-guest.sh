@@ -7,7 +7,7 @@ umask 077
 http_request() {
     local request_path=$1 body=$2 output=$3
     local limit=16384 bytes header_bytes=0 line version code header key value
-    local length= content_type= header_done=false
+    local length='' content_type='' header_done=false
     [[ "$request_path" =~ ^/stores/[0-9A-HJKMNP-TV-Z]{26}/(check|write)$ ]] || return 64
     [[ ${#body} -le 4096 && "$output" == /tmp/fga-memory/response-* ]] || return 64
     : >"$output"
@@ -192,10 +192,10 @@ for cycle in 1 2; do
         stage "cycle-$cycle-$operation"
         case "$operation" in
             grant)
-                endpoint=write
+                endpoint='write'
                 body=$(printf '{"authorization_model_id":"%s","writes":{"tuple_keys":[%s]}}' "$model_id" "$tuple") ;;
             revoke)
-                endpoint=write
+                endpoint='write'
                 body=$(printf '{"authorization_model_id":"%s","deletes":{"tuple_keys":[%s]}}' "$model_id" "$tuple") ;;
             *)
                 endpoint=check
