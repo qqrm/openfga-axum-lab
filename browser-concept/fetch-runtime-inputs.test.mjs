@@ -49,6 +49,8 @@ for (const [name, mode, corruption, expected] of [
   ['corrupt inner archive is rejected', 'expired', 'bytes', /inner ZIP differs/],
   ['wrong producer run is rejected', 'expired', 'producer', /provenance differs/],
   ['wrong producer head is rejected', 'expired', 'head', /producer commit differs/],
+  ['explicit null producer head cannot use the fallback field', 'expired', 'null-head', /producer commit differs/],
+  ['invalid UTF-8 in producer proof is rejected', 'expired', 'encoding', /encoded data.*valid/],
   ['wrong retained role is rejected', 'expired', 'role', /artifact role differs/],
   ['ambiguous retained member is rejected', 'expired', 'duplicate', /exactly one retained member/],
 ]) {
@@ -72,9 +74,13 @@ for (const [name, mode, corruption, expected] of [
     const original = {artifact: 101, run: corruption === 'producer' ? 12 : 11,
       head: corruption === 'head' ? 'b'.repeat(40) : head, label: corruption === 'role' ? 'kernel' : 'retained',
       artifact_name: 'original-fixture', archive: blobRecord};
+    if (corruption === 'null-head') { original.head = null; original.workflowCommit = head; }
+    original.note = 'utf8-fixture';
+    const proofBytes = Buffer.from(JSON.stringify(original));
+    if (corruption === 'encoding') proofBytes[proofBytes.indexOf('utf8-fixture')] = 255;
     const filename = path.join(root, 'fixture-mirror.zip');
     const entries = [['retained.zip', corruption === 'bytes' ? Buffer.from('wrong') : blob],
-      ['retained-archive-provenance.json', JSON.stringify(original)]];
+      ['retained-archive-provenance.json', proofBytes]];
     if (corruption === 'duplicate') entries.push(['nested/retained.zip', blob]);
     await zip(filename, entries);
     reader.retainedMirror = async () => { mirrors++; return [filename, {archive: await fileRecord(filename)}]; };

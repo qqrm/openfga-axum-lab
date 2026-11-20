@@ -187,7 +187,8 @@ try {
   assert.deepEqual(Object.keys(credentials).sort(),['alice','bob']);
   for(const token of Object.values(credentials))assert(typeof token==='string'&&/^[0-9a-f]{64}$/.test(token),'Invalid private credential format');
   assert(credentials.alice!==credentials.bob,'Demo identities must have different credentials');
-  const owner={user:'user:alice',relation:'owner',object:'document:demo'};
+  // The retained protobuf gateway emits the absent condition as explicit null.
+  const owner={user:'user:alice',relation:'owner',object:'document:demo',condition:null};
   assert.deepEqual(await tuples(health.store_id),[owner]);
   result.initialOwnerReadback=true;
   const counts=(await run('docker',['exec',container,'psql','-U','authzlab','-d','concept','-Atc',

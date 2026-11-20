@@ -346,7 +346,8 @@ export class RuntimeInputReader {
       const original = await readJson(proofDestination);
       requireValue(original.artifact === aid && original.run === runId && equal(original.archive, {bytes, sha256: sha}),
         'Retained original producer provenance differs');
-      requireValue((original.head ?? original.workflowCommit) === head, 'Retained original producer commit differs');
+      requireValue((Object.hasOwn(original, 'head') ? original.head : original.workflowCommit) === head,
+        'Retained original producer commit differs');
       if (label === 'candidate-emulator') {
         requireValue(original.attempt === 1 && original.buildJob?.id === EMULATOR.job, 'Retained emulator producer identity differs');
       } else {
