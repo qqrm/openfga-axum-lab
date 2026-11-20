@@ -88,7 +88,7 @@ try {
   for (const name of ['index.html', 'site.css', 'launcher.js', 'protocol.mjs', 'startup-payload.mjs', 'isolation-sw.js']) {
     assert.deepEqual(siteFiles[name], await record(path.join('browser-concept/pages', name)));
   }
-  for (const name of ['guest.sh', 'entrypoint.sh', 'model.json']) {
+  for (const name of ['guest.sh', 'entrypoint.sh', 'model.json', 'serve.mjs']) {
     assert.deepEqual(siteFiles[name], await record(path.join('browser-concept', name)));
   }
   const manifest = validateStartupManifest(await readJSON(path.join(site, 'runtime/startup-manifest.json')));
@@ -180,6 +180,7 @@ try {
   const pageFailure = new Promise((_, reject) => { rejectFailure = reject; });
   pageFailure.catch(() => {});
   const fail = error => {
+    checksPassed = false;
     result.pageErrors.push(String(error));
     rejectFailure(error instanceof Error ? error : new Error(String(error)));
   };
@@ -398,7 +399,7 @@ try {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
-  result.passed = checksPassed;
+  result.passed = checksPassed && result.pageErrors.length === 0;
   result.finishedAt = new Date().toISOString();
   await save();
 }

@@ -86,7 +86,10 @@ createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" concept
 phase postgres-ready 'The real document and session database is ready.'
 
 phase openfga-start 'Starting the authorization engine.'
-"$openfga_binary" run &
+# This retained browser build requires its original, checksummed codec warmup
+# fixture. Warmup does not create a store or authorize a request. The Rust
+# application below uploads and uses only its separate two-type concept model.
+FGA_MODEL=/app/fga/model.json "$openfga_binary" run &
 fga_pid=$!
 fga_listening=false
 deadline=$((SECONDS + 180))

@@ -7,7 +7,6 @@ on:
       - browser-concept/Dockerfile
       - browser-concept/*.sh
       - browser-concept/*.mjs
-      - browser-concept/*.py
       - browser-concept/*.json
       - browser-concept/pages/**
       - browser-concept/retained/**
@@ -46,7 +45,8 @@ jobs:
           node --check browser-concept/prepare-runtime.mjs
           node --check browser-concept/check-native.mjs
           node --check browser-concept/check-browser.mjs
-          python3 -c "import ast,pathlib; ast.parse(pathlib.Path('browser-concept/fetch-runtime-inputs.py').read_text())"
+          node --check browser-concept/build-provenance.mjs
+          node --check browser-concept/fetch-runtime-inputs.mjs
       - name: Build and test only the new Rust concept executable in Bookworm
         timeout-minutes: 17
         run: bash browser-concept/build-native.sh
@@ -114,13 +114,20 @@ jobs:
           mkdir -p artifacts/pr36-vcpu-gate
           lscpu > artifacts/pr36-vcpu-gate/host-cpu.txt
           cat /proc/meminfo > artifacts/pr36-vcpu-gate/host-memory.txt
+      - name: Install the locked ZIP reader and browser test runtime
+        working-directory: e2e
+        timeout-minutes: 2
+        run: npm ci --ignore-scripts
+      - name: Check recovery, producer identity and ZIP rejection before downloads
+        timeout-minutes: 1
+        run: node --test browser-concept/fetch-runtime-inputs.test.mjs
       - name: Restore pinned VM inputs and the exact same-run concept binary
         timeout-minutes: 6
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
           CONCEPT_NATIVE_ARTIFACT_ID: ${{ needs.native.outputs.artifact_id }}
           CONCEPT_NATIVE_ARTIFACT_DIGEST: ${{ needs.native.outputs.artifact_digest }}
-        run: python3 browser-concept/fetch-runtime-inputs.py --runtime
+        run: node browser-concept/fetch-runtime-inputs.mjs --runtime
       - name: Verify the new application against real native PostgreSQL and OpenFGA
         timeout-minutes: 4
         run: node browser-concept/check-native.mjs
@@ -132,10 +139,6 @@ jobs:
       - name: Assemble the separately proven concept binary, model and interactive page
         timeout-minutes: 2
         run: node browser-concept/prepare-runtime.mjs
-      - name: Install the locked browser test runtime
-        working-directory: e2e
-        timeout-minutes: 2
-        run: npm ci --ignore-scripts
       - name: Inspect and smoke-test the runner system Chrome with sandbox
         timeout-minutes: 2
         shell: bash
@@ -251,19 +254,21 @@ jobs:
           mkdir -p artifacts/browser-concept-browser/firefox
           lscpu > artifacts/browser-concept-browser/firefox/host-cpu.txt
           cat /proc/meminfo > artifacts/browser-concept-browser/firefox/host-memory.txt
+      - name: Install the locked ZIP reader and browser test runtime
+        working-directory: e2e
+        timeout-minutes: 2
+        run: npm ci --ignore-scripts
       - name: Verify the exact Chromium-tested bundle and obtain fresh Firefox job timing
         timeout-minutes: 6
         env:
           ARTIFACT_READ_TOKEN: ${{ github.token }}
           CONCEPT_SITE_ARTIFACT_ID: ${{ needs.chromium.outputs.site_artifact_id }}
           CONCEPT_SITE_ARTIFACT_DIGEST: ${{ needs.chromium.outputs.site_artifact_digest }}
-        run: python3 browser-concept/fetch-runtime-inputs.py --bundle
+        run: node browser-concept/fetch-runtime-inputs.mjs --bundle
       - name: Install the locked Firefox test runtime
         working-directory: e2e
         timeout-minutes: 3
-        run: |
-          npm ci --ignore-scripts
-          npx --no-install playwright install --with-deps firefox
+        run: npx --no-install playwright install --with-deps firefox
       - name: Exercise real user actions in one fresh Firefox VM
         timeout-minutes: 22
         run: node browser-concept/check-browser.mjs

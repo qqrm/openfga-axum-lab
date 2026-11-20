@@ -23,6 +23,10 @@
 
 Rust-приложение собирается как Linux x86-64 ELF с исходными `Cargo.toml` и
 `Cargo.lock`. OpenFGA — закреплённый ELF сборки `v1.10.3-browser-startup.10`.
+При старте эта сохранённая сборка OpenFGA требует исходную Lakekeeper-фикстуру
+для прогрева JSON-кодеков. Файл передаётся только процессу OpenFGA и не становится
+активной моделью концепта: затем Rust создаёт отдельный store и загружает туда
+двухтипную модель ниже. Native proof отдельно проверяет обе идентичности.
 QEMU/Wasm исполняет оба внутри Linux с **двумя vCPU и 512 MiB гостевой памяти**.
 Расход памяти самого браузера может быть существенно выше. Браузеру не нужен
 внешний API-сервер: после загрузки статических файлов запросы проходят внутри VM.
@@ -39,7 +43,7 @@ QEMU/Wasm исполняет оба внутри Linux с **двумя vCPU и 5
 | Новый Rust executable, модель и UI | Точный commit текущего concept workflow |
 
 Идентичности producer jobs, размеры и SHA-256 находятся в
-[`fetch-runtime-inputs.py`](fetch-runtime-inputs.py),
+[`fetch-runtime-inputs.mjs`](fetch-runtime-inputs.mjs),
 [`retained/provenance.json`](retained/provenance.json) и собранном `provenance/`.
 Просроченные исходные архивы допускают только заранее закреплённую и проверенную
 зеркальную копию тех же байтов; другой runtime автоматически не подбирается.
@@ -153,10 +157,13 @@ Native job ограничен 20 минутами, каждый browser job — 
 После скачивания и распаковки ZIP в отдельную директорию его можно открыть локально:
 
 ```sh
-python3 -m http.server 8000 --bind 127.0.0.1 --directory /path/to/unpacked-concept
+node /path/to/unpacked-concept/serve.mjs
 ```
 
-Откройте `http://127.0.0.1:8000/`. Нужны desktop browser, JavaScript,
+Откройте `http://127.0.0.1:8765/`; `PORT` меняет порт. Из исходного репозитория
+тот же сервер запускается как `node browser-concept/serve.mjs /path/to/unpacked-concept`.
+Сервер раздаёт только статические файлы и слушает только loopback.
+Нужны desktop browser, JavaScript,
 `SharedArrayBuffer` и cross-origin isolation; scoped service worker добавляет
 нужные заголовки и может один раз перезагрузить страницу. Для размещения вне
 localhost требуется HTTPS. Сам workflow сайт не публикует.

@@ -36,7 +36,8 @@ const result={schemaVersion:1,kind:'real_browser_concept_native_proof',passed:fa
     (await run('git',['rev-parse','HEAD'])).stdout.trim(),
   runId:Number(process.env.GITHUB_RUN_ID ?? 0),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
   conceptBinary:await record(concept),model:await record('browser-concept/model.json'),
-  openfga:await record(openfga),operations:[],cycles:[],cleanupErrors:[]};
+  openfga:await record(openfga),openfgaWarmupModel:await record('fga/model.json'),
+  operations:[],cycles:[],cleanupErrors:[]};
 
 function launch(label,executable,args,env) {
   const log=createWriteStream(path.join(output,`${label}.log`),{flags:'wx'});
@@ -147,6 +148,8 @@ try {
   assert.deepEqual(nativeBuild.binary,result.conceptBinary);
   assert.deepEqual(nativeBuild.model,result.model);
   assert.equal(result.openfga.sha256,'d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b');
+  assert.deepEqual(result.openfgaWarmupModel,{bytes:52709,
+    sha256:'a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d'});
   const created=await run('docker',['run','--detach','--name',ownedName,'--label',`io.authzlab.concept-owner=${ownedName}`,
     '--shm-size=128m','-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_USER=authzlab','-e','POSTGRES_DB=concept',
     '-p','127.0.0.1:25432:5432','postgres:17-bookworm'],120000);
@@ -160,6 +163,7 @@ try {
   assert.match(version,/^PostgreSQL 17\./);
   result.postgres={image:'postgres:17-bookworm',imageId,version};
   fgaChild=launch('openfga',openfga,['run'],{
+    FGA_MODEL:path.resolve('fga/model.json'),
     OPENFGA_DATASTORE_ENGINE:'memory',OPENFGA_HTTP_ADDR:'127.0.0.1:18080',OPENFGA_GRPC_ADDR:'127.0.0.1:18081',
     OPENFGA_PLAYGROUND_ENABLED:'false',OPENFGA_METRICS_ENABLED:'false',OPENFGA_LOG_LEVEL:'warn',OPENFGA_REQUEST_TIMEOUT:'3s'});
   await waitUntil(async()=>{

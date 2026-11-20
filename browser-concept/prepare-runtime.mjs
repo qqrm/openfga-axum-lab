@@ -103,7 +103,7 @@ for(const name of ['log-stream.mjs','runtime-errors.mjs','qemu-budget.mjs']) {
   helperFiles[name]=await record(filename);
   assert.deepEqual(await record(path.join(output,name)),helperFiles[name]);
 }
-for(const name of ['guest.sh','entrypoint.sh','model.json']) {
+for(const name of ['guest.sh','entrypoint.sh','model.json','serve.mjs']) {
   await fs.copyFile(path.join('browser-concept',name),path.join(output,name));
 }
 await fs.copyFile(path.join(nativeDirectory,'concept'),path.join(output,'runtime/concept'));
