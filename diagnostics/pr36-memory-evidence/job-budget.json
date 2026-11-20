@@ -1,0 +1,17 @@
+{
+  "id": 136079905760,
+  "name": "OpenFGA memory browser component",
+  "run_id": 44673550930,
+  "head_sha": "d1c20a5b205d5786bb56623eb28e62c2a842445c",
+  "started_at": "2026-11-20T04:18:47Z",
+  "run_attempt": 1,
+  "source": "GitHub Actions current job API",
+  "observed_at": "2026-11-20T04:18:54.192322+00:00",
+  "checkedAt": "2026-11-20T04:19:27.916Z",
+  "jobElapsedMilliseconds": 40916,
+  "latestLaunchJobElapsedMilliseconds": 480000,
+  "outerJobMinutes": 35,
+  "runtimeStepMinutes": 22,
+  "componentWaitMilliseconds": 1200000,
+  "launchPermitted": true
+}

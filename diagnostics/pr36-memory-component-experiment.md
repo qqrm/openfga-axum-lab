@@ -130,3 +130,11 @@ source gaps, trailing component garbage and truncated component records cannot
 pass. The actual failing chunk sequence is retained as a regression fixture;
 additional boundary tests insert telemetry at every byte position in a record.
 Inputs, guest workload, VM configuration and time budgets remain unchanged.
+
+## Completed result
+
+Run `44673550930`, workflow `d1c20a5b`, passed both real ownership cycles in one
+Chromium VM. See the [findings and retained evidence](pr36-memory-component-findings.md)
+for the ten decoded responses, input identities, independent capture checks
+and the limits of this component result. Full application acceptance remains
+unpassed.

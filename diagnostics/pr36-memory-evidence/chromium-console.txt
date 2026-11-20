@@ -1,0 +1,463 @@
+this.program: warning: hub 0 is not connected to host network
+c[?7l[2J[0mSeaBIOS (version rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.org)
+
+
+iPXE (http://ipxe.org) 00:05.0 CA00 PCI2.10 PnP PMM+1EFD0DF0+1EF30DF0 CA00
+Press Ctrl-B to configure iPXE (PCI 00:05.0)...                                                                               
+
+
+Booting from ROM...
+c[?7l[2Jearly console in extract_kernel
+input_data: 0x00000000020562e0
+input_len: 0x000000000036a27a
+output: 0x0000000001000000
+output_len: 0x000000000138c690
+kernel_total_size: 0x0000000001030000
+needed_size: 0x0000000001400000
+trampoline_32bit: 0x000000000009d000
+Physical KASLR using RDTSC...
+Virtual KASLR using RDTSC...
+
+Decompressing Linux... Parsing ELF... Performing relocations... done.
+Booting the kernel.
+[    0.000000] Linux version 6.1.0-authz-ipc+ (authzlab@browser) (x86_64-linux-gnu-gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #1 SMP PREEMPT_DYNAMIC 2022-12-11 22:15:18 UTC
+[    0.000000] Command line: earlyprintk=ttyS0,115200n8 console=ttyS0,115200n8 root=/dev/vda rootwait ro virtio_net.napi_tx=false loglevel=7 QEMU_MODE=1 init=/sbin/tini -- /sbin/init
+[    0.000000] x86/fpu: x87 FPU will use FXSAVE
+[    0.000000] signal: max sigframe size: 1040
+[    0.000000] BIOS-provided physical RAM map:
+[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000001ffdcfff] usable
+[    0.000000] BIOS-e820: [mem 0x000000001ffdd000-0x000000001fffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved
+[    0.000000] printk: bootconsole [earlyser0] enabled
+[    0.000000] NX (Execute Disable) protection: active
+[    0.000000] SMBIOS 3.0.0 present.
+[    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.org 04/01/2014
+[    0.000000] tsc: Fast TSC calibration failed
+[    0.000000] last_pfn = 0x1ffdd max_arch_pfn = 0x400000000
+[    0.000000] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+Memory KASLR using RDTSC...
+[    0.000000] found SMP MP-table at [mem 0x000f5440-0x000f544f]
+[    0.000000] ACPI: Early table checksum verification disabled
+[    0.000000] ACPI: RSDP 0x00000000000F5210 000014 (v00 BOCHS )
+[    0.000000] ACPI: RSDT 0x000000001FFE1CB3 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: FACP 0x000000001FFE1B5F 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: DSDT 0x000000001FFE0040 001B1F (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: FACS 0x000000001FFE0000 000040
+[    0.000000] ACPI: APIC 0x000000001FFE1BD3 000080 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: HPET 0x000000001FFE1C53 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: WAET 0x000000001FFE1C8B 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: Reserving FACP table memory at [mem 0x1ffe1b5f-0x1ffe1bd2]
+[    0.000000] ACPI: Reserving DSDT table memory at [mem 0x1ffe0040-0x1ffe1b5e]
+[    0.000000] ACPI: Reserving FACS table memory at [mem 0x1ffe0000-0x1ffe003f]
+[    0.000000] ACPI: Reserving APIC table memory at [mem 0x1ffe1bd3-0x1ffe1c52]
+[    0.000000] ACPI: Reserving HPET table memory at [mem 0x1ffe1c53-0x1ffe1c8a]
+[    0.000000] ACPI: Reserving WAET table memory at [mem 0x1ffe1c8b-0x1ffe1cb2]
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+[    0.000000]   DMA32    [mem 0x0000000001000000-0x000000001ffdcfff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000000001000-0x000000000009efff]
+[    0.000000]   node   0: [mem 0x0000000000100000-0x000000001ffdcfff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000000001000-0x000000001ffdcfff]
+[    0.000000] On node 0, zone DMA: 1 pages in unavailable ranges
+[    0.000000] On node 0, zone DMA: 97 pages in unavailable ranges
+[    0.000000] On node 0, zone DMA32: 35 pages in unavailable ranges
+[    0.000000] ACPI: PM-Timer IO Port: 0x608
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])
+[    0.000000] IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)
+[    0.000000] ACPI: Using ACPI (MADT) for SMP configuration information
+[    0.000000] ACPI: HPET id: 0x8086a201 base: 0xfed00000
+[    0.000000] smpboot: Allowing 2 CPUs, 0 hotplug CPUs
+[    0.000000] [mem 0x20000000-0xfffbffff] available for PCI devices
+[    0.000000] clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.000000] setup_percpu: NR_CPUS:64 nr_cpumask_bits:2 nr_cpu_ids:2 nr_node_ids:1
+[    0.000000] percpu: Embedded 41 pages/cpu s135976 r0 d31960 u1048576
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 128733
+[    0.000000] Kernel command line: earlyprintk=ttyS0,115200n8 console=ttyS0,115200n8 root=/dev/vda rootwait ro virtio_net.napi_tx=false loglevel=7 QEMU_MODE=1 init=/sbin/tini -- /sbin/init
+[    0.000000] Unknown kernel command line parameters "QEMU_MODE=1", will be passed to user space.
+[    0.000000] Dentry cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 497076K/523756K available (8193K kernel code, 908K rwdata, 844K rodata, 1024K init, 688K bss, 26420K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] Dynamic Preempt: none
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=64 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 10 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] NR_IRQS: 4352, nr_irqs: 56, preallocated irqs: 16
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] Console: colour VGA+ 80x25
+[    0.000000] printk: console [ttyS0] enabled
+[    0.000000] printk: console [ttyS0] enabled
+[    0.000000] printk: bootconsole [earlyser0] disabled
+[    0.000000] printk: bootconsole [earlyser0] disabled
+[    0.000000] ACPI: Core revision 20220331
+[    0.000000] clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604467 ns
+[    0.020000] APIC: Switch to symmetric I/O mode setup
+[    0.030000] ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1
+[    0.110000] tsc: Unable to calibrate against PIT
+[    0.110000] tsc: using HPET reference calibration
+[    0.110000] tsc: Detected 997.078 MHz processor
+[    0.003079] tsc: Marking TSC unstable due to TSCs unsynchronized
+[    0.012461] Calibrating delay loop (skipped), value calculated using timer frequency.. 1994.15 BogoMIPS (lpj=9970780)
+[    0.022130] pid_max: default: 4096 minimum: 301
+[    0.034577] Mount-cache hash table entries: 1024 (order: 1, 8192 bytes, linear)
+[    0.041196] Mountpoint-cache hash table entries: 1024 (order: 1, 8192 bytes, linear)
+Poking KASLR using RDTSC...
+[    0.109411] process: using AMD E400 aware idle routine
+[    0.112196] Last level iTLB entries: 4KB 512, 2MB 255, 4MB 127
+[    0.117737] Last level dTLB entries: 4KB 512, 2MB 255, 4MB 127, 1GB 0
+[    0.122847] Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+[    0.132476] Spectre V2 : Mitigation: Retpolines
+[    0.141995] Spectre V2 : Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch
+[    0.146643] Spectre V2 : Spectre v2 / SpectreRSB : Filling RSB on VMEXIT
+[    0.741086] Freeing SMP alternatives memory: 16K
+[    0.896854] smpboot: CPU0: AMD QEMU Virtual CPU version 2.5+ (family: 0xf, model: 0x6b, stepping: 0x1)
+[    0.958499] cblist_init_generic: Setting adjustable number of callback queues.
+[    0.961944] cblist_init_generic: Setting shift to 1 and lim to 1.
+[    0.968168] cblist_init_generic: Setting shift to 1 and lim to 1.
+[    0.975199] Performance Events: PMU not available due to virtualization, using software events only.
+[    0.993635] rcu: Hierarchical SRCU implementation.
+[    0.996076] rcu: 	Max phase no-delay instances is 1000.
+[    1.017672] smp: Bringing up secondary CPUs ...
+[    1.041227] x86: Booting SMP configuration:
+[    1.042020] .... node  #0, CPUs:      #1
+[    0.000000] calibrate_delay_direct() dropping min bogoMips estimate 0 = 9584384
+[    1.247446] smp: Brought up 1 node, 2 CPUs
+[    1.249522] smpboot: Max logical packages: 2
+[    1.252787] smpboot: Total of 2 processors activated (4359.27 BogoMIPS)
+[    1.311056] devtmpfs: initialized
+[    1.364121] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    1.369742] futex hash table entries: 16 (order: -2, 1024 bytes, linear)
+[    1.407255] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    1.450003] thermal_sys: Registered thermal governor 'step_wise'
+[    1.450279] thermal_sys: Registered thermal governor 'user_space'
+[    1.459747] cpuidle: using governor ladder
+[    1.478122] PCI: Using configuration type 1 for base access
+[    1.496257] mtrr: your CPUs had inconsistent fixed MTRR settings
+[    1.499647] mtrr: your CPUs had inconsistent variable MTRR settings
+[    1.501924] mtrr: your CPUs had inconsistent MTRRdefType settings
+[    1.504372] mtrr: probably your BIOS does not setup all CPUs.
+[    1.506714] mtrr: corrected configuration.
+[    1.785725] ACPI: Added _OSI(Module Device)
+[    1.787832] ACPI: Added _OSI(Processor Device)
+[    1.789923] ACPI: Added _OSI(3.0 _SCP Extensions)
+[    1.791894] ACPI: Added _OSI(Processor Aggregator Device)
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":649,"live_limit":15000,"attempted_total":1024,"module_created_total":1024,"instance_created_total":1024,"registered_total":1024,"detached_total":0,"gc_total":0,"encoded_bytes_total":861489,"encoded_bytes_max":2594}
+[    2.070153] ACPI: 1 ACPI AML tables successfully acquired and loaded
+[    2.188995] ACPI: Interpreter enabled
+[    2.194507] ACPI: PM: (supports S0 S3 S5)
+[    2.196488] ACPI: Using IOAPIC for interrupt routing
+[    2.200796] PCI: Using host bridge windows from ACPI; if necessary, use "pci=nocrs" and report a bug
+[    2.201934] PCI: Using E820 reservations for host bridge windows
+[    2.234452] ACPI: Enabled 2 GPEs in block 00 to 0F
+[    2.857456] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+[    2.862220] acpi PNP0A03:00: _OSC: OS supports [ASPM ClockPM Segments HPX-Type3]
+[    2.865756] acpi PNP0A03:00: PCIe port services disabled; not requesting _OSC control
+[    2.871177] acpi PNP0A03:00: fail to add MMCONFIG information, can't access extended PCI configuration space under this bridge.
+[    2.902616] PCI host bridge to bus 0000:00
+[    2.904878] pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]
+[    2.907977] pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]
+[    2.910730] pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]
+[    2.911950] pci_bus 0000:00: root bus resource [mem 0x20000000-0xfebfffff window]
+[    2.915701] pci_bus 0000:00: root bus resource [mem 0x100000000-0x17fffffff window]
+[    2.922255] pci_bus 0000:00: root bus resource [bus 00-ff]
+[    2.930264] pci 0000:00:00.0: [8086:1237] type 00 class 0x060000
+[    2.953394] pci 0000:00:01.0: [8086:7000] type 00 class 0x060100
+[    2.967977] pci 0000:00:01.1: [8086:7010] type 00 class 0x010180
+[    2.976042] pci 0000:00:01.1: reg 0x20: [io  0xc100-0xc10f]
+[    2.980129] pci 0000:00:01.1: legacy IDE quirk: reg 0x10: [io  0x01f0-0x01f7]
+[    2.981990] pci 0000:00:01.1: legacy IDE quirk: reg 0x14: [io  0x03f6]
+[    2.992030] pci 0000:00:01.1: legacy IDE quirk: reg 0x18: [io  0x0170-0x0177]
+[    2.995404] pci 0000:00:01.1: legacy IDE quirk: reg 0x1c: [io  0x0376]
+[    3.041965] pci 0000:00:01.3: [8086:7113] type 00 class 0x068000
+[    3.058022] pci 0000:00:02.0: [1234:1111] type 00 class 0x030000
+[    3.063429] pci 0000:00:02.0: reg 0x10: [mem 0xfd000000-0xfdffffff pref]
+[    3.068664] pci 0000:00:02.0: reg 0x18: [mem 0xfebd0000-0xfebd0fff]
+[    3.076989] pci 0000:00:02.0: reg 0x30: [mem 0xfebc0000-0xfebcffff pref]
+[    3.093639] pci 0000:00:03.0: [1af4:1009] type 00 class 0x000200
+[    3.098122] pci 0000:00:03.0: reg 0x10: [io  0xc080-0xc09f]
+[    3.102657] pci 0000:00:03.0: reg 0x14: [mem 0xfebd1000-0xfebd1fff]
+[    3.113063] pci 0000:00:03.0: reg 0x20: [mem 0xfe000000-0xfe003fff 64bit pref]
+[    3.245249] pci 0000:00:04.0: [1af4:1009] type 00 class 0x000200
+[    3.249868] pci 0000:00:04.0: reg 0x10: [io  0xc0a0-0xc0bf]
+[    3.253459] pci 0000:00:04.0: reg 0x14: [mem 0xfebd2000-0xfebd2fff]
+[    3.262697] pci 0000:00:04.0: reg 0x20: [mem 0xfe004000-0xfe007fff 64bit pref]
+[    3.381106] pci 0000:00:05.0: [1af4:1000] type 00 class 0x020000
+[    3.383564] pci 0000:00:05.0: reg 0x10: [io  0xc0c0-0xc0df]
+[    3.388634] pci 0000:00:05.0: reg 0x14: [mem 0xfebd3000-0xfebd3fff]
+[    3.397666] pci 0000:00:05.0: reg 0x20: [mem 0xfe008000-0xfe00bfff 64bit pref]
+[    3.403318] pci 0000:00:05.0: reg 0x30: [mem 0xfeb80000-0xfebbffff pref]
+[    3.526253] pci 0000:00:06.0: [1af4:1005] type 00 class 0x00ff00
+[    3.530821] pci 0000:00:06.0: reg 0x10: [io  0xc0e0-0xc0ff]
+[    3.533259] pci 0000:00:06.0: reg 0x14: [mem 0xfebd4000-0xfebd4fff]
+[    3.542662] pci 0000:00:06.0: reg 0x20: [mem 0xfe00c000-0xfe00ffff 64bit pref]
+[    3.669421] pci 0000:00:07.0: [1af4:1001] type 00 class 0x010000
+[    3.673474] pci 0000:00:07.0: reg 0x10: [io  0xc000-0xc07f]
+[    3.677320] pci 0000:00:07.0: reg 0x14: [mem 0xfebd5000-0xfebd5fff]
+[    3.685931] pci 0000:00:07.0: reg 0x20: [mem 0xfe010000-0xfe013fff 64bit pref]
+[    3.837165] ACPI: PCI: Interrupt link LNKA configured for IRQ 10
+[    3.849773] ACPI: PCI: Interrupt link LNKB configured for IRQ 10
+[    3.863720] ACPI: PCI: Interrupt link LNKC configured for IRQ 11
+[    3.878564] ACPI: PCI: Interrupt link LNKD configured for IRQ 11
+[    3.886939] ACPI: PCI: Interrupt link LNKS configured for IRQ 9
+[    3.931578] iommu: Default domain type: Translated 
+[    3.934011] iommu: DMA domain TLB invalidation policy: lazy mode 
+[    3.939993] pps_core: LinuxPPS API ver. 1 registered
+[    3.941919] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    3.946538] PTP clock support registered
+[    3.983083] PCI: Using ACPI for IRQ routing
+[    3.999171] pci 0000:00:02.0: vgaarb: setting as boot VGA device
+[    4.001764] pci 0000:00:02.0: vgaarb: bridge control possible
+[    4.001764] pci 0000:00:02.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none
+[    4.002030] vgaarb: loaded
+[    4.017707] clocksource: Switched to clocksource hpet
+[    4.029643] pnp: PnP ACPI init
+[    4.122046] pnp: PnP ACPI: found 6 devices
+[    4.401376] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+[    4.409155] NET: Registered PF_INET protocol family
+[    4.418488] IP idents hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    4.453684] tcp_listen_portaddr_hash hash table entries: 256 (order: 0, 4096 bytes, linear)
+[    4.458220] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    4.462001] TCP established hash table entries: 4096 (order: 3, 32768 bytes, linear)
+[    4.466754] TCP bind hash table entries: 4096 (order: 5, 131072 bytes, linear)
+[    4.473749] TCP: Hash tables configured (established 4096 bind 4096)
+[    4.481987] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    4.485680] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    4.493879] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    4.499177] pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]
+[    4.512725] pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]
+[    4.516254] pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]
+[    4.521706] pci_bus 0000:00: resource 7 [mem 0x20000000-0xfebfffff window]
+[    4.524689] pci_bus 0000:00: resource 8 [mem 0x100000000-0x17fffffff window]
+[    4.572391] workingset: timestamp_bits=46 max_order=17 bucket_order=0
+[    4.925113] 9p: Installing v9fs 9p2000 file system support
+[    4.960865] input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0
+[    4.975313] ACPI: button: Power Button [PWRF]
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":686,"live_limit":15000,"attempted_total":2048,"module_created_total":2048,"instance_created_total":2048,"registered_total":2048,"detached_total":0,"gc_total":0,"encoded_bytes_total":1759566,"encoded_bytes_max":13614}
+[   12.148618] ACPI: \_SB_.LNKC: Enabled at IRQ 11
+[   19.078916] ACPI: \_SB_.LNKD: Enabled at IRQ 10
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":437,"live_limit":15000,"attempted_total":3072,"module_created_total":3072,"instance_created_total":3072,"registered_total":3072,"detached_total":1024,"gc_total":0,"encoded_bytes_total":2690057,"encoded_bytes_max":13614}
+[   25.800171] ACPI: \_SB_.LNKA: Enabled at IRQ 10
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":745,"live_limit":15000,"attempted_total":4096,"module_created_total":4096,"instance_created_total":4096,"registered_total":4096,"detached_total":2048,"gc_total":0,"encoded_bytes_total":3580378,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":822,"live_limit":15000,"attempted_total":5120,"module_created_total":5120,"instance_created_total":5120,"registered_total":5120,"detached_total":3072,"gc_total":0,"encoded_bytes_total":4513313,"encoded_bytes_max":13614}
+[   32.588507] ACPI: \_SB_.LNKB: Enabled at IRQ 11
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":688,"live_limit":15000,"attempted_total":6144,"module_created_total":6144,"instance_created_total":6144,"registered_total":6144,"detached_total":4096,"gc_total":0,"encoded_bytes_total":5394416,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":618,"live_limit":15000,"attempted_total":7168,"module_created_total":7168,"instance_created_total":7168,"registered_total":7168,"detached_total":5120,"gc_total":0,"encoded_bytes_total":6328690,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":759,"live_limit":15000,"attempted_total":8192,"module_created_total":8192,"instance_created_total":8192,"registered_total":8192,"detached_total":6144,"gc_total":0,"encoded_bytes_total":7212403,"encoded_bytes_max":13614}
+[   39.709566] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[   39.719926] 00:04: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A
+[   39.810805] random: crng init done
+[   39.827188] virtio_blk virtio4: 2/0/0 default/read/poll queues
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":974,"live_limit":15000,"attempted_total":9216,"module_created_total":9216,"instance_created_total":9216,"registered_total":9216,"detached_total":7168,"gc_total":0,"encoded_bytes_total":8163729,"encoded_bytes_max":13614}
+[   39.867182] virtio_blk virtio4: [vda] 1067716 512-byte logical blocks (547 MB/521 MiB)
+[   39.960856] i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12
+[   39.974872] serio: i8042 KBD port at 0x60,0x64 irq 1
+[   39.977264] serio: i8042 AUX port at 0x60,0x64 irq 12
+[   39.981901] rtc_cmos 00:05: RTC can wake from S4
+[   40.017586] rtc_cmos 00:05: registered as rtc0
+[   40.020872] rtc_cmos 00:05: setting system clock to 2026-11-20T04:20:16 UTC (1795148416)
+[   40.027502] rtc_cmos 00:05: alarms up to one day, y3k, 242 bytes nvram, hpet irqs
+[   40.068510] NET: Registered PF_PACKET protocol family
+[   40.075942] 9pnet: Installing 9P2000 support
+[   40.105340] IPI shorthand broadcast: enabled
+[   40.178190] VFS: Mounted root (iso9660 filesystem) readonly on device 254:0.
+[   40.189154] devtmpfs: mounted
+[   40.867284] Freeing unused kernel image (initmem) memory: 1024K
+[   40.870618] Write protecting the kernel read-only data: 12288k
+[   40.989852] Freeing unused kernel image (text/rodata gap) memory: 2044K
+[   41.044085] Freeing unused kernel image (rodata/data gap) memory: 1204K
+[   41.048293] Run /sbin/tini as init process
+2026/11/20 04:20:18 mounting {FSType:proc Src:proc Dst:/proc Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/run Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/sys Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/tmp Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/var Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/mnt Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:cgroup2 Src:none Dst:/sys/fs/cgroup Flags:0 Data: Dir:[{Path:/sys/fs/cgroup Mode:438}] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/etc Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[{Path:/etc/hosts Mode:420 Contents:127.0.0.1	localhost
+} {Path:/etc/resolv.conf Mode:420 Contents:}] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:tmpfs Src:tmpfs Dst:/run/bundle Flags:0 Data: Dir:[{Path:/run/bundle Mode:438}] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:20:18 mounting {FSType:overlay Src:overlay Dst:/run/rootfs Flags:0 Data:lowerdir=/oci/rootfs,upperdir=/run/rootfs-upper,workdir=/run/rootfs-work Dir:[{Path:/run/rootfs Mode:493} {Path:/run/rootfs-upper Mode:493} {Path:/run/rootfs-work Mode:493}] File:[] PostDir:[{Path:/run/rootfs/etc/ Mode:420} {Path:/run/rootfs/etc/ Mode:420}] PostFile:[{Path:/run/rootfs/etc/hosts Mode:420 Contents:127.0.0.1	localhost
+} {Path:/run/rootfs/etc/resolv.conf Mode:420 Contents:}] Cmd:[] Async:false Optional:false}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1361,"live_limit":15000,"attempted_total":1024,"module_created_total":1024,"instance_created_total":1024,"registered_total":1024,"detached_total":0,"gc_total":0,"encoded_bytes_total":920526,"encoded_bytes_max":3689}
+2026/11/20 04:20:19 executing(pre-run): [vmtouch -tv /sbin/runc /sbin/init]
+/sbin/runc
+[                                                            ] 0/3299[OOOOOo                                                      ] 321/3299[OOOOOOOOOOOOo                                               ] 696/3299[OOOOOOOOOOOOOOOOo                                           ] 929/3299[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":614,"live_limit":15000,"attempted_total":10240,"module_created_total":10240,"instance_created_total":10240,"registered_total":10240,"detached_total":8192,"gc_total":0,"encoded_bytes_total":9056612,"encoded_bytes_max":13614}
+[OOOOOOOOOOOOOOOOOOOOOOo                                     ] 1239/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOo                                ] 1499/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                          ] 1825/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                   ] 2206/3299[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1003,"live_limit":15000,"attempted_total":11264,"module_created_total":11264,"instance_created_total":11264,"registered_total":11264,"detached_total":9216,"gc_total":0,"encoded_bytes_total":10016362,"encoded_bytes_max":13614}
+[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo              ] 2483/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo         ] 2753/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo  ] 3143/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 3299/3299
+/sbin/init
+[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 662/662[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 662/662
+
+           Files: 2
+     Directories: 0
+   Touched Pages: 3961 (15M)
+         Elapsed: 1.2251 seconds
+==========[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":627,"live_limit":15000,"attempted_total":12288,"module_created_total":12288,"instance_created_total":12288,"registered_total":12288,"detached_total":10240,"gc_total":0,"encoded_bytes_total":10944982,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":621,"live_limit":15000,"attempted_total":13312,"module_created_total":13312,"instance_created_total":13312,"registered_total":13312,"detached_total":11264,"gc_total":0,"encoded_bytes_total":11888280,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":819,"live_limit":15000,"attempted_total":14336,"module_created_total":14336,"instance_created_total":14336,"registered_total":14336,"detached_total":12288,"gc_total":4096,"encoded_bytes_total":12818000,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":790,"live_limit":15000,"attempted_total":15360,"module_created_total":15360,"instance_created_total":15360,"registered_total":15360,"detached_total":13312,"gc_total":4096,"encoded_bytes_total":13763724,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":697,"live_limit":15000,"attempted_total":16384,"module_created_total":16384,"instance_created_total":16384,"registered_total":16384,"detached_total":14336,"gc_total":4096,"encoded_bytes_total":14677956,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":686,"live_limit":15000,"attempted_total":17408,"module_created_total":17408,"instance_created_total":17408,"registered_total":17408,"detached_total":15360,"gc_total":4096,"encoded_bytes_total":15616428,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":766,"live_limit":15000,"attempted_total":18432,"module_created_total":18432,"instance_created_total":18432,"registered_total":18432,"detached_total":16384,"gc_total":12276,"encoded_bytes_total":16528752,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":781,"live_limit":15000,"attempted_total":19456,"module_created_total":19456,"instance_created_total":19456,"registered_total":19456,"detached_total":17408,"gc_total":12276,"encoded_bytes_total":17465838,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":448,"live_limit":15000,"attempted_total":20480,"module_created_total":20480,"instance_created_total":20480,"registered_total":20480,"detached_total":18432,"gc_total":12276,"encoded_bytes_total":18360281,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":714,"live_limit":15000,"attempted_total":21504,"module_created_total":21504,"instance_created_total":21504,"registered_total":21504,"detached_total":19456,"gc_total":12276,"encoded_bytes_total":19302063,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":621,"live_limit":15000,"attempted_total":22528,"module_created_total":22528,"instance_created_total":22528,"registered_total":22528,"detached_total":20480,"gc_total":12276,"encoded_bytes_total":20229731,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":872,"live_limit":15000,"attempted_total":23552,"module_created_total":23552,"instance_created_total":23552,"registered_total":23552,"detached_total":21504,"gc_total":12276,"encoded_bytes_total":21166891,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":845,"live_limit":15000,"attempted_total":24576,"module_created_total":24576,"instance_created_total":24576,"registered_total":24576,"detached_total":22528,"gc_total":12276,"encoded_bytes_total":22089184,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":763,"live_limit":15000,"attempted_total":25600,"module_created_total":25600,"instance_created_total":25600,"registered_total":25600,"detached_total":23552,"gc_total":23552,"encoded_bytes_total":23015634,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":452,"live_limit":15000,"attempted_total":26624,"module_created_total":26624,"instance_created_total":26624,"registered_total":26624,"detached_total":24576,"gc_total":23552,"encoded_bytes_total":23941809,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":687,"live_limit":15000,"attempted_total":27648,"module_created_total":27648,"instance_created_total":27648,"registered_total":27648,"detached_total":25600,"gc_total":23552,"encoded_bytes_total":24886120,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":699,"live_limit":15000,"attempted_total":28672,"module_created_total":28672,"instance_created_total":28672,"registered_total":28672,"detached_total":26624,"gc_total":23552,"encoded_bytes_total":25814869,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":938,"live_limit":15000,"attempted_total":2048,"module_created_total":2048,"instance_created_total":2048,"registered_total":2048,"detached_total":0,"gc_total":0,"encoded_bytes_total":1836365,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":813,"live_limit":15000,"attempted_total":3072,"module_created_total":3072,"instance_created_total":3072,"registered_total":3072,"detached_total":1024,"gc_total":0,"encoded_bytes_total":2772179,"encoded_bytes_max":9846}
+
+FGA_MEMORY|boot|{"datastore":"memory","virtual_cpus":2,"guest_seconds":0}
+FGA_MEMORY|cpu|{"online_cpus":"0-1","allowed_cpus":"0-1","guest_seconds":1}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":928,"live_limit":15000,"attempted_total":4096,"module_created_total":4096,"instance_created_total":4096,"registered_total":4096,"detached_total":2048,"gc_total":0,"encoded_bytes_total":3682700,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1202,"live_limit":15000,"attempted_total":29696,"module_created_total":29696,"instance_created_total":29696,"registered_total":29696,"detached_total":27648,"gc_total":23552,"encoded_bytes_total":26750692,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1515,"live_limit":15000,"attempted_total":30720,"module_created_total":30720,"instance_created_total":30720,"registered_total":30720,"detached_total":28672,"gc_total":23552,"encoded_bytes_total":27680195,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":624,"live_limit":15000,"attempted_total":31744,"module_created_total":31744,"instance_created_total":31744,"registered_total":31744,"detached_total":29696,"gc_total":23552,"encoded_bytes_total":28619225,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":779,"live_limit":15000,"attempted_total":32768,"module_created_total":32768,"instance_created_total":32768,"registered_total":32768,"detached_total":30720,"gc_total":23552,"encoded_bytes_total":29544443,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":806,"live_limit":15000,"attempted_total":5120,"module_created_total":5120,"instance_created_total":5120,"registered_total":5120,"detached_total":3072,"gc_total":3072,"encoded_bytes_total":4618962,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":693,"live_limit":15000,"attempted_total":6144,"module_created_total":6144,"instance_created_total":6144,"registered_total":6144,"detached_total":4096,"gc_total":3072,"encoded_bytes_total":5520734,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":958,"live_limit":15000,"attempted_total":33792,"module_created_total":33792,"instance_created_total":33792,"registered_total":33792,"detached_total":31744,"gc_total":23552,"encoded_bytes_total":30485147,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":2363,"live_limit":15000,"attempted_total":34816,"module_created_total":34816,"instance_created_total":34816,"registered_total":34816,"detached_total":32768,"gc_total":32768,"encoded_bytes_total":31389304,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":596,"live_limit":15000,"attempted_total":35840,"module_created_total":35840,"instance_created_total":35840,"registered_total":35840,"detached_total":33792,"gc_total":32768,"encoded_bytes_total":32329348,"encoded_bytes_max":13614}
+FGA_MEMORY|stage|{"phase":"executable-staging","guest_seconds":2,"uptime_seconds":"51.84"}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":687,"live_limit":15000,"attempted_total":36864,"module_created_total":36864,"instance_created_total":36864,"registered_total":36864,"detached_total":34816,"gc_total":32768,"encoded_bytes_total":33241343,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":626,"live_limit":15000,"attempted_total":37888,"module_created_total":37888,"instance_created_total":37888,"registered_total":37888,"detached_total":35840,"gc_total":32768,"encoded_bytes_total":34200110,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":497,"live_limit":15000,"attempted_total":38912,"module_created_total":38912,"instance_created_total":38912,"registered_total":38912,"detached_total":36864,"gc_total":32768,"encoded_bytes_total":35118306,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":794,"live_limit":15000,"attempted_total":7168,"module_created_total":7168,"instance_created_total":7168,"registered_total":7168,"detached_total":5120,"gc_total":3072,"encoded_bytes_total":6451119,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":646,"live_limit":15000,"attempted_total":8192,"module_created_total":8192,"instance_created_total":8192,"registered_total":8192,"detached_total":6144,"gc_total":3072,"encoded_bytes_total":7366222,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":968,"live_limit":15000,"attempted_total":9216,"module_created_total":9216,"instance_created_total":9216,"registered_total":9216,"detached_total":7168,"gc_total":3072,"encoded_bytes_total":8301878,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":494,"live_limit":15000,"attempted_total":10240,"module_created_total":10240,"instance_created_total":10240,"registered_total":10240,"detached_total":8192,"gc_total":3072,"encoded_bytes_total":9240541,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1130,"live_limit":15000,"attempted_total":11264,"module_created_total":11264,"instance_created_total":11264,"registered_total":11264,"detached_total":9216,"gc_total":9216,"encoded_bytes_total":10185336,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1718,"live_limit":15000,"attempted_total":12288,"module_created_total":12288,"instance_created_total":12288,"registered_total":12288,"detached_total":10240,"gc_total":9216,"encoded_bytes_total":11131033,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1708,"live_limit":15000,"attempted_total":39936,"module_created_total":39936,"instance_created_total":39936,"registered_total":39936,"detached_total":37888,"gc_total":32768,"encoded_bytes_total":36064798,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":623,"live_limit":15000,"attempted_total":13312,"module_created_total":13312,"instance_created_total":13312,"registered_total":13312,"detached_total":11264,"gc_total":9216,"encoded_bytes_total":12072356,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":2984,"live_limit":15000,"attempted_total":40960,"module_created_total":40960,"instance_created_total":40960,"registered_total":40960,"detached_total":38912,"gc_total":32768,"encoded_bytes_total":36986124,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1567,"live_limit":15000,"attempted_total":14336,"module_created_total":14336,"instance_created_total":14336,"registered_total":14336,"detached_total":12288,"gc_total":9216,"encoded_bytes_total":13016500,"encoded_bytes_max":9846}
+FGA_MEMORY|stage|{"phase":"openfga-start","guest_seconds":9,"uptime_seconds":"58.96"}
+FGA_MEMORY|stage|{"phase":"listener-wait","guest_seconds":9,"uptime_seconds":"59.02"}
+[browser-openfga] 2026/11/20 04:19:52.707634 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60
+[browser-openfga] 2026/11/20 04:20:02.607579 warmup_cycle cycle=1 completed=true current_stage=complete failed=false json_decode_ms=1595 protobuf_ms=953 generated_validation_ms=166 typesystem_ms=4547 response_codec_ms=2552
+[browser-openfga] 2026/11/20 04:20:02.609760 warmup_end duration_ms=9904 failed=false
+2026-11-20T04:20:02.623Z	[33mWARN[0m	authentication is disabled
+2026-11-20T04:20:02.649Z	[33mWARN[0m	gRPC TLS is disabled, serving connections using insecure plaintext
+[browser-openfga] 2026/11/20 04:20:02.773349 grpc_dial_start timeout_seconds=60
+[browser-openfga] 2026/11/20 04:20:02.944934 grpc_dial_end duration_ms=171 failed=false context_error=<nil>
+2026-11-20T04:20:02.969Z	[33mWARN[0m	HTTP TLS is disabled, serving connections using insecure plaintext
+FGA_MEMORY|processes|{"phase":"before-bootstrap","snapshot_b64":"MQkwCWJhc2gJLQoxMwkxCW9wZW5mZ2EJL3RtcC9icm93c2VyLWxhYi1ydW50aW1lL29wZW5mZ2EKMTQJMTMJYmFzaAktCjE2CTE0CXRlZQktCjQzCTEJdGltZW91dAktCjQ0CTQzCWJhc2gJLQo=","records":6,"forbidden_count":0,"openfga_pid":13,"guest_seconds":32}
+FGA_MEMORY|stage|{"phase":"bootstrap","guest_seconds":34,"uptime_seconds":"83.73"}
+[browser-openfga] 2026/11/20 04:20:08.050439 http_start method="GET" path="/healthz" content_length=0
+[browser-openfga] 2026/11/20 04:20:08.134599 rpc_start method="/grpc.health.v1.Health/Check"
+[browser-openfga] 2026/11/20 04:20:08.146969 rpc_end method="/grpc.health.v1.Health/Check" status="OK" duration_ms=12 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:08.197254 http_end method="GET" path="/healthz" content_length=0 duration_ms=146 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:08.282164 http_start method="POST" path="/stores" content_length=27
+[browser-openfga] 2026/11/20 04:20:08.327754 rpc_start method="/openfga.v1.OpenFGAService/CreateStore"
+[browser-openfga] 2026/11/20 04:20:08.340420 rpc_end method="/openfga.v1.OpenFGAService/CreateStore" status="OK" duration_ms=12 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:08.380014 http_end method="POST" path="/stores" content_length=27 duration_ms=97 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:08.483344 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/authorization-models" content_length=52708
+[browser-openfga] 2026/11/20 04:20:09.050704 model_decode cache_hit=true bytes=52708 duration_ms=555 failed=false
+[browser-openfga] 2026/11/20 04:20:09.715794 rpc_start method="/openfga.v1.OpenFGAService/WriteAuthorizationModel"
+[browser-openfga] 2026/11/20 04:20:10.437465 rpc_end method="/openfga.v1.OpenFGAService/WriteAuthorizationModel" status="OK" duration_ms=721 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:10.474384 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/authorization-models" content_length=52708 duration_ms=1991 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:10.517219 http_start method="GET" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV" content_length=0
+[browser-openfga] 2026/11/20 04:20:10.556075 rpc_start method="/openfga.v1.OpenFGAService/GetStore"
+[browser-openfga] 2026/11/20 04:20:10.569224 rpc_end method="/openfga.v1.OpenFGAService/GetStore" status="OK" duration_ms=13 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:10.608940 http_end method="GET" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV" content_length=0 duration_ms=91 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:10.647024 http_start method="GET" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/authorization-models/01M7VJXV0BTTT847JBH9K2RBWS" content_length=0
+[browser-openfga] 2026/11/20 04:20:10.684355 rpc_start method="/openfga.v1.OpenFGAService/ReadAuthorizationModel"
+[browser-openfga] 2026/11/20 04:20:10.705475 rpc_end method="/openfga.v1.OpenFGAService/ReadAuthorizationModel" status="OK" duration_ms=21 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:13.248790 model_encode cache_hit=false cache_stored=true bytes=81691 duration_ms=1883 failed=false
+[browser-openfga] 2026/11/20 04:20:13.269155 http_end method="GET" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/authorization-models/01M7VJXV0BTTT847JBH9K2RBWS" content_length=0 duration_ms=2622 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:15.835095 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/read" content_length=50
+[browser-openfga] 2026/11/20 04:20:15.899239 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:20:15.915174 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=15 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:15.954404 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/read" content_length=50 duration_ms=119 context_error=<nil>
+[browser-openfga] 2026/11/20 04:20:15.990099 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=217
+[browser-openfga] 2026/11/20 04:20:16.052059 rpc_start method="/openfga.v1.OpenFGAService/Check"
+2026/11/20 04:20:16 [browser-openfga] model_resolver_transfer claimed=true
+[browser-openfga] 2026/11/20 04:20:16.638435 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=586 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:16.668545 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=217 duration_ms=678 context_error=<nil>
+Empty store and pinned model provisioned; SQL authorization migration remains required
+FGA_MEMORY|bootstrap|{"config_b64":"eyJzdG9yZV9pZCI6IjAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWIiwibW9kZWxfaWQiOiIwMU03VkpYVjBCVFRUODQ3SkJIOUsyUkJXUyIsIm1vZGVsX3NoYTI1NiI6ImE4OTRmNjFmYjQwNTYzNDY3ZDBhMTY0MDk5ODFhY2IxNDIyNGM2MTkwNzNmMzljNDJkY2EyMzM2MDlhNzhlNmQifQ==","store_id":"01M7VJXSGHAFC93RJ9HGD0KVDV","model_id":"01M7VJXV0BTTT847JBH9K2RBWS","model_sha256":"a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d","guest_seconds":45}
+FGA_MEMORY|stage|{"phase":"cycle-1-deny-before","guest_seconds":45,"uptime_seconds":"94.76"}
+[browser-openfga] 2026/11/20 04:20:18.845359 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:18.921250 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:18.970524 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=49 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:18.997149 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=151 context_error=<nil>
+FGA_MEMORY|request|{"cycle":1,"operation":"deny-before","user":"user:browser-memory-probe-1","object":"lakekeeper_table:browser-memory-probe-1","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYjE5YTk1NWItNzI2Ni00MGRiLTk3NDEtOWNjNGFhZDJjZTJhDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjE5IEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=","transport_exit":0,"budget_seconds":5,"response_bytes":314,"guest_seconds":47}
+FGA_MEMORY|stage|{"phase":"cycle-1-grant","guest_seconds":47,"uptime_seconds":"97.03"}
+[browser-openfga] 2026/11/20 04:20:21.135275 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=194
+[browser-openfga] 2026/11/20 04:20:21.233199 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:20:21.281710 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=48 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:21.326455 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=194 duration_ms=191 context_error=<nil>
+FGA_MEMORY|request|{"cycle":1,"operation":"grant","user":"user:browser-memory-probe-1","object":"lakekeeper_table:browser-memory-probe-1","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ3cml0ZXMiOnsidHVwbGVfa2V5cyI6W3sidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn1dfX0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYmI5OTFmZWMtZGQ1NC00MDZlLWE5NmItOTlkYWEwYjg0MDQ1DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjIxIEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=","transport_exit":0,"budget_seconds":5,"response_bytes":281,"guest_seconds":49}
+FGA_MEMORY|stage|{"phase":"cycle-1-allow","guest_seconds":49,"uptime_seconds":"99.31"}
+[browser-openfga] 2026/11/20 04:20:23.411399 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:23.463604 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:23.527500 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=63 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:23.553524 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=142 context_error=<nil>
+FGA_MEMORY|request|{"cycle":1,"operation":"allow","user":"user:browser-memory-probe-1","object":"lakekeeper_table:browser-memory-probe-1","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZWU1MzE4MjMtOGVhMy00ZTJmLWFlMWQtMDM4ZGUwZmM0Zjg0DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjIzIEdNVA0KQ29udGVudC1MZW5ndGg6IDMzDQoNCnsiYWxsb3dlZCI6dHJ1ZSwgInJlc29sdXRpb24iOiIifQ==","transport_exit":0,"budget_seconds":5,"response_bytes":313,"guest_seconds":52}
+FGA_MEMORY|stage|{"phase":"cycle-1-revoke","guest_seconds":52,"uptime_seconds":"101.65"}
+[browser-openfga] 2026/11/20 04:20:25.801080 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=195
+[browser-openfga] 2026/11/20 04:20:25.884794 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:20:25.913619 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=28 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:25.951589 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=195 duration_ms=150 context_error=<nil>
+FGA_MEMORY|request|{"cycle":1,"operation":"revoke","user":"user:browser-memory-probe-1","object":"lakekeeper_table:browser-memory-probe-1","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJkZWxldGVzIjp7InR1cGxlX2tleXMiOlt7InVzZXIiOiJ1c2VyOmJyb3dzZXItbWVtb3J5LXByb2JlLTEiLCJyZWxhdGlvbiI6Im93bmVyc2hpcCIsIm9iamVjdCI6Imxha2VrZWVwZXJfdGFibGU6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSJ9XX19","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogMzk0MjgyNDItYWE2Yi00NTQwLWJkY2UtMTE4ZjU4NzdjOGQ1DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjI1IEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=","transport_exit":0,"budget_seconds":5,"response_bytes":281,"guest_seconds":54}
+FGA_MEMORY|stage|{"phase":"cycle-1-deny-after","guest_seconds":54,"uptime_seconds":"104.00"}
+[browser-openfga] 2026/11/20 04:20:28.076169 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:28.138560 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:28.185884 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=47 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:28.209694 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=133 context_error=<nil>
+FGA_MEMORY|request|{"cycle":1,"operation":"deny-after","user":"user:browser-memory-probe-1","object":"lakekeeper_table:browser-memory-probe-1","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZGVlODMwN2YtZWNkNy00YWY4LWIwYzQtY2NiYWNiOWQ1YmNhDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjI4IEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=","transport_exit":0,"budget_seconds":5,"response_bytes":314,"guest_seconds":56}
+FGA_MEMORY|stage|{"phase":"cycle-2-deny-before","guest_seconds":56,"uptime_seconds":"106.27"}
+[browser-openfga] 2026/11/20 04:20:30.373234 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:30.436369 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:30.492930 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=56 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:30.524280 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=151 context_error=<nil>
+FGA_MEMORY|request|{"cycle":2,"operation":"deny-before","user":"user:browser-memory-probe-2","object":"lakekeeper_table:browser-memory-probe-2","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZjM1MTY3NDktODMzZi00NjZkLWFmOTQtODJjNTY0ZDMyOGNiDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjMwIEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=","transport_exit":0,"budget_seconds":5,"response_bytes":314,"guest_seconds":58}
+FGA_MEMORY|stage|{"phase":"cycle-2-grant","guest_seconds":58,"uptime_seconds":"108.49"}
+[browser-openfga] 2026/11/20 04:20:32.594455 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=194
+[browser-openfga] 2026/11/20 04:20:32.663545 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:20:32.688535 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=24 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:32.739814 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=194 duration_ms=145 context_error=<nil>
+FGA_MEMORY|request|{"cycle":2,"operation":"grant","user":"user:browser-memory-probe-2","object":"lakekeeper_table:browser-memory-probe-2","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ3cml0ZXMiOnsidHVwbGVfa2V5cyI6W3sidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn1dfX0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogODQ4ZWY0ZDUtOWFkNi00NDJlLWE1ZDMtNzQwMTE3ZTQ4ZmQzDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjMyIEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=","transport_exit":0,"budget_seconds":5,"response_bytes":281,"guest_seconds":61}
+FGA_MEMORY|stage|{"phase":"cycle-2-allow","guest_seconds":61,"uptime_seconds":"110.75"}
+[browser-openfga] 2026/11/20 04:20:34.922694 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:34.988270 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:35.040039 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=51 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:35.074514 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=151 context_error=<nil>
+FGA_MEMORY|request|{"cycle":2,"operation":"allow","user":"user:browser-memory-probe-2","object":"lakekeeper_table:browser-memory-probe-2","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYWVjYmI1MTctZTA4OC00OTE2LWI2YTctNzcxNzU1NmJmYzBkDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjM1IEdNVA0KQ29udGVudC1MZW5ndGg6IDMzDQoNCnsiYWxsb3dlZCI6dHJ1ZSwgInJlc29sdXRpb24iOiIifQ==","transport_exit":0,"budget_seconds":5,"response_bytes":313,"guest_seconds":63}
+FGA_MEMORY|stage|{"phase":"cycle-2-revoke","guest_seconds":63,"uptime_seconds":"113.25"}
+[browser-openfga] 2026/11/20 04:20:37.400349 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=195
+[browser-openfga] 2026/11/20 04:20:37.472819 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:20:37.517764 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=43 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:37.558115 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write" content_length=195 duration_ms=157 context_error=<nil>
+FGA_MEMORY|request|{"cycle":2,"operation":"revoke","user":"user:browser-memory-probe-2","object":"lakekeeper_table:browser-memory-probe-2","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJkZWxldGVzIjp7InR1cGxlX2tleXMiOlt7InVzZXIiOiJ1c2VyOmJyb3dzZXItbWVtb3J5LXByb2JlLTIiLCJyZWxhdGlvbiI6Im93bmVyc2hpcCIsIm9iamVjdCI6Imxha2VrZWVwZXJfdGFibGU6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiJ9XX19","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogY2QyYjM1MDktMTM1OS00ODgyLTk3YWMtM2Q2Yjg5ZGU1MTk2DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjM3IEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=","transport_exit":0,"budget_seconds":5,"response_bytes":281,"guest_seconds":66}
+FGA_MEMORY|stage|{"phase":"cycle-2-deny-after","guest_seconds":66,"uptime_seconds":"115.65"}
+[browser-openfga] 2026/11/20 04:20:39.798334 http_start method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215
+[browser-openfga] 2026/11/20 04:20:39.865025 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:20:39.925165 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=60 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:20:39.976419 http_end method="POST" path="/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check" content_length=215 duration_ms=178 context_error=<nil>
+FGA_MEMORY|request|{"cycle":2,"operation":"deny-after","user":"user:browser-memory-probe-2","object":"lakekeeper_table:browser-memory-probe-2","relation":"ownership","method":"POST","path":"/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check","request_body_b64":"eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=","response_b64":"SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZWM5NjQxN2UtOWMwYi00MDQyLWI3YWQtZjg1ZWEwMWQ0MjliDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjQwIEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=","transport_exit":0,"budget_seconds":5,"response_bytes":314,"guest_seconds":68}
+FGA_MEMORY|stage|{"phase":"after-cycles","guest_seconds":68,"uptime_seconds":"118.08"}
+FGA_MEMORY|processes|{"phase":"after-cycles","snapshot_b64":"MQkwCWJhc2gJLQoxMwkxCW9wZW5mZ2EJL3RtcC9icm93c2VyLWxhYi1ydW50aW1lL29wZW5mZ2EKMTQJMTMJYmFzaAktCjE2CTE0CXRlZQktCjE4OQkxCXRpbWVvdXQJLQoxOTAJMTg5CWJhc2gJLQo=","records":6,"forbidden_count":0,"openfga_pid":13,"guest_seconds":68}
+FGA_MEMORY|done|{"cycles":2,"requests":10,"guest_seconds":69}

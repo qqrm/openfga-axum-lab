@@ -189,3 +189,13 @@ changing authorization semantics or increasing service deadlines.
 
 The published PR branch and Pages were not changed by this investigation.
 The one-vCPU topology remains a diagnostic candidate, not a validated fix.
+
+## Completed follow-up: isolated engine
+
+A subsequent [component experiment](pr36-memory-component-findings.md) ran the
+same real OpenFGA binary and pinned model inside Chromium with two guest CPUs,
+its built-in memory datastore, and no PostgreSQL/Axum. It passed two distinct
+ownership grant/revoke cycles. This establishes the tested browser engine
+capability, without validating one vCPU, the PostgreSQL-backed stack, Firefox,
+or the full application gate. Hosts and workload differed, so it does not
+identify the unique cause of the failed cases above.

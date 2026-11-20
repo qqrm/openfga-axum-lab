@@ -1,0 +1,57 @@
+{
+  "recordedDate": "2026-11-20",
+  "setupOnlyRun": 44672544748,
+  "runtimeArtifacts": [
+    {
+      "runId": 44672651991,
+      "artifactId": 14600283284,
+      "bytes": 20021282,
+      "sha256": "8d35e987da173683522c98144d41dbe506ee7034db24ca8700bd32c447a2c936",
+      "runUrl": "https://github.com/qqrm/openfga-axum-lab/actions/runs/44672651991",
+      "interpretation": "excluded: diagnostic parser failure before observed OpenFGA startup"
+    },
+    {
+      "runId": 44673550930,
+      "artifactId": 14601510410,
+      "bytes": 20037946,
+      "sha256": "2c93481cb377043724547708255efed0df400f7f6946cb4d32bc8cd7b541c7de",
+      "runUrl": "https://github.com/qqrm/openfga-axum-lab/actions/runs/44673550930",
+      "interpretation": "passed: two real memory-backed ownership cycles in one Chromium VM"
+    }
+  ],
+  "retainedTextEvidence": {
+    "chromium-analysis.json": {
+      "bytes": 25414,
+      "sha256": "a647b75ef2502bdde09d4c7d7c879376b1e517aeee1c83e3a9c3306d1365cb34"
+    },
+    "chromium-console.txt": {
+      "bytes": 62859,
+      "sha256": "201b6e283ce4017ed7d12e3b2b177c683c526eb45ebb4e360348db7ebd86a511"
+    },
+    "chromium-stream.jsonl": {
+      "bytes": 228859,
+      "sha256": "e6f134388491977ec0ea20802a2b35966acf850ad7fc544b2bf1a2be5f24fc1e"
+    },
+    "chromium-summary.json": {
+      "bytes": 1124,
+      "sha256": "170fcbfbf1a66a11d48bd9e2a82416c9654f3e2fc91a26ac11a78bf8d0b86a31"
+    },
+    "chromium.json": {
+      "bytes": 36604,
+      "sha256": "7acb235fab5e795f5fa65ee2f2fe5174e50187e5dddaf7f2c66a70cd60643021"
+    },
+    "component-overlay.json": {
+      "bytes": 45922,
+      "sha256": "611ab19181bb362c6364c02b8fdf79cbbc622a93d9f00a8f077161f16b2ea0ea"
+    },
+    "host-cpu.txt": {
+      "bytes": 3362,
+      "sha256": "fcadccdcc8aed598fa1d501729ffa0efa2502c5e6ab8afb3aadf261efdcc233d"
+    },
+    "job-budget.json": {
+      "bytes": 559,
+      "sha256": "b635cbf7e405f3eb95f4f51071535d32af1c2161bd4af3fc63663fd6ce967901"
+    }
+  },
+  "productionAcceptance": false
+}

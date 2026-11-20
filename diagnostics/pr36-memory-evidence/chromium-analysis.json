@@ -1,0 +1,641 @@
+{
+  "kind": "independent_replay_of_real_browser_component",
+  "runId": 44673550930,
+  "jobId": 136079905760,
+  "workflowCommit": "d1c20a5b205d5786bb56623eb28e62c2a842445c",
+  "artifactId": 14601510410,
+  "artifactBytes": 20037946,
+  "artifactSha256": "2c93481cb377043724547708255efed0df400f7f6946cb4d32bc8cd7b541c7de",
+  "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+  "startedAt": "2026-11-20T04:19:28.104Z",
+  "finishedAt": "2026-11-20T04:21:35.962Z",
+  "elapsedHostMilliseconds": 127858,
+  "componentPassed": true,
+  "productionAcceptance": false,
+  "rawStreamReconstructsConsole": true,
+  "summaryFileHashesVerified": true,
+  "replayedEventsExactlyMatch": true,
+  "replayedCaptureExactlyMatches": true,
+  "logCapture": {
+    "format": "browser-lab-log-batches-v1",
+    "complete": true,
+    "chunks": 46120,
+    "batches": 327,
+    "bytes": 62859,
+    "expectedSequence": 46120
+  },
+  "componentCapture": {
+    "format": "component-records-from-source-chunks-v1",
+    "chunks": 46120,
+    "records": 31,
+    "telemetryChunks": 54,
+    "telemetryBytes": 16741,
+    "pendingBytes": 0,
+    "partialComponentRecord": false
+  },
+  "pageErrors": [],
+  "browser": "157.0.8103.50",
+  "guestApplicationAcceptance": {
+    "ready": false,
+    "accepted": false,
+    "checks": 0
+  },
+  "vm": {
+    "cpus": 2,
+    "reportedLogicalCPUs": 4,
+    "cpuTopology": "2,sockets=2,cores=1,threads=1",
+    "memoryMiB": 512,
+    "slabDebug": false,
+    "kernelLogLevel": 7,
+    "qemuLiveInstanceLimit": 15000,
+    "entropyConfiguration": {
+      "backend": "rng-random",
+      "hostDevice": "/dev/urandom",
+      "guestDevice": "virtio-rng-pci",
+      "webCryptoRequired": true
+    }
+  },
+  "verified": {
+    "binding": {
+      "store_id": "01M7VJXSGHAFC93RJ9HGD0KVDV",
+      "model_id": "01M7VJXV0BTTT847JBH9K2RBWS",
+      "model_sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"
+    },
+    "cycles": 2,
+    "requests": [
+      {
+        "cycle": 1,
+        "operation": "deny-before",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": false,
+        "responseBody": {
+          "allowed": false,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:13.472Z",
+        "guestSeconds": 47
+      },
+      {
+        "cycle": 1,
+        "operation": "grant",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "responseBody": {},
+        "hostReceivedAt": "2026-11-20T04:21:15.697Z",
+        "guestSeconds": 49
+      },
+      {
+        "cycle": 1,
+        "operation": "allow",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": true,
+        "responseBody": {
+          "allowed": true,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:18.080Z",
+        "guestSeconds": 52
+      },
+      {
+        "cycle": 1,
+        "operation": "revoke",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "responseBody": {},
+        "hostReceivedAt": "2026-11-20T04:21:20.394Z",
+        "guestSeconds": 54
+      },
+      {
+        "cycle": 1,
+        "operation": "deny-after",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": false,
+        "responseBody": {
+          "allowed": false,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:22.571Z",
+        "guestSeconds": 56
+      },
+      {
+        "cycle": 2,
+        "operation": "deny-before",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": false,
+        "responseBody": {
+          "allowed": false,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:24.915Z",
+        "guestSeconds": 58
+      },
+      {
+        "cycle": 2,
+        "operation": "grant",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "responseBody": {},
+        "hostReceivedAt": "2026-11-20T04:21:27.154Z",
+        "guestSeconds": 61
+      },
+      {
+        "cycle": 2,
+        "operation": "allow",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": true,
+        "responseBody": {
+          "allowed": true,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:29.707Z",
+        "guestSeconds": 63
+      },
+      {
+        "cycle": 2,
+        "operation": "revoke",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "responseBody": {},
+        "hostReceivedAt": "2026-11-20T04:21:32.084Z",
+        "guestSeconds": 66
+      },
+      {
+        "cycle": 2,
+        "operation": "deny-after",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "httpStatus": 200,
+        "allowed": false,
+        "responseBody": {
+          "allowed": false,
+          "resolution": ""
+        },
+        "hostReceivedAt": "2026-11-20T04:21:34.491Z",
+        "guestSeconds": 68
+      }
+    ],
+    "scope": "direct ownership in the pinned model with the real memory-backed OpenFGA engine",
+    "productionAcceptance": false
+  },
+  "processSnapshots": [
+    {
+      "phase": "before-bootstrap",
+      "pid": 13,
+      "records": 6,
+      "forbiddenCount": 0,
+      "processes": "1\t0\tbash\t-\n13\t1\topenfga\t/tmp/browser-lab-runtime/openfga\n14\t13\tbash\t-\n16\t14\ttee\t-\n43\t1\ttimeout\t-\n44\t43\tbash\t-\n"
+    },
+    {
+      "phase": "after-cycles",
+      "pid": 13,
+      "records": 6,
+      "forbiddenCount": 0,
+      "processes": "1\t0\tbash\t-\n13\t1\topenfga\t/tmp/browser-lab-runtime/openfga\n14\t13\tbash\t-\n16\t14\ttee\t-\n189\t1\ttimeout\t-\n190\t189\tbash\t-\n"
+    }
+  ],
+  "events": [
+    {
+      "event": "boot",
+      "data": {
+        "datastore": "memory",
+        "virtual_cpus": 2,
+        "guest_seconds": 0
+      },
+      "sourceSequence": 22210,
+      "hostReceivedAt": "2026-11-20T04:20:26.968Z"
+    },
+    {
+      "event": "cpu",
+      "data": {
+        "online_cpus": "0-1",
+        "allowed_cpus": "0-1",
+        "guest_seconds": 1
+      },
+      "sourceSequence": 22287,
+      "hostReceivedAt": "2026-11-20T04:20:27.338Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "executable-staging",
+        "guest_seconds": 2,
+        "uptime_seconds": "51.84"
+      },
+      "sourceSequence": 22389,
+      "hostReceivedAt": "2026-11-20T04:20:28.268Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "openfga-start",
+        "guest_seconds": 9,
+        "uptime_seconds": "58.96"
+      },
+      "sourceSequence": 22489,
+      "hostReceivedAt": "2026-11-20T04:20:35.381Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "listener-wait",
+        "guest_seconds": 9,
+        "uptime_seconds": "59.02"
+      },
+      "sourceSequence": 22576,
+      "hostReceivedAt": "2026-11-20T04:20:35.452Z"
+    },
+    {
+      "event": "processes",
+      "data": {
+        "phase": "before-bootstrap",
+        "snapshot_b64": "MQkwCWJhc2gJLQoxMwkxCW9wZW5mZ2EJL3RtcC9icm93c2VyLWxhYi1ydW50aW1lL29wZW5mZ2EKMTQJMTMJYmFzaAktCjE2CTE0CXRlZQktCjQzCTEJdGltZW91dAktCjQ0CTQzCWJhc2gJLQo=",
+        "records": 6,
+        "forbidden_count": 0,
+        "openfga_pid": 13,
+        "guest_seconds": 32
+      },
+      "sourceSequence": 23826,
+      "hostReceivedAt": "2026-11-20T04:21:00.046Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "bootstrap",
+        "guest_seconds": 34,
+        "uptime_seconds": "83.73"
+      },
+      "sourceSequence": 23910,
+      "hostReceivedAt": "2026-11-20T04:21:00.149Z"
+    },
+    {
+      "event": "bootstrap",
+      "data": {
+        "config_b64": "eyJzdG9yZV9pZCI6IjAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWIiwibW9kZWxfaWQiOiIwMU03VkpYVjBCVFRUODQ3SkJIOUsyUkJXUyIsIm1vZGVsX3NoYTI1NiI6ImE4OTRmNjFmYjQwNTYzNDY3ZDBhMTY0MDk5ODFhY2IxNDIyNGM2MTkwNzNmMzljNDJkY2EyMzM2MDlhNzhlNmQifQ==",
+        "store_id": "01M7VJXSGHAFC93RJ9HGD0KVDV",
+        "model_id": "01M7VJXV0BTTT847JBH9K2RBWS",
+        "model_sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
+        "guest_seconds": 45
+      },
+      "sourceSequence": 28787,
+      "hostReceivedAt": "2026-11-20T04:21:11.042Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-1-deny-before",
+        "guest_seconds": 45,
+        "uptime_seconds": "94.76"
+      },
+      "sourceSequence": 28881,
+      "hostReceivedAt": "2026-11-20T04:21:11.183Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 1,
+        "operation": "deny-before",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYjE5YTk1NWItNzI2Ni00MGRiLTk3NDEtOWNjNGFhZDJjZTJhDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjE5IEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 314,
+        "guest_seconds": 47
+      },
+      "sourceSequence": 30512,
+      "hostReceivedAt": "2026-11-20T04:21:13.472Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-1-grant",
+        "guest_seconds": 47,
+        "uptime_seconds": "97.03"
+      },
+      "sourceSequence": 30600,
+      "hostReceivedAt": "2026-11-20T04:21:13.472Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 1,
+        "operation": "grant",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ3cml0ZXMiOnsidHVwbGVfa2V5cyI6W3sidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn1dfX0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYmI5OTFmZWMtZGQ1NC00MDZlLWE5NmItOTlkYWEwYjg0MDQ1DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjIxIEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 281,
+        "guest_seconds": 49
+      },
+      "sourceSequence": 32153,
+      "hostReceivedAt": "2026-11-20T04:21:15.697Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-1-allow",
+        "guest_seconds": 49,
+        "uptime_seconds": "99.31"
+      },
+      "sourceSequence": 32241,
+      "hostReceivedAt": "2026-11-20T04:21:15.723Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 1,
+        "operation": "allow",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZWU1MzE4MjMtOGVhMy00ZTJmLWFlMWQtMDM4ZGUwZmM0Zjg0DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjIzIEdNVA0KQ29udGVudC1MZW5ndGg6IDMzDQoNCnsiYWxsb3dlZCI6dHJ1ZSwgInJlc29sdXRpb24iOiIifQ==",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 313,
+        "guest_seconds": 52
+      },
+      "sourceSequence": 33866,
+      "hostReceivedAt": "2026-11-20T04:21:18.080Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-1-revoke",
+        "guest_seconds": 52,
+        "uptime_seconds": "101.65"
+      },
+      "sourceSequence": 33956,
+      "hostReceivedAt": "2026-11-20T04:21:18.100Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 1,
+        "operation": "revoke",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJkZWxldGVzIjp7InR1cGxlX2tleXMiOlt7InVzZXIiOiJ1c2VyOmJyb3dzZXItbWVtb3J5LXByb2JlLTEiLCJyZWxhdGlvbiI6Im93bmVyc2hpcCIsIm9iamVjdCI6Imxha2VrZWVwZXJfdGFibGU6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSJ9XX19",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogMzk0MjgyNDItYWE2Yi00NTQwLWJkY2UtMTE4ZjU4NzdjOGQ1DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjI1IEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 281,
+        "guest_seconds": 54
+      },
+      "sourceSequence": 35510,
+      "hostReceivedAt": "2026-11-20T04:21:20.394Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-1-deny-after",
+        "guest_seconds": 54,
+        "uptime_seconds": "104.00"
+      },
+      "sourceSequence": 35604,
+      "hostReceivedAt": "2026-11-20T04:21:20.418Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 1,
+        "operation": "deny-after",
+        "user": "user:browser-memory-probe-1",
+        "object": "lakekeeper_table:browser-memory-probe-1",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMSIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0xIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZGVlODMwN2YtZWNkNy00YWY4LWIwYzQtY2NiYWNiOWQ1YmNhDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjI4IEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 314,
+        "guest_seconds": 56
+      },
+      "sourceSequence": 37234,
+      "hostReceivedAt": "2026-11-20T04:21:22.571Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-2-deny-before",
+        "guest_seconds": 56,
+        "uptime_seconds": "106.27"
+      },
+      "sourceSequence": 37329,
+      "hostReceivedAt": "2026-11-20T04:21:22.693Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 2,
+        "operation": "deny-before",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZjM1MTY3NDktODMzZi00NjZkLWFmOTQtODJjNTY0ZDMyOGNiDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjMwIEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 314,
+        "guest_seconds": 58
+      },
+      "sourceSequence": 38960,
+      "hostReceivedAt": "2026-11-20T04:21:24.915Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-2-grant",
+        "guest_seconds": 58,
+        "uptime_seconds": "108.49"
+      },
+      "sourceSequence": 39049,
+      "hostReceivedAt": "2026-11-20T04:21:24.915Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 2,
+        "operation": "grant",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ3cml0ZXMiOnsidHVwbGVfa2V5cyI6W3sidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn1dfX0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogODQ4ZWY0ZDUtOWFkNi00NDJlLWE1ZDMtNzQwMTE3ZTQ4ZmQzDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjMyIEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 281,
+        "guest_seconds": 61
+      },
+      "sourceSequence": 40602,
+      "hostReceivedAt": "2026-11-20T04:21:27.154Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-2-allow",
+        "guest_seconds": 61,
+        "uptime_seconds": "110.75"
+      },
+      "sourceSequence": 40691,
+      "hostReceivedAt": "2026-11-20T04:21:27.173Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 2,
+        "operation": "allow",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogYWVjYmI1MTctZTA4OC00OTE2LWI2YTctNzcxNzU1NmJmYzBkDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjM1IEdNVA0KQ29udGVudC1MZW5ndGg6IDMzDQoNCnsiYWxsb3dlZCI6dHJ1ZSwgInJlc29sdXRpb24iOiIifQ==",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 313,
+        "guest_seconds": 63
+      },
+      "sourceSequence": 42316,
+      "hostReceivedAt": "2026-11-20T04:21:29.707Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-2-revoke",
+        "guest_seconds": 63,
+        "uptime_seconds": "113.25"
+      },
+      "sourceSequence": 42406,
+      "hostReceivedAt": "2026-11-20T04:21:29.725Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 2,
+        "operation": "revoke",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/write",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJkZWxldGVzIjp7InR1cGxlX2tleXMiOlt7InVzZXIiOiJ1c2VyOmJyb3dzZXItbWVtb3J5LXByb2JlLTIiLCJyZWxhdGlvbiI6Im93bmVyc2hpcCIsIm9iamVjdCI6Imxha2VrZWVwZXJfdGFibGU6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiJ9XX19",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogY2QyYjM1MDktMTM1OS00ODgyLTk3YWMtM2Q2Yjg5ZGU1MTk2DQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjM3IEdNVA0KQ29udGVudC1MZW5ndGg6IDINCg0Ke30=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 281,
+        "guest_seconds": 66
+      },
+      "sourceSequence": 43960,
+      "hostReceivedAt": "2026-11-20T04:21:32.084Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "cycle-2-deny-after",
+        "guest_seconds": 66,
+        "uptime_seconds": "115.65"
+      },
+      "sourceSequence": 44054,
+      "hostReceivedAt": "2026-11-20T04:21:32.103Z"
+    },
+    {
+      "event": "request",
+      "data": {
+        "cycle": 2,
+        "operation": "deny-after",
+        "user": "user:browser-memory-probe-2",
+        "object": "lakekeeper_table:browser-memory-probe-2",
+        "relation": "ownership",
+        "method": "POST",
+        "path": "/stores/01M7VJXSGHAFC93RJ9HGD0KVDV/check",
+        "request_body_b64": "eyJhdXRob3JpemF0aW9uX21vZGVsX2lkIjoiMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MiLCJ0dXBsZV9rZXkiOnsidXNlciI6InVzZXI6YnJvd3Nlci1tZW1vcnktcHJvYmUtMiIsInJlbGF0aW9uIjoib3duZXJzaGlwIiwib2JqZWN0IjoibGFrZWtlZXBlcl90YWJsZTpicm93c2VyLW1lbW9yeS1wcm9iZS0yIn0sImNvbnNpc3RlbmN5IjoiSElHSEVSX0NPTlNJU1RFTkNZIn0=",
+        "response_b64": "SFRUUC8xLjAgMjAwIE9LDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCk9wZW5mZ2EtQXV0aG9yaXphdGlvbi1Nb2RlbC1JZDogMDFNN1ZKWFYwQlRUVDg0N0pCSDlLMlJCV1MNCk9wZW5mZ2EtU3RvcmUtSWQ6IDAxTTdWSlhTR0hBRkM5M1JKOUhHRDBLVkRWDQpWYXJ5OiBPcmlnaW4NClgtUmVxdWVzdC1JZDogZWM5NjQxN2UtOWMwYi00MDQyLWI3YWQtZjg1ZWEwMWQ0MjliDQpEYXRlOiBGcmksIDIwIE5vdiAyMDI2IDA0OjIwOjQwIEdNVA0KQ29udGVudC1MZW5ndGg6IDM0DQoNCnsiYWxsb3dlZCI6ZmFsc2UsICJyZXNvbHV0aW9uIjoiIn0=",
+        "transport_exit": 0,
+        "budget_seconds": 5,
+        "response_bytes": 314,
+        "guest_seconds": 68
+      },
+      "sourceSequence": 45684,
+      "hostReceivedAt": "2026-11-20T04:21:34.491Z"
+    },
+    {
+      "event": "stage",
+      "data": {
+        "phase": "after-cycles",
+        "guest_seconds": 68,
+        "uptime_seconds": "118.08"
+      },
+      "sourceSequence": 45772,
+      "hostReceivedAt": "2026-11-20T04:21:34.491Z"
+    },
+    {
+      "event": "processes",
+      "data": {
+        "phase": "after-cycles",
+        "snapshot_b64": "MQkwCWJhc2gJLQoxMwkxCW9wZW5mZ2EJL3RtcC9icm93c2VyLWxhYi1ydW50aW1lL29wZW5mZ2EKMTQJMTMJYmFzaAktCjE2CTE0CXRlZQktCjE4OQkxCXRpbWVvdXQJLQoxOTAJMTg5CWJhc2gJLQo=",
+        "records": 6,
+        "forbidden_count": 0,
+        "openfga_pid": 13,
+        "guest_seconds": 68
+      },
+      "sourceSequence": 46057,
+      "hostReceivedAt": "2026-11-20T04:21:35.783Z"
+    },
+    {
+      "event": "done",
+      "data": {
+        "cycles": 2,
+        "requests": 10,
+        "guest_seconds": 69
+      },
+      "sourceSequence": 46120,
+      "hostReceivedAt": "2026-11-20T04:21:35.865Z"
+    }
+  ]
+}

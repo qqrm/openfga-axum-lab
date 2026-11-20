@@ -1,0 +1,34 @@
+{
+  "kind": "real_openfga_memory_browser_component",
+  "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+  "workflowCommit": "d1c20a5b205d5786bb56623eb28e62c2a842445c",
+  "runId": 44673550930,
+  "componentPassed": true,
+  "productionAcceptance": false,
+  "vmStarts": 1,
+  "files": {
+    "chromium-console.txt": {
+      "bytes": 62859,
+      "sha256": "201b6e283ce4017ed7d12e3b2b177c683c526eb45ebb4e360348db7ebd86a511"
+    },
+    "chromium-stream.jsonl": {
+      "bytes": 228859,
+      "sha256": "e6f134388491977ec0ea20802a2b35966acf850ad7fc544b2bf1a2be5f24fc1e"
+    },
+    "chromium.json": {
+      "bytes": 36604,
+      "sha256": "7acb235fab5e795f5fa65ee2f2fe5174e50187e5dddaf7f2c66a70cd60643021"
+    }
+  },
+  "job": {
+    "id": 136079905760,
+    "name": "OpenFGA memory browser component",
+    "run_id": 44673550930,
+    "head_sha": "d1c20a5b205d5786bb56623eb28e62c2a842445c",
+    "started_at": "2026-11-20T04:18:47Z",
+    "run_attempt": 1,
+    "source": "GitHub Actions current job API",
+    "observed_at": "2026-11-20T04:18:54.192322+00:00"
+  }
+}
