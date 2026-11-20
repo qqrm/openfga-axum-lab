@@ -5,6 +5,15 @@
 настоящие PostgreSQL, OpenFGA и новый Rust/Axum executable `concept`.
 Решения и HTTP-ответы приходят от этих процессов.
 
+**Проверенный вариант на 20 ноября 2026 — desktop Chrome.**
+[Chromium job](https://github.com/qqrm/openfga-axum-lab/actions/runs/44688401944/job/136129171047)
+полностью прошёл два цикла выдачи/отзыва доступа и шесть проверок запрета Bob.
+Готовый [ZIP стенда](https://github.com/qqrm/openfga-axum-lab/actions/runs/44688401944/artifacts/14608585369)
+проверен по SHA-256 и всем файлам manifest; после распаковки выполните `node serve.mjs`.
+Firefox 159 в этом же run не дошёл до гостевого сценария за 20 минут, поэтому
+его поддержка этим результатом не подтверждена, а общий workflow остался красным.
+Подробности и исходные логи — в [отчёте проверки](../docs/browser-concept-check-20261120.md).
+
 Этот сценарий использует собственную модель и собственные данные. Полный стенд
 с моделью Lakekeeper и его acceptance остаются отдельными:
 [основной стенд](../README.md), [полный браузерный сценарий](../browser-single/README.md).
