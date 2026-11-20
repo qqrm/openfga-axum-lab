@@ -21,6 +21,7 @@ while IFS=: read -r key value; do
     fi
 done </proc/self/status
 [[ "$allowed_cpus" == 0-1 ]] || fail 'The services cannot use both guest CPUs.'
+printf 'CONCEPT|cpu|{"online":"%s","allowed":"%s"}\n' "$online_cpus" "$allowed_cpus"
 printf '[concept-guest] online CPUs: %s; service CPUs: %s\n' "$online_cpus" "$allowed_cpus"
 [[ "$(id -un)" == postgres ]] || fail 'The guest must use its unprivileged service account.'
 

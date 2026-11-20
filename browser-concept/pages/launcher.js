@@ -224,7 +224,7 @@ function line(value) {
     }
     if (event.kind === 'ready') {
       clearTimeout(bootTimer);
-      phase('Your backend is running', 'Checking the current permissions through the real HTTP API.');
+      phase('Your backend is running', 'Actions use the real services running in this tab.');
       element('backend-identity').textContent = 'OpenFGA store ' + evidence.health.store_id + ' · model ' + evidence.health.model_id +
         ' · model SHA-256 ' + evidence.health.model_sha256 + ' · source ' + evidence.startupManifest.conceptSourceCommit;
       void initialObservations();
@@ -275,6 +275,7 @@ async function start() {
   if (started || !crossOriginIsolated || !preparedManifest) return;
   started = true;
   evidence.started = true;
+  element('isolation').textContent = 'Browser isolation is active for this tab.';
   bootTimer = setTimeout(() => fail('The backend did not become ready within 20 minutes. Reset the tab to stop this run.'), 1200000);
   element('start').disabled = true;
   phase('Loading Linux image and emulator', 'Large files are loading locally. No external backend is contacted.');
@@ -413,7 +414,8 @@ async function prepare() {
   await isolate();
   if (!isolated) return;
   preparedManifest = await loadStartupManifest(import.meta.url);
-  element('download-size').textContent = 'Starting downloads about ' + Math.ceil(preparedManifest.downloadBytes / 1024**2) + ' MiB.';
+  element('download-size').textContent = 'Startup download: about ' + Math.ceil(preparedManifest.downloadBytes / 1024**2) +
+    ' MiB. Cold startup can take several minutes.';
   render();
 }
 render();

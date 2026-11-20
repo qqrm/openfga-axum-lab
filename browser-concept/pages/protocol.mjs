@@ -66,7 +66,7 @@ export function parseStrictJson(text) {
 export function initialConceptEvidence() {
   return {
     protocol: 1, scenario: 'document-permissions', started: false, ready: false,
-    failed: false, expectedModelSha256: null, health: null, phase: null, phases: [],
+    failed: false, expectedModelSha256: null, cpu: null, health: null, phase: null, phases: [],
     commandEchoes: 0,
     pending: null, nextCommandId: 1, responses: [],
     observations: {alice: null, bob: null}, document: null, lastRead: null,
@@ -135,7 +135,7 @@ function validateResponse(value, pending) {
 export function consumeConceptLine(state, line, now = () => new Date().toISOString()) {
   if (!line.startsWith('CONCEPT|')) return null;
   require(!state.failed, 'Protocol data arrived after terminal failure');
-  const match = /^CONCEPT\|(phase|ready|response|failed|error|command)\|(\{.*\})$/.exec(line);
+  const match = /^CONCEPT\|(phase|cpu|ready|response|failed|error|command)\|(\{.*\})$/.exec(line);
   require(match, 'Malformed concept protocol record');
   const kind = match[1];
   const value = parseStrictJson(match[2]);
@@ -148,6 +148,14 @@ export function consumeConceptLine(state, line, now = () => new Date().toISOStri
       value.actor === issued.actor && value.operation === issued.operation, 'Unrecognized command echo');
     state.commandEchoes++;
     return {kind: 'echo', value};
+  }
+  if (kind === 'cpu') {
+    require(state.cpu === null && !state.ready && !state.pending && state.responses.length === 0,
+      'Unexpected duplicate or late guest CPU evidence');
+    require(Object.keys(value).sort().join(',') === 'allowed,online' &&
+      value.online === '0-1' && value.allowed === '0-1', 'Invalid actual guest CPU evidence');
+    state.cpu = value;
+    return {kind, value};
   }
   if (kind === 'phase') {
     require(/^[a-z0-9_-]{1,64}$/.test(value.phase ?? ''), 'Invalid boot phase');
@@ -164,6 +172,8 @@ export function consumeConceptLine(state, line, now = () => new Date().toISOStri
   }
   if (kind === 'ready') {
     require(!state.ready && !state.pending && state.responses.length === 0, 'Unexpected second backend readiness record');
+    require(object(state.cpu) && state.cpu.online === '0-1' && state.cpu.allowed === '0-1',
+      'Missing actual guest CPU evidence before readiness');
     validateHealth(value, state);
     state.health = value;
     state.ready = true;

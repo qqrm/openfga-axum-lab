@@ -3,6 +3,7 @@ import test from 'node:test';
 import {beginCommand, consumeConceptLine, createSerialLineDecoder, initialConceptEvidence, parseStrictJson} from './pages/protocol.mjs';
 
 const model = 'a'.repeat(64);
+const cpu = {online: '0-1', allowed: '0-1'};
 const health = {protocol: 1, document: 'demo', owner: 'alice',
   store_id: '01M7VM9J2FBK9XMSYYBW8J6C5S', model_id: '01M7VJXV0BTTT847JBH9K2RBWS',
   model_sha256: model, title: 'Browser authorization demo'};
@@ -10,6 +11,7 @@ const frame = (kind, value) => 'CONCEPT|' + kind + '|' + JSON.stringify(value);
 function ready() {
   const state = initialConceptEvidence();
   state.expectedModelSha256 = model;
+  consumeConceptLine(state, frame('cpu', cpu));
   consumeConceptLine(state, frame('ready', health));
   return state;
 }
@@ -21,6 +23,7 @@ function response(state, overrides = {}) {
 test('readiness binds the real backend model and never invents permissions', () => {
   const state = initialConceptEvidence();
   assert.throws(() => beginCommand(state, 'read', 'bob'), /not ready/);
+  consumeConceptLine(state, frame('cpu', cpu));
   assert.throws(() => consumeConceptLine(state, frame('ready', health)), /verified startup model/);
   state.expectedModelSha256 = model;
   consumeConceptLine(state, frame('phase', {phase: 'postgres', detail: 'Starting storage'}));
@@ -30,6 +33,71 @@ test('readiness binds the real backend model and never invents permissions', () 
   assert.deepEqual(state.observations, {alice: null, bob: null});
   assert.equal(state.document, null);
   assert.throws(() => consumeConceptLine(state, frame('ready', health)), /second backend/);
+});
+
+test('readiness requires one actual online and allowed CPU observation', () => {
+  const state = initialConceptEvidence();
+  state.expectedModelSha256 = model;
+  assert.equal(state.cpu, null);
+  assert.throws(() => consumeConceptLine(state, frame('ready', health)), /Missing actual guest CPU evidence/);
+  assert.equal(state.ready, false);
+  assert.equal(state.health, null);
+  consumeConceptLine(state, frame('cpu', cpu));
+  assert.deepEqual(state.cpu, cpu);
+  assert.equal(state.ready, false);
+  assert.deepEqual(state.observations, {alice: null, bob: null});
+  assert.throws(() => consumeConceptLine(state, frame('cpu', cpu)), /duplicate or late/);
+  consumeConceptLine(state, frame('ready', health));
+  assert.equal(state.ready, true);
+  assert.throws(() => consumeConceptLine(state, frame('cpu', cpu)), /duplicate or late/);
+});
+
+test('wrong, incomplete, extra or duplicated CPU fields cannot authorize readiness', () => {
+  for (const value of [{online: '0', allowed: '0-1'}, {online: '0-1', allowed: '0'},
+    {online: '0-2', allowed: '0-2'}, {online: [0, 1], allowed: '0-1'},
+    {online: '0-1'}, {allowed: '0-1'}, {...cpu, requested: 2}]) {
+    const state = initialConceptEvidence();
+    state.expectedModelSha256 = model;
+    assert.throws(() => consumeConceptLine(state, frame('cpu', value)), /Invalid actual guest CPU evidence/);
+    assert.equal(state.cpu, null);
+    assert.throws(() => consumeConceptLine(state, frame('ready', health)), /Missing actual guest CPU evidence/);
+  }
+  const state = initialConceptEvidence();
+  assert.throws(() => consumeConceptLine(state,
+    'CONCEPT|cpu|{"online":"0-1","allowed":"0-1","online":"0"}'), /Duplicate protocol key/);
+  assert.equal(state.cpu, null);
+});
+
+test('interleaved QEMU display telemetry cannot corrupt the separate UART CPU observation', () => {
+  const state = initialConceptEvidence();
+  state.expectedModelSha256 = model;
+  const decoder = createSerialLineDecoder(line => consumeConceptLine(state, line));
+  const events = [
+    ['uart', '[concept-guest] online CPUs: 0-1; service CPU'],
+    ['qemu', '[browser-qemu] {"event":"registered","created":1500}\n'],
+    ['uart', 's: 0-1\r\nCONCEPT|cpu|{"online":"0-1","all'],
+    ['qemu', '[browser-qemu] {"event":"registered","created":1600}\n'],
+    ['uart', 'owed":"0-1"}\r\n'],
+    ['uart', frame('ready', health) + '\r\n'],
+  ];
+  let display = '';
+  for (const [source, text] of events) {
+    display += text;
+    // This is the observed source distinction: Module.print contributes to
+    // the raw display log, while only pty.write bytes reach the UART decoder.
+    if (source === 'uart') for (const byte of new TextEncoder().encode(text)) decoder.write([byte]);
+  }
+  assert(!display.includes('[concept-guest] online CPUs: 0-1; service CPUs: 0-1'));
+  assert(!display.includes(frame('cpu', cpu)));
+  assert.deepEqual(state.cpu, cpu);
+  assert.equal(state.ready, true);
+  assert.equal(decoder.pendingBytes, 0);
+  const mergedState = initialConceptEvidence();
+  mergedState.expectedModelSha256 = model;
+  const wrongChannel = createSerialLineDecoder(line => consumeConceptLine(mergedState, line));
+  assert.throws(() => wrongChannel.write(new TextEncoder().encode(display)), SyntaxError);
+  assert.equal(mergedState.cpu, null);
+  assert.equal(mergedState.ready, false);
 });
 
 test('one request is in flight and a response must match all correlation fields', () => {

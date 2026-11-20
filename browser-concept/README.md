@@ -183,6 +183,9 @@ browser результаты — в `artifacts/browser-concept-browser/<engine>/
 `passed: true` соответствующего результата и успешный job, а не только сборка
 или сообщение о загрузке Linux.
 
+Фактические результаты запусков, измерения и причины отказов записаны в
+[наблюдениях browser Check](../docs/browser-concept-check-20261120.md).
+
 Концепт не запускает приложение полного стенда, его миграцию, матрицу Lakekeeper
 или `lab-tool acceptance`. Даже успешные оба browser jobs подтверждают только
 этот маленький сценарий; поля `lakekeeperAcceptance` и `productionAcceptance`

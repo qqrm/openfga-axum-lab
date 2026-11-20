@@ -258,12 +258,15 @@ try {
   assert.equal(initial.health.model_sha256, modelSha256);
   assert.equal(initial.health.document, 'demo');
   assert.equal(initial.health.owner, 'alice');
+  assert.deepEqual(initial.cpu, {online: '0-1', allowed: '0-1'},
+    'The guest UART did not confirm both discovered and available service CPUs');
   assert.equal(initial.vm.cpus, 2);
   assert.equal(initial.vm.memoryMiB, 512);
   assert.equal(initial.vm.kernelLogLevel, 7);
   assert.equal(initial.vm.qemuLiveInstanceLimit, engineName === 'firefox' ? 8192 : 15000);
   assert(initial.vm.reportedLogicalCPUs >= 2);
   result.health = initial.health;
+  result.cpuDiscovery = initial.cpu;
   result.vm = initial.vm;
   result.initialObservations = initial.observations;
   const fixture = await readJSON('browser-concept/fixtures.json');
@@ -388,8 +391,11 @@ try {
         result.failure = 'Guest, browser, screenshot or complete log capture failed after the final action';
         checksPassed = false;
       }
-      if (!captured.text.includes('[concept-guest] online CPUs: 0-1; service CPUs: 0-1')) {
-        result.failure = 'The guest did not provide actual two-CPU discovery evidence';
+      // Module.print telemetry can appear between UART bytes in the complete
+      // display transcript. CPU proof comes from the independently framed UART
+      // record emitted only after the guest's real sysfs and affinity checks.
+      if (result.guest.cpu?.online !== '0-1' || result.guest.cpu?.allowed !== '0-1') {
+        result.failure = 'The guest UART did not retain actual two-CPU discovery evidence';
         checksPassed = false;
       }
     }
