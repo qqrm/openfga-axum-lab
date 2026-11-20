@@ -1,0 +1,442 @@
+{
+  "schemaVersion": 1,
+  "status": "verified_evidence",
+  "archive": {
+    "path": "chromium-1.zip",
+    "bytes": 20327200,
+    "sha256": "f87a249f3833f4e6e69337c6f3c39aef463b74d86b3fd012fb882f8845994247",
+    "expectedDigestVerified": true
+  },
+  "summaryMember": "artifacts/pr36-vcpu-gate/chromium-summary.json",
+  "evidenceMembers": {
+    "chromium-console.txt": "source-candidate/artifacts/browser-wasm/chromium-console.txt",
+    "chromium-stream.jsonl": "source-candidate/artifacts/browser-wasm/chromium-stream.jsonl",
+    "chromium.json": "source-candidate/artifacts/browser-wasm/chromium.json"
+  },
+  "verifiedHashes": {
+    "chromium-console.txt": {
+      "bytes": 1534733,
+      "sha256": "35637690ae85b43191c7d094a1b9a056e5d5467b83541900156d2c7e7084fef3"
+    },
+    "chromium-stream.jsonl": {
+      "bytes": 2113815,
+      "sha256": "7994d903be5b6bdddce951d36e45106cc15cd5f12ce921657a8a61b3395785b2"
+    },
+    "chromium.json": {
+      "bytes": 12162,
+      "sha256": "277f1598b7372d21bcd08d3ef2a85e038c9036b365a88caf10be9a9b596578f5"
+    }
+  },
+  "integrity": {
+    "allThreeHashesMatchSummary": true,
+    "sequenceContiguous": true,
+    "exactConsoleReconstruction": true,
+    "captureCountersMatch": true
+  },
+  "engine": "chromium",
+  "browser": "157.0.8103.50",
+  "workflowCommit": "d4794e07c8e9cefef6271f498c6c309ce52b661c",
+  "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+  "producer": {
+    "baselineSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+    "candidateSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+    "changedFiles": [
+      "browser-single/prepare-emulator.mjs",
+      "browser-single/qemu/Dockerfile.appendix",
+      "browser-single/qemu/README.md",
+      "browser-single/qemu/build.sh",
+      "browser-single/qemu/check-idle-gc.mjs",
+      "browser-single/qemu/idle-gc-yield.patch"
+    ],
+    "sourceFiles": {
+      "browser-single/prepare-emulator.mjs": {
+        "mode": "100644",
+        "gitBlob": "0fc151f28c0f6c7bd871dfa7dcf4c57f96a945cb",
+        "bytes": 15237,
+        "sha256": "0eed080d286e1274937df075a59045954c502b3886761a2351fc84e0becf7bff"
+      },
+      "browser-single/qemu/Dockerfile.appendix": {
+        "mode": "100644",
+        "gitBlob": "71305b8fc731b9b8972eb69ac571a6ef9e2ec26e",
+        "bytes": 14342,
+        "sha256": "5502d1193666d14d7f60e1641caa5c21d151ad0a9eff17760490dd95bd863218"
+      },
+      "browser-single/qemu/README.md": {
+        "mode": "100644",
+        "gitBlob": "93a659d6f7e13401dfa287681f9333e965e75d01",
+        "bytes": 25622,
+        "sha256": "a83f9324240721ec8bec3067774c5f0de161c86ebd4309d73125653ec1c5a292"
+      },
+      "browser-single/qemu/build.sh": {
+        "mode": "100755",
+        "gitBlob": "60838ccb9996d8ebbd86887534048ebdea813869",
+        "bytes": 17211,
+        "sha256": "61d925ec4365b1bdd8c7714d631bc7436dca7d4879b95e216ea5b2f1a6838e9d"
+      },
+      "browser-single/qemu/check-i32-multiply.mjs": {
+        "mode": "100644",
+        "gitBlob": "daf0797df28eb2af43244c3e48fc2289e20f142c",
+        "bytes": 13263,
+        "sha256": "ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff"
+      },
+      "browser-single/qemu/check-idle-gc.mjs": {
+        "mode": "100644",
+        "gitBlob": "504acc5a6c9521073f550ef1bfbf88e582cb0d63",
+        "bytes": 20454,
+        "sha256": "d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14"
+      },
+      "browser-single/qemu/check-instance-budget-bridge.mjs": {
+        "mode": "100644",
+        "gitBlob": "5d2c79dd13c153a3410fb7eba94a581a029f1a55",
+        "bytes": 10126,
+        "sha256": "5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528"
+      },
+      "browser-single/qemu/check-instance-budget.mjs": {
+        "mode": "100644",
+        "gitBlob": "d0bee0f6210a39270d110c75abaf96921022a390",
+        "bytes": 12377,
+        "sha256": "dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4"
+      },
+      "browser-single/qemu/check-memory-barrier.mjs": {
+        "mode": "100644",
+        "gitBlob": "96a41d584fb3cf74941c8930c3c64618dff8088d",
+        "bytes": 15636,
+        "sha256": "13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca"
+      },
+      "browser-single/qemu/check-runtime-diagnostics.mjs": {
+        "mode": "100644",
+        "gitBlob": "597d6d80f3b3dd5cf87fa9f5328fe9976de38970",
+        "bytes": 7484,
+        "sha256": "c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6"
+      },
+      "browser-single/qemu/i32-multiply.patch": {
+        "mode": "100644",
+        "gitBlob": "757bd5b0a17f6f1367d3d2ad0bcff365026acb6b",
+        "bytes": 1247,
+        "sha256": "c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2"
+      },
+      "browser-single/qemu/idle-gc-yield.patch": {
+        "mode": "100644",
+        "gitBlob": "ce0a540bc723a446e2e381e1de44ae9afbf2338c",
+        "bytes": 2905,
+        "sha256": "48aa5fcb57790e51f2ad16e6075fc93bf6345c944df88de5b69e8daa45540e9f"
+      },
+      "browser-single/qemu/instance-budget.patch": {
+        "mode": "100644",
+        "gitBlob": "8241c054d8ed64d2f5d9fd0418b104bf2f219471",
+        "bytes": 9204,
+        "sha256": "b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661"
+      },
+      "browser-single/qemu/memory-barrier.patch": {
+        "mode": "100644",
+        "gitBlob": "3e12508c9ce07500a94a0db4724ca51d4d4028cc",
+        "bytes": 499,
+        "sha256": "49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339"
+      }
+    },
+    "workflowCommit": "a12b8799fed16e6efc93ab55498e8f165fb1a139",
+    "runId": 43969702163,
+    "runAttempt": 1,
+    "build": {
+      "bytes": 4146,
+      "sha256": "10e405c9e53be931d1ba65a5dd8c35d2e6d36582f4f40116c517137df9e32cb1"
+    },
+    "files": {
+      "out.js": {
+        "bytes": 279363,
+        "sha256": "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"
+      },
+      "qemu-system-x86_64.wasm": {
+        "bytes": 41250530,
+        "sha256": "bca14ba86cff602c979e3ae93df80611b186ecbe101542ec14e6809c528e0db3"
+      }
+    },
+    "createdAt": "2026-11-16T22:31:37.829Z",
+    "browserAcceptanceVerified": false
+  },
+  "job": {
+    "id": 136048513540,
+    "name": "vCPU browser acceptance (chromium, 1 CPU)",
+    "run_id": 44663922895,
+    "head_sha": "d4794e07c8e9cefef6271f498c6c309ce52b661c",
+    "started_at": "2026-11-20T02:53:19Z",
+    "run_attempt": 1,
+    "source": "GitHub Actions current job API",
+    "observed_at": "2026-11-20T02:53:31.441424+00:00",
+    "checkedAt": "2026-11-20T02:54:39.269Z",
+    "jobElapsedMilliseconds": 80269,
+    "latestLaunchJobElapsedMilliseconds": 240000,
+    "outerJobMinutes": 30,
+    "runtimeStepMinutes": 25,
+    "launchPermitted": true
+  },
+  "host": {
+    "cpu": {
+      "Architecture": "x86_64",
+      "CPU(s)": "4",
+      "Model name": "Intel(R) Xeon(R) 6975P-C",
+      "CPU family": "6",
+      "Model": "173",
+      "Thread(s) per core": "2",
+      "Core(s) per socket": "2",
+      "Socket(s)": "1",
+      "Stepping": "1",
+      "Hypervisor vendor": "KVM",
+      "Virtualization type": "full"
+    },
+    "memoryTotalKiB": 16078420
+  },
+  "chromeSmoke": {
+    "kind": "system_chrome_sandbox_smoke",
+    "startedAt": "2026-11-20T02:54:31.563Z",
+    "passed": true,
+    "vmStarted": false,
+    "acceptanceVerified": false,
+    "uid": 1001,
+    "launchOptions": {
+      "channel": "chrome",
+      "chromiumSandbox": true,
+      "headless": true,
+      "timeout": 30000,
+      "args": [
+        "--enable-automation"
+      ]
+    },
+    "executable": {
+      "path": "/opt/google/chrome/chrome",
+      "realPath": "/opt/google/chrome/chrome",
+      "bytes": 306789704,
+      "sha256": "cce8581219e59c17bcc60bff0cdfdcb2405a6d63acb1f3c32670a40814ba558c",
+      "uid": 0,
+      "gid": 0,
+      "mode": 511
+    },
+    "hostPolicy": {
+      "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+      "/etc/apparmor.d/chrome": "# This profile allows everything and only exists to give the\n# application a name instead of having the label \"unconfined\"\n\nabi <abi/4.0>,\ninclude <tunables/global>\n\nprofile chrome /opt/google/chrome/chrome flags=(unconfined) {\n  userns,\n\n  # Site-specific additions and overrides. See local/README for details.\n  include if exists <local/chrome>\n}\n"
+    },
+    "actualVersion": "157.0.8103.50",
+    "commandLine": {
+      "arguments": [
+        "/opt/google/chrome/chrome",
+        "--disable-field-trial-config",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-back-forward-cache",
+        "--disable-breakpad",
+        "--disable-component-extensions-with-background-pages",
+        "--disable-component-update",
+        "--no-default-browser-check",
+        "--disable-default-apps",
+        "--disable-dev-shm-usage",
+        "--disable-edgeupdater",
+        "--disable-extensions",
+        "--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,AvoidCorsURLLoaderRestartOnRedirect,TcpPortRandomizationWin,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,PreconnectToSearch,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion",
+        "--enable-features=CDPScreenshotNewSurface,SkipListAccountsWithoutGaiaCookies",
+        "--allow-pre-commit-input",
+        "--disable-hang-monitor",
+        "--disable-ipc-flooding-protection",
+        "--disable-popup-blocking",
+        "--disable-prompt-on-repost",
+        "--disable-renderer-backgrounding",
+        "--disable-updater-scheduler",
+        "--force-color-profile=srgb",
+        "--metrics-recording-only",
+        "--no-first-run",
+        "--password-store=basic",
+        "--use-mock-keychain",
+        "--no-service-autorun",
+        "--disable-search-engine-choice-screen",
+        "--unsafely-disable-devtools-self-xss-warnings",
+        "--enable-unsafe-swiftshader",
+        "--edge-skip-compat-layer-relaunch",
+        "--disable-stack-profiler",
+        "--disable-infobars",
+        "--disable-sync",
+        "--do-not-de-elevate",
+        "--headless",
+        "--hide-scrollbars",
+        "--mute-audio",
+        "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
+        "--enable-automation",
+        "--user-data-dir=/tmp/playwright_chromiumdev_profile-PyIGCd",
+        "--remote-debugging-pipe",
+        "--no-startup-window",
+        "--noerrdialogs",
+        "--ozone-platform=headless",
+        "--ozone-override-screen-size=800,600",
+        "--use-angle=swiftshader-webgl",
+        "--flag-switches-begin",
+        "--flag-switches-end",
+        "--enable-unsafe-swiftshader"
+      ]
+    },
+    "sandboxStatus": "Sandbox Status\nLayer 1 Sandbox\tNamespace\nPID namespaces\tYes\nNetwork namespaces\tYes\nSeccomp-BPF sandbox\tYes\nSeccomp-BPF sandbox supports TSYNC\tYes\nPtrace Protection with Yama LSM (Broker)\tYes\nPtrace Protection with Yama LSM (Non-broker)\tNo\n\nYou are adequately sandboxed.",
+    "finishedAt": "2026-11-20T02:54:37.622Z"
+  },
+  "playwrightLock": {
+    "bytes": 1563,
+    "sha256": "baf92c9667c5a88201e9c6f6df2fe33574de28c075c805bfd959bbd339d7951a"
+  },
+  "topology": {
+    "requestedVirtualCPUs": 1,
+    "vm": {
+      "cpus": 1,
+      "reportedLogicalCPUs": 4,
+      "cpuTopology": "1,sockets=1,cores=1,threads=1",
+      "memoryMiB": 512,
+      "slabDebug": false,
+      "kernelLogLevel": 7,
+      "qemuLiveInstanceLimit": 15000,
+      "entropyConfiguration": {
+        "backend": "rng-random",
+        "hostDevice": "/dev/urandom",
+        "guestDevice": "virtio-rng-pci",
+        "webCryptoRequired": true
+      }
+    },
+    "originalOnlineMarkers": [
+      "0"
+    ],
+    "originalServiceAvailabilityMarkers": [
+      "0"
+    ],
+    "matches": true,
+    "checkerObservation": {
+      "requestedVirtualCPUs": 1,
+      "expectedTopology": "1,sockets=1,cores=1,threads=1",
+      "expectedCPUList": "0",
+      "observedVirtualCPUs": 1,
+      "observedTopology": "1,sockets=1,cores=1,threads=1",
+      "reportedHostLogicalCPUs": 4,
+      "onlineCPUMarkers": [
+        "0"
+      ],
+      "serviceCPUMarkers": [
+        "0"
+      ],
+      "launcherMatches": true,
+      "linuxOnlineMatches": true,
+      "serviceAvailabilityMatches": true,
+      "logCaptureComplete": true,
+      "scope": "Observed topology only; neither successful authorization nor an isolated MTTCG root cause.",
+      "matches": true
+    }
+  },
+  "capture": {
+    "format": "browser-lab-log-batches-v1",
+    "complete": true,
+    "chunks": 26878,
+    "batches": 4788,
+    "bytes": 1534733,
+    "expectedSequence": 26878
+  },
+  "pageErrors": [],
+  "acceptance": {
+    "twoRealVectorsVerified": false,
+    "checkerClaimsPass": false,
+    "fullGateVerified": false,
+    "passes": [],
+    "guestPasses": [],
+    "booted": true,
+    "ready": false,
+    "accepted": false,
+    "checks": 0
+  },
+  "sourceTimeline": {
+    "firstNonemptyBatch": {
+      "streamLine": 1,
+      "hostReceivedAt": "2026-11-20T02:54:42.698Z",
+      "firstSequence": 1,
+      "lastSequence": 10,
+      "nonempty": true
+    },
+    "lastNonemptyBatch": {
+      "streamLine": 4788,
+      "hostReceivedAt": "2026-11-20T03:03:05.162Z",
+      "firstSequence": 26878,
+      "lastSequence": 26878,
+      "nonempty": true
+    },
+    "resultStartedAt": "2026-11-20T02:54:39.517Z",
+    "resultFinishedAt": "2026-11-20T03:14:40.126Z"
+  },
+  "diagnosticReplayCutoff": null,
+  "eventScope": "Only unique full original lines before the first Guest diagnostic replay; terminal LAB|boot-failed is recorded separately. Guest service duration_ms and host receipt timestamps are not interchangeable.",
+  "phases": [
+    {
+      "kind": "guest_boot",
+      "consoleLine": 347,
+      "characterOffset": 38385,
+      "streamLine": 196,
+      "hostReceivedAt": "2026-11-20T02:55:17.630Z",
+      "line": "LAB|boot"
+    },
+    {
+      "kind": "executables_staged",
+      "consoleLine": 351,
+      "characterOffset": 38564,
+      "streamLine": 200,
+      "hostReceivedAt": "2026-11-20T02:55:25.654Z",
+      "line": "[browser-guest] executables staged; starting the real services"
+    },
+    {
+      "kind": "postgres_init",
+      "consoleLine": 352,
+      "characterOffset": 38628,
+      "streamLine": 201,
+      "hostReceivedAt": "2026-11-20T02:55:27.178Z",
+      "line": "[browser-single] initializing isolated PostgreSQL 17"
+    },
+    {
+      "kind": "postgres_started",
+      "consoleLine": 377,
+      "characterOffset": 45951,
+      "streamLine": 231,
+      "hostReceivedAt": "2026-11-20T02:58:20.261Z",
+      "line": "server started"
+    }
+  ],
+  "openfgaEvents": [],
+  "checkOutcomes": [],
+  "rpcFailures": [],
+  "warmupOutcomes": [],
+  "originalServiceErrors": [],
+  "originalProtocolMarkers": [
+    {
+      "consoleLine": 347,
+      "characterOffset": 38385,
+      "streamLine": 196,
+      "hostReceivedAt": "2026-11-20T02:55:17.630Z",
+      "line": "LAB|boot"
+    }
+  ],
+  "terminalMarkers": [],
+  "lastOriginalServiceEvent": {
+    "kind": "postgres_started",
+    "consoleLine": 377,
+    "characterOffset": 45951,
+    "streamLine": 231,
+    "hostReceivedAt": "2026-11-20T02:58:20.261Z",
+    "line": "server started"
+  },
+  "failure": {
+    "guest": null,
+    "browserChecker": "TimeoutError: page.waitForFunction: Timeout 1200000ms exceeded.",
+    "validation": "AssertionError [ERR_ASSERTION]: Production checker failed\n\n1 !== 0\n",
+    "outcome": {
+      "code": 1,
+      "signal": null
+    }
+  },
+  "githubEvidence": {
+    "run": 44663922895,
+    "job": 136048513540,
+    "artifact": 14598390066,
+    "bytes": 20327200,
+    "sha256": "f87a249f3833f4e6e69337c6f3c39aef463b74d86b3fd012fb882f8845994247"
+  },
+  "reportNormalization": "Local archive path shortened; evidence content and verification results unchanged."
+}

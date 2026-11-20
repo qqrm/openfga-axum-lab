@@ -1,0 +1,333 @@
+{
+  "engine": "chromium",
+  "browser": "157.0.8103.50",
+  "resultStartedAt": "2026-11-20T02:54:39.517Z",
+  "resultFinishedAt": "2026-11-20T03:14:40.126Z",
+  "logCapture": {
+    "format": "browser-lab-log-batches-v1",
+    "complete": true,
+    "chunks": 26878,
+    "batches": 4788,
+    "bytes": 1534733,
+    "expectedSequence": 26878
+  },
+  "rawFiles": {
+    "chromium-stream.jsonl": {
+      "bytes": 2113815,
+      "sha256": "7994d903be5b6bdddce951d36e45106cc15cd5f12ce921657a8a61b3395785b2"
+    },
+    "chromium-console.txt": {
+      "bytes": 1534733,
+      "sha256": "35637690ae85b43191c7d094a1b9a056e5d5467b83541900156d2c7e7084fef3"
+    },
+    "chromium.json": {
+      "bytes": 12162,
+      "sha256": "277f1598b7372d21bcd08d3ef2a85e038c9036b365a88caf10be9a9b596578f5"
+    }
+  },
+  "rawHashesMatchSummary": true,
+  "fullStreamReconstructionVerified": true,
+  "workflowCommit": "d4794e07c8e9cefef6271f498c6c309ce52b661c",
+  "requestedVirtualCPUs": 1,
+  "observedTopology": {
+    "requestedVirtualCPUs": 1,
+    "expectedTopology": "1,sockets=1,cores=1,threads=1",
+    "expectedCPUList": "0",
+    "observedVirtualCPUs": 1,
+    "observedTopology": "1,sockets=1,cores=1,threads=1",
+    "reportedHostLogicalCPUs": 4,
+    "onlineCPUMarkers": [
+      "0"
+    ],
+    "serviceCPUMarkers": [
+      "0"
+    ],
+    "launcherMatches": true,
+    "linuxOnlineMatches": true,
+    "serviceAvailabilityMatches": true,
+    "logCaptureComplete": true,
+    "scope": "Observed topology only; neither successful authorization nor an isolated MTTCG root cause.",
+    "matches": true
+  },
+  "vm": {
+    "cpus": 1,
+    "reportedLogicalCPUs": 4,
+    "cpuTopology": "1,sockets=1,cores=1,threads=1",
+    "memoryMiB": 512,
+    "slabDebug": false,
+    "kernelLogLevel": 7,
+    "qemuLiveInstanceLimit": 15000,
+    "entropyConfiguration": {
+      "backend": "rng-random",
+      "hostDevice": "/dev/urandom",
+      "guestDevice": "virtio-rng-pci",
+      "webCryptoRequired": true
+    }
+  },
+  "passed": false,
+  "passes": [],
+  "failure": "TimeoutError: page.waitForFunction: Timeout 1200000ms exceeded.",
+  "pageErrors": [],
+  "firstSourceReceivedAt": "2026-11-20T02:54:42.698Z",
+  "lastSourceReceivedAt": "2026-11-20T03:03:05.162Z",
+  "finalSourceSilenceMs": 694964,
+  "largestSourceReceiptGaps": [
+    {
+      "milliseconds": 91044,
+      "from": "2026-11-20T02:55:27.178Z",
+      "to": "2026-11-20T02:56:58.222Z",
+      "fromStreamLine": 201,
+      "toStreamLine": 202
+    },
+    {
+      "milliseconds": 75815,
+      "from": "2026-11-20T02:56:59.233Z",
+      "to": "2026-11-20T02:58:15.048Z",
+      "fromStreamLine": 224,
+      "toStreamLine": 225
+    },
+    {
+      "milliseconds": 24199,
+      "from": "2026-11-20T02:58:20.261Z",
+      "to": "2026-11-20T02:58:44.460Z",
+      "fromStreamLine": 231,
+      "toStreamLine": 232
+    },
+    {
+      "milliseconds": 7777,
+      "from": "2026-11-20T02:55:17.877Z",
+      "to": "2026-11-20T02:55:25.654Z",
+      "fromStreamLine": 199,
+      "toStreamLine": 200
+    },
+    {
+      "milliseconds": 2996,
+      "from": "2026-11-20T02:54:54.494Z",
+      "to": "2026-11-20T02:54:57.490Z",
+      "fromStreamLine": 104,
+      "toStreamLine": 105
+    },
+    {
+      "milliseconds": 2656,
+      "from": "2026-11-20T02:54:57.490Z",
+      "to": "2026-11-20T02:55:00.146Z",
+      "fromStreamLine": 105,
+      "toStreamLine": 106
+    },
+    {
+      "milliseconds": 2530,
+      "from": "2026-11-20T02:55:03.050Z",
+      "to": "2026-11-20T02:55:05.580Z",
+      "fromStreamLine": 109,
+      "toStreamLine": 110
+    },
+    {
+      "milliseconds": 2403,
+      "from": "2026-11-20T02:54:52.091Z",
+      "to": "2026-11-20T02:54:54.494Z",
+      "fromStreamLine": 103,
+      "toStreamLine": 104
+    }
+  ],
+  "diagnosticReplayBegins": null,
+  "phasesBeforeDiagnosticReplay": [
+    {
+      "receivedAt": "2026-11-20T02:55:17.630Z",
+      "streamLine": 196,
+      "endCharacter": 38395,
+      "startCharacter": 38385,
+      "text": "LAB|boot",
+      "beforeDiagnosticReplay": true,
+      "phase": "guest_boot"
+    },
+    {
+      "receivedAt": "2026-11-20T02:55:25.654Z",
+      "streamLine": 200,
+      "endCharacter": 38628,
+      "startCharacter": 38564,
+      "text": "[browser-guest] executables staged; starting the real services",
+      "beforeDiagnosticReplay": true,
+      "phase": "executables_staged"
+    },
+    {
+      "receivedAt": "2026-11-20T02:55:27.178Z",
+      "streamLine": 201,
+      "endCharacter": 38682,
+      "startCharacter": 38628,
+      "text": "[browser-single] initializing isolated PostgreSQL 17",
+      "beforeDiagnosticReplay": true,
+      "phase": "postgres_init"
+    },
+    {
+      "receivedAt": "2026-11-20T02:58:20.261Z",
+      "streamLine": 231,
+      "endCharacter": 45967,
+      "startCharacter": 45951,
+      "text": "server started",
+      "beforeDiagnosticReplay": true,
+      "phase": "postgres_started"
+    }
+  ],
+  "checkRpcsBeforeDiagnosticReplay": [],
+  "topologyMarkersBeforeDiagnosticReplay": [
+    {
+      "receivedAt": "2026-11-20T02:55:17.660Z",
+      "streamLine": 197,
+      "endCharacter": 38437,
+      "startCharacter": 38395,
+      "text": "[browser-guest] confirmed online CPUs: 0",
+      "beforeDiagnosticReplay": true
+    },
+    {
+      "receivedAt": "2026-11-20T02:55:17.859Z",
+      "streamLine": 198,
+      "endCharacter": 38492,
+      "startCharacter": 38437,
+      "text": "[browser-guest] confirmed service CPU availability: 0",
+      "beforeDiagnosticReplay": true
+    }
+  ],
+  "lastOriginalServiceMarker": {
+    "receivedAt": "2026-11-20T02:58:20.261Z",
+    "streamLine": 231,
+    "endCharacter": 45967,
+    "startCharacter": 45951,
+    "text": "server started",
+    "beforeDiagnosticReplay": true
+  },
+  "lastServiceMarkerAgeMsAtResultFinish": 979865,
+  "cores": [
+    {
+      "core": 0,
+      "duplicateSnapshots": 0,
+      "regressiveOrReplayedSnapshots": [],
+      "observedFrames": 4631,
+      "monotonicSnapshots": 4631,
+      "first": {
+        "receivedAt": "2026-11-20T02:54:48.826Z",
+        "streamLine": 64,
+        "startCharacter": 10243,
+        "beforeDiagnosticReplay": true,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 689,
+        "live_limit": 15000,
+        "attempted_total": 1024,
+        "module_created_total": 1024,
+        "instance_created_total": 1024,
+        "registered_total": 1024,
+        "detached_total": 0,
+        "gc_total": 0,
+        "encoded_bytes_total": 867543,
+        "encoded_bytes_max": 2701,
+        "ageMsAtResultFinish": 1191300,
+        "perCoreCounterDifferences": {
+          "registeredMinusDetached": 1024,
+          "detachedMinusGC": 0,
+          "registeredMinusGC": 1024,
+          "registrationCountersConsistent": true,
+          "scope": "Counts for this core at this snapshot only; not bytes or a contemporaneous global count."
+        }
+      },
+      "lastMonotonicSnapshot": {
+        "receivedAt": "2026-11-20T03:03:05.162Z",
+        "streamLine": 4788,
+        "startCharacter": 1534405,
+        "beforeDiagnosticReplay": true,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 590,
+        "live_limit": 15000,
+        "attempted_total": 4742144,
+        "module_created_total": 4742144,
+        "instance_created_total": 4742144,
+        "registered_total": 4742144,
+        "detached_total": 4740096,
+        "gc_total": 4733952,
+        "encoded_bytes_total": 4391525201,
+        "encoded_bytes_max": 13716,
+        "ageMsAtResultFinish": 694964,
+        "perCoreCounterDifferences": {
+          "registeredMinusDetached": 2048,
+          "detachedMinusGC": 6144,
+          "registeredMinusGC": 8192,
+          "registrationCountersConsistent": true,
+          "scope": "Counts for this core at this snapshot only; not bytes or a contemporaneous global count."
+        }
+      },
+      "lastBeforeDiagnosticReplay": {
+        "receivedAt": "2026-11-20T03:03:05.162Z",
+        "streamLine": 4788,
+        "startCharacter": 1534405,
+        "beforeDiagnosticReplay": true,
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 0,
+        "wasm_size": 590,
+        "live_limit": 15000,
+        "attempted_total": 4742144,
+        "module_created_total": 4742144,
+        "instance_created_total": 4742144,
+        "registered_total": 4742144,
+        "detached_total": 4740096,
+        "gc_total": 4733952,
+        "encoded_bytes_total": 4391525201,
+        "encoded_bytes_max": 13716,
+        "ageMsAtResultFinish": 694964,
+        "perCoreCounterDifferences": {
+          "registeredMinusDetached": 2048,
+          "detachedMinusGC": 6144,
+          "registeredMinusGC": 8192,
+          "registrationCountersConsistent": true,
+          "scope": "Counts for this core at this snapshot only; not bytes or a contemporaneous global count."
+        }
+      },
+      "postDiagnosticMonotonicSnapshots": 0,
+      "gcIncreaseIntervals": 357,
+      "registrationDelta": 4741120,
+      "gcDelta": 4733952,
+      "largestSnapshotReceiptGaps": [
+        {
+          "milliseconds": 105227,
+          "from": "2026-11-20T02:56:59.233Z",
+          "to": "2026-11-20T02:58:44.460Z"
+        },
+        {
+          "milliseconds": 102115,
+          "from": "2026-11-20T02:55:16.107Z",
+          "to": "2026-11-20T02:56:58.222Z"
+        },
+        {
+          "milliseconds": 9795,
+          "from": "2026-11-20T02:54:52.091Z",
+          "to": "2026-11-20T02:55:01.886Z"
+        }
+      ]
+    }
+  ],
+  "malformedTelemetry": [],
+  "interpretationLimits": [
+    "All times are host batch receipt/completion times; they do not measure guest clock speed or prove a deadlock.",
+    "Service/RPC markers stop before the first diagnostic tail replay; no replay is counted as a new RPC.",
+    "Per-core telemetry discards duplicate/regressive vectors, labels monotonic post-diagnostic samples separately, and preserves pre-diagnostic endpoints.",
+    "Core snapshots have different ages. Never sum them as a simultaneous global live count or infer budget saturation from stale sums.",
+    "Counters count module lifecycle events; encoded byte totals are Wasm inputs, not native executable memory.",
+    "Observed GC counter increments establish delivered callbacks only in the observed intervals, with no future FinalizationRegistry scheduling guarantee.",
+    "Absence of snapshots does not prove no compilations: telemetry is sparse and may report only threshold crossings."
+  ],
+  "archive": {
+    "path": "chromium-1.zip",
+    "bytes": 20327200,
+    "sha256": "f87a249f3833f4e6e69337c6f3c39aef463b74d86b3fd012fb882f8845994247"
+  },
+  "githubEvidence": {
+    "run": 44663922895,
+    "job": 136048513540,
+    "artifact": 14598390066,
+    "bytes": 20327200,
+    "sha256": "f87a249f3833f4e6e69337c6f3c39aef463b74d86b3fd012fb882f8845994247"
+  },
+  "reportNormalization": "Local archive path shortened; evidence content and verification results unchanged."
+}

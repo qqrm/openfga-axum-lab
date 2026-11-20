@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "cases": {
+    "chromium-1": {
+      "run": 44663922895,
+      "job": 136048513540,
+      "artifact": 14598390066,
+      "bytes": 20327200,
+      "sha256": "f87a249f3833f4e6e69337c6f3c39aef463b74d86b3fd012fb882f8845994247"
+    },
+    "chromium-2": {
+      "run": 44663922895,
+      "job": 136048513861,
+      "artifact": 14596469669,
+      "bytes": 20076758,
+      "sha256": "03e83f9b2d233eff6f9ca9ca820a0f614edd0a24182b7c46d5e2781cba844266"
+    },
+    "firefox-1": {
+      "run": 44664594362,
+      "job": 136050712389,
+      "artifact": 14597798979,
+      "bytes": 20125394,
+      "sha256": "a3aef30b50d34b29db47d6f729b6b0535aa074b332a0b8d7c3cdcc5a6cbb658e"
+    },
+    "firefox-2": {
+      "run": 44663922895,
+      "job": 136048513992,
+      "artifact": 14597377997,
+      "bytes": 20088580,
+      "sha256": "4fca6dab1cdd9e883f52c272a7382b75f544eb81e58fbbbd8ef247c16cb220bf"
+    }
+  },
+  "excludedSetupFailure": {
+    "run": 44663922895,
+    "job": 136048514037,
+    "artifact": 14596772145,
+    "reason": "Three-minute apt installation timeout; no browser VM launched",
+    "replacementRun": 44664594362
+  },
+  "retainedOriginalInputs": {
+    "run": 44663922895,
+    "artifact": 14597878044,
+    "name": "pr36-vcpu-reproduction-inputs",
+    "bytes": 308249993,
+    "sha256": "9d21628183e1d211558959446bbb71d76ef3fcbe21d221cc8f9c4fc51edbaa20",
+    "retentionDays": 30,
+    "digestSource": "GitHub artifact metadata; each original inner ZIP was verified in the producing job"
+  }
+}

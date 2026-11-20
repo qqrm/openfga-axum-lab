@@ -1,0 +1,711 @@
+{
+  "schemaVersion": 1,
+  "status": "verified_evidence",
+  "archive": {
+    "path": "chromium-2.zip",
+    "bytes": 20076758,
+    "sha256": "03e83f9b2d233eff6f9ca9ca820a0f614edd0a24182b7c46d5e2781cba844266",
+    "expectedDigestVerified": true
+  },
+  "summaryMember": "artifacts/pr36-vcpu-gate/chromium-summary.json",
+  "evidenceMembers": {
+    "chromium-console.txt": "source-candidate/artifacts/browser-wasm/chromium-console.txt",
+    "chromium-stream.jsonl": "source-candidate/artifacts/browser-wasm/chromium-stream.jsonl",
+    "chromium.json": "source-candidate/artifacts/browser-wasm/chromium.json"
+  },
+  "verifiedHashes": {
+    "chromium-console.txt": {
+      "bytes": 123535,
+      "sha256": "bae6e578934a4cabcacdbbd923e4247522658d9c3d01860d4885a04aaddc6b60"
+    },
+    "chromium-stream.jsonl": {
+      "bytes": 384644,
+      "sha256": "064b874e9c2366c24ae58be953964dcfb159d131bd643fb32ac54c398598bc54"
+    },
+    "chromium.json": {
+      "bytes": 22587,
+      "sha256": "813191086eb330f64e6313a9aba0a14793f7578d05889479cddb50855c1cbfd1"
+    }
+  },
+  "integrity": {
+    "allThreeHashesMatchSummary": true,
+    "sequenceContiguous": true,
+    "exactConsoleReconstruction": true,
+    "captureCountersMatch": true
+  },
+  "engine": "chromium",
+  "browser": "157.0.8103.50",
+  "workflowCommit": "d4794e07c8e9cefef6271f498c6c309ce52b661c",
+  "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+  "producer": {
+    "baselineSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+    "candidateSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+    "changedFiles": [
+      "browser-single/prepare-emulator.mjs",
+      "browser-single/qemu/Dockerfile.appendix",
+      "browser-single/qemu/README.md",
+      "browser-single/qemu/build.sh",
+      "browser-single/qemu/check-idle-gc.mjs",
+      "browser-single/qemu/idle-gc-yield.patch"
+    ],
+    "sourceFiles": {
+      "browser-single/prepare-emulator.mjs": {
+        "mode": "100644",
+        "gitBlob": "0fc151f28c0f6c7bd871dfa7dcf4c57f96a945cb",
+        "bytes": 15237,
+        "sha256": "0eed080d286e1274937df075a59045954c502b3886761a2351fc84e0becf7bff"
+      },
+      "browser-single/qemu/Dockerfile.appendix": {
+        "mode": "100644",
+        "gitBlob": "71305b8fc731b9b8972eb69ac571a6ef9e2ec26e",
+        "bytes": 14342,
+        "sha256": "5502d1193666d14d7f60e1641caa5c21d151ad0a9eff17760490dd95bd863218"
+      },
+      "browser-single/qemu/README.md": {
+        "mode": "100644",
+        "gitBlob": "93a659d6f7e13401dfa287681f9333e965e75d01",
+        "bytes": 25622,
+        "sha256": "a83f9324240721ec8bec3067774c5f0de161c86ebd4309d73125653ec1c5a292"
+      },
+      "browser-single/qemu/build.sh": {
+        "mode": "100755",
+        "gitBlob": "60838ccb9996d8ebbd86887534048ebdea813869",
+        "bytes": 17211,
+        "sha256": "61d925ec4365b1bdd8c7714d631bc7436dca7d4879b95e216ea5b2f1a6838e9d"
+      },
+      "browser-single/qemu/check-i32-multiply.mjs": {
+        "mode": "100644",
+        "gitBlob": "daf0797df28eb2af43244c3e48fc2289e20f142c",
+        "bytes": 13263,
+        "sha256": "ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff"
+      },
+      "browser-single/qemu/check-idle-gc.mjs": {
+        "mode": "100644",
+        "gitBlob": "504acc5a6c9521073f550ef1bfbf88e582cb0d63",
+        "bytes": 20454,
+        "sha256": "d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14"
+      },
+      "browser-single/qemu/check-instance-budget-bridge.mjs": {
+        "mode": "100644",
+        "gitBlob": "5d2c79dd13c153a3410fb7eba94a581a029f1a55",
+        "bytes": 10126,
+        "sha256": "5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528"
+      },
+      "browser-single/qemu/check-instance-budget.mjs": {
+        "mode": "100644",
+        "gitBlob": "d0bee0f6210a39270d110c75abaf96921022a390",
+        "bytes": 12377,
+        "sha256": "dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4"
+      },
+      "browser-single/qemu/check-memory-barrier.mjs": {
+        "mode": "100644",
+        "gitBlob": "96a41d584fb3cf74941c8930c3c64618dff8088d",
+        "bytes": 15636,
+        "sha256": "13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca"
+      },
+      "browser-single/qemu/check-runtime-diagnostics.mjs": {
+        "mode": "100644",
+        "gitBlob": "597d6d80f3b3dd5cf87fa9f5328fe9976de38970",
+        "bytes": 7484,
+        "sha256": "c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6"
+      },
+      "browser-single/qemu/i32-multiply.patch": {
+        "mode": "100644",
+        "gitBlob": "757bd5b0a17f6f1367d3d2ad0bcff365026acb6b",
+        "bytes": 1247,
+        "sha256": "c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2"
+      },
+      "browser-single/qemu/idle-gc-yield.patch": {
+        "mode": "100644",
+        "gitBlob": "ce0a540bc723a446e2e381e1de44ae9afbf2338c",
+        "bytes": 2905,
+        "sha256": "48aa5fcb57790e51f2ad16e6075fc93bf6345c944df88de5b69e8daa45540e9f"
+      },
+      "browser-single/qemu/instance-budget.patch": {
+        "mode": "100644",
+        "gitBlob": "8241c054d8ed64d2f5d9fd0418b104bf2f219471",
+        "bytes": 9204,
+        "sha256": "b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661"
+      },
+      "browser-single/qemu/memory-barrier.patch": {
+        "mode": "100644",
+        "gitBlob": "3e12508c9ce07500a94a0db4724ca51d4d4028cc",
+        "bytes": 499,
+        "sha256": "49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339"
+      }
+    },
+    "workflowCommit": "a12b8799fed16e6efc93ab55498e8f165fb1a139",
+    "runId": 43969702163,
+    "runAttempt": 1,
+    "build": {
+      "bytes": 4146,
+      "sha256": "10e405c9e53be931d1ba65a5dd8c35d2e6d36582f4f40116c517137df9e32cb1"
+    },
+    "files": {
+      "out.js": {
+        "bytes": 279363,
+        "sha256": "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"
+      },
+      "qemu-system-x86_64.wasm": {
+        "bytes": 41250530,
+        "sha256": "bca14ba86cff602c979e3ae93df80611b186ecbe101542ec14e6809c528e0db3"
+      }
+    },
+    "createdAt": "2026-11-16T22:31:37.829Z",
+    "browserAcceptanceVerified": false
+  },
+  "job": {
+    "id": 136048513861,
+    "name": "vCPU browser acceptance (chromium, 2 CPU)",
+    "run_id": 44663922895,
+    "head_sha": "d4794e07c8e9cefef6271f498c6c309ce52b661c",
+    "started_at": "2026-11-20T02:53:19Z",
+    "run_attempt": 1,
+    "source": "GitHub Actions current job API",
+    "observed_at": "2026-11-20T02:53:29.122481+00:00",
+    "checkedAt": "2026-11-20T02:54:18.413Z",
+    "jobElapsedMilliseconds": 59413,
+    "latestLaunchJobElapsedMilliseconds": 240000,
+    "outerJobMinutes": 30,
+    "runtimeStepMinutes": 25,
+    "launchPermitted": true
+  },
+  "host": {
+    "cpu": {
+      "Architecture": "x86_64",
+      "CPU(s)": "4",
+      "Model name": "AMD EPYC 7763 64-Core Processor",
+      "CPU family": "25",
+      "Model": "1",
+      "Thread(s) per core": "2",
+      "Core(s) per socket": "2",
+      "Socket(s)": "1",
+      "Stepping": "1",
+      "Hypervisor vendor": "Microsoft",
+      "Virtualization type": "full"
+    },
+    "memoryTotalKiB": 16367524
+  },
+  "chromeSmoke": {
+    "kind": "system_chrome_sandbox_smoke",
+    "startedAt": "2026-11-20T02:54:14.842Z",
+    "passed": true,
+    "vmStarted": false,
+    "acceptanceVerified": false,
+    "uid": 1001,
+    "launchOptions": {
+      "channel": "chrome",
+      "chromiumSandbox": true,
+      "headless": true,
+      "timeout": 30000,
+      "args": [
+        "--enable-automation"
+      ]
+    },
+    "executable": {
+      "path": "/opt/google/chrome/chrome",
+      "realPath": "/opt/google/chrome/chrome",
+      "bytes": 306789704,
+      "sha256": "cce8581219e59c17bcc60bff0cdfdcb2405a6d63acb1f3c32670a40814ba558c",
+      "uid": 0,
+      "gid": 0,
+      "mode": 511
+    },
+    "hostPolicy": {
+      "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+      "/etc/apparmor.d/chrome": "# This profile allows everything and only exists to give the\n# application a name instead of having the label \"unconfined\"\n\nabi <abi/4.0>,\ninclude <tunables/global>\n\nprofile chrome /opt/google/chrome/chrome flags=(unconfined) {\n  userns,\n\n  # Site-specific additions and overrides. See local/README for details.\n  include if exists <local/chrome>\n}\n"
+    },
+    "actualVersion": "157.0.8103.50",
+    "commandLine": {
+      "arguments": [
+        "/opt/google/chrome/chrome",
+        "--disable-field-trial-config",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-back-forward-cache",
+        "--disable-breakpad",
+        "--disable-component-extensions-with-background-pages",
+        "--disable-component-update",
+        "--no-default-browser-check",
+        "--disable-default-apps",
+        "--disable-dev-shm-usage",
+        "--disable-edgeupdater",
+        "--disable-extensions",
+        "--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,AvoidCorsURLLoaderRestartOnRedirect,TcpPortRandomizationWin,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,PreconnectToSearch,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion",
+        "--enable-features=CDPScreenshotNewSurface,SkipListAccountsWithoutGaiaCookies",
+        "--allow-pre-commit-input",
+        "--disable-hang-monitor",
+        "--disable-ipc-flooding-protection",
+        "--disable-popup-blocking",
+        "--disable-prompt-on-repost",
+        "--disable-renderer-backgrounding",
+        "--disable-updater-scheduler",
+        "--force-color-profile=srgb",
+        "--metrics-recording-only",
+        "--no-first-run",
+        "--password-store=basic",
+        "--use-mock-keychain",
+        "--no-service-autorun",
+        "--disable-search-engine-choice-screen",
+        "--unsafely-disable-devtools-self-xss-warnings",
+        "--enable-unsafe-swiftshader",
+        "--edge-skip-compat-layer-relaunch",
+        "--disable-stack-profiler",
+        "--disable-infobars",
+        "--disable-sync",
+        "--do-not-de-elevate",
+        "--headless",
+        "--hide-scrollbars",
+        "--mute-audio",
+        "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
+        "--enable-automation",
+        "--user-data-dir=/tmp/playwright_chromiumdev_profile-Mff9fq",
+        "--remote-debugging-pipe",
+        "--no-startup-window",
+        "--noerrdialogs",
+        "--ozone-platform=headless",
+        "--ozone-override-screen-size=800,600",
+        "--use-angle=swiftshader-webgl",
+        "--flag-switches-begin",
+        "--flag-switches-end",
+        "--enable-unsafe-swiftshader"
+      ]
+    },
+    "sandboxStatus": "Sandbox Status\nLayer 1 Sandbox\tNamespace\nPID namespaces\tYes\nNetwork namespaces\tYes\nSeccomp-BPF sandbox\tYes\nSeccomp-BPF sandbox supports TSYNC\tYes\nPtrace Protection with Yama LSM (Broker)\tYes\nPtrace Protection with Yama LSM (Non-broker)\tNo\n\nYou are adequately sandboxed.",
+    "finishedAt": "2026-11-20T02:54:16.321Z"
+  },
+  "playwrightLock": {
+    "bytes": 1563,
+    "sha256": "baf92c9667c5a88201e9c6f6df2fe33574de28c075c805bfd959bbd339d7951a"
+  },
+  "topology": {
+    "requestedVirtualCPUs": 2,
+    "vm": {
+      "cpus": 2,
+      "reportedLogicalCPUs": 4,
+      "cpuTopology": "2,sockets=2,cores=1,threads=1",
+      "memoryMiB": 512,
+      "slabDebug": false,
+      "kernelLogLevel": 7,
+      "qemuLiveInstanceLimit": 15000,
+      "entropyConfiguration": {
+        "backend": "rng-random",
+        "hostDevice": "/dev/urandom",
+        "guestDevice": "virtio-rng-pci",
+        "webCryptoRequired": true
+      }
+    },
+    "originalOnlineMarkers": [
+      "0-1"
+    ],
+    "originalServiceAvailabilityMarkers": [
+      "0-1"
+    ],
+    "matches": true,
+    "checkerObservation": {
+      "requestedVirtualCPUs": 2,
+      "expectedTopology": "2,sockets=2,cores=1,threads=1",
+      "expectedCPUList": "0-1",
+      "observedVirtualCPUs": 2,
+      "observedTopology": "2,sockets=2,cores=1,threads=1",
+      "reportedHostLogicalCPUs": 4,
+      "onlineCPUMarkers": [
+        "0-1"
+      ],
+      "serviceCPUMarkers": [
+        "0-1"
+      ],
+      "launcherMatches": true,
+      "linuxOnlineMatches": true,
+      "serviceAvailabilityMatches": true,
+      "logCaptureComplete": true,
+      "scope": "Observed topology only; neither successful authorization nor an isolated MTTCG root cause.",
+      "matches": true
+    }
+  },
+  "capture": {
+    "format": "browser-lab-log-batches-v1",
+    "complete": true,
+    "chunks": 67350,
+    "batches": 674,
+    "bytes": 123535,
+    "expectedSequence": 67350
+  },
+  "pageErrors": [],
+  "acceptance": {
+    "twoRealVectorsVerified": false,
+    "checkerClaimsPass": false,
+    "fullGateVerified": false,
+    "passes": [],
+    "guestPasses": [],
+    "booted": true,
+    "ready": false,
+    "accepted": false,
+    "checks": 0
+  },
+  "sourceTimeline": {
+    "firstNonemptyBatch": {
+      "streamLine": 1,
+      "hostReceivedAt": "2026-11-20T02:54:23.713Z",
+      "firstSequence": 1,
+      "lastSequence": 10,
+      "nonempty": true
+    },
+    "lastNonemptyBatch": {
+      "streamLine": 674,
+      "hostReceivedAt": "2026-11-20T03:09:46.538Z",
+      "firstSequence": 67331,
+      "lastSequence": 67350,
+      "nonempty": true
+    },
+    "resultStartedAt": "2026-11-20T02:54:18.776Z",
+    "resultFinishedAt": "2026-11-20T03:09:46.677Z"
+  },
+  "diagnosticReplayCutoff": {
+    "consoleLine": 572,
+    "characterOffset": 111304,
+    "streamLine": 602,
+    "hostReceivedAt": "2026-11-20T03:09:42.752Z",
+    "line": "Guest diagnostic: /tmp/browser-lab-startup.log"
+  },
+  "eventScope": "Only unique full original lines before the first Guest diagnostic replay; terminal LAB|boot-failed is recorded separately. Guest service duration_ms and host receipt timestamps are not interchangeable.",
+  "phases": [
+    {
+      "kind": "guest_boot",
+      "consoleLine": 340,
+      "characterOffset": 35842,
+      "streamLine": 278,
+      "hostReceivedAt": "2026-11-20T02:56:30.229Z",
+      "line": "LAB|boot"
+    },
+    {
+      "kind": "executables_staged",
+      "consoleLine": 374,
+      "characterOffset": 45446,
+      "streamLine": 310,
+      "hostReceivedAt": "2026-11-20T02:56:47.211Z",
+      "line": "[browser-guest] executables staged; starting the real services"
+    },
+    {
+      "kind": "postgres_init",
+      "consoleLine": 375,
+      "characterOffset": 45510,
+      "streamLine": 311,
+      "hostReceivedAt": "2026-11-20T02:56:49.730Z",
+      "line": "[browser-single] initializing isolated PostgreSQL 17"
+    },
+    {
+      "kind": "postgres_started",
+      "consoleLine": 438,
+      "characterOffset": 64750,
+      "streamLine": 374,
+      "hostReceivedAt": "2026-11-20T03:01:52.416Z",
+      "line": "server started"
+    },
+    {
+      "kind": "openfga_migrate_start",
+      "consoleLine": 439,
+      "characterOffset": 64766,
+      "streamLine": 375,
+      "hostReceivedAt": "2026-11-20T03:02:44.649Z",
+      "line": "[browser-single] migrating and starting real OpenFGA 1.10.3"
+    },
+    {
+      "kind": "openfga_listener_wait",
+      "consoleLine": 440,
+      "characterOffset": 64827,
+      "streamLine": 376,
+      "hostReceivedAt": "2026-11-20T03:03:18.594Z",
+      "line": "[browser-single] waiting for the OpenFGA HTTP listener"
+    },
+    {
+      "kind": "model_bind_start",
+      "consoleLine": 449,
+      "characterOffset": 65851,
+      "streamLine": 386,
+      "hostReceivedAt": "2026-11-20T03:04:12.381Z",
+      "line": "[browser-single] binding the pinned Lakekeeper model and seeding real SQL data"
+    },
+    {
+      "kind": "axum_start",
+      "consoleLine": 482,
+      "characterOffset": 70378,
+      "streamLine": 424,
+      "hostReceivedAt": "2026-11-20T03:04:39.543Z",
+      "line": "[browser-single] starting real Axum, HTTP port 3000"
+    }
+  ],
+  "openfgaEvents": [
+    {
+      "kind": "warmup_start",
+      "consoleLine": 441,
+      "characterOffset": 64883,
+      "streamLine": 377,
+      "hostReceivedAt": "2026-11-20T03:03:40.246Z",
+      "line": "[browser-openfga] 2026/11/20 03:01:42.773670 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60",
+      "fields": {
+        "model_sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
+        "model_bytes": 52709,
+        "cycles": 1,
+        "timeout_seconds": 60
+      },
+      "guestLoggedAt": "2026/11/20 03:01:42.773670"
+    },
+    {
+      "kind": "warmup_cycle",
+      "consoleLine": 442,
+      "characterOffset": 65066,
+      "streamLine": 379,
+      "hostReceivedAt": "2026-11-20T03:04:03.605Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:06.126705 warmup_cycle cycle=1 completed=true current_stage=complete failed=false json_decode_ms=3945 protobuf_ms=2700 generated_validation_ms=436 typesystem_ms=10152 response_codec_ms=5758",
+      "fields": {
+        "cycle": 1,
+        "completed": true,
+        "current_stage": "complete",
+        "failed": false,
+        "json_decode_ms": 3945,
+        "protobuf_ms": 2700,
+        "generated_validation_ms": 436,
+        "typesystem_ms": 10152,
+        "response_codec_ms": 5758
+      },
+      "guestLoggedAt": "2026/11/20 03:02:06.126705"
+    },
+    {
+      "kind": "warmup_end",
+      "consoleLine": 443,
+      "characterOffset": 65292,
+      "streamLine": 380,
+      "hostReceivedAt": "2026-11-20T03:04:03.640Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:06.130819 warmup_end duration_ms=23360 failed=false",
+      "fields": {
+        "duration_ms": 23360,
+        "failed": false
+      },
+      "guestLoggedAt": "2026/11/20 03:02:06.130819"
+    },
+    {
+      "kind": "grpc_dial_start",
+      "consoleLine": 446,
+      "characterOffset": 65554,
+      "streamLine": 383,
+      "hostReceivedAt": "2026-11-20T03:04:06.406Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:08.822020 grpc_dial_start timeout_seconds=60",
+      "fields": {
+        "timeout_seconds": 60
+      },
+      "guestLoggedAt": "2026/11/20 03:02:08.822020"
+    },
+    {
+      "kind": "grpc_dial_end",
+      "consoleLine": 447,
+      "characterOffset": 65635,
+      "streamLine": 384,
+      "hostReceivedAt": "2026-11-20T03:04:07.042Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:09.590095 grpc_dial_end duration_ms=767 failed=false context_error=<nil>",
+      "fields": {
+        "duration_ms": 767,
+        "failed": false,
+        "context_error": "<nil>"
+      },
+      "guestLoggedAt": "2026/11/20 03:02:09.590095"
+    },
+    {
+      "kind": "http_start",
+      "consoleLine": 476,
+      "characterOffset": 69641,
+      "streamLine": 417,
+      "hostReceivedAt": "2026-11-20T03:04:34.660Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:37.211350 http_start method=\"POST\" path=\"/stores/01M7VEF8TWWGQ20T27CJSYKFMS/check\" content_length=217",
+      "fields": {
+        "method": "POST",
+        "path": "/stores/01M7VEF8TWWGQ20T27CJSYKFMS/check",
+        "content_length": 217
+      },
+      "guestLoggedAt": "2026/11/20 03:02:37.211350"
+    },
+    {
+      "kind": "rpc_start",
+      "consoleLine": 477,
+      "characterOffset": 69779,
+      "streamLine": 418,
+      "hostReceivedAt": "2026-11-20T03:04:34.776Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:37.328480 rpc_start method=\"/openfga.v1.OpenFGAService/Check\"",
+      "fields": {
+        "method": "/openfga.v1.OpenFGAService/Check"
+      },
+      "guestLoggedAt": "2026/11/20 03:02:37.328480"
+    },
+    {
+      "kind": "model_resolver_transfer",
+      "consoleLine": 478,
+      "characterOffset": 69877,
+      "streamLine": 419,
+      "hostReceivedAt": "2026-11-20T03:04:35.715Z",
+      "line": "2026/11/20 03:02:38 [browser-openfga] model_resolver_transfer claimed=true",
+      "fields": {
+        "claimed": true
+      },
+      "guestLoggedAt": "2026/11/20 03:02:38"
+    },
+    {
+      "kind": "rpc_end",
+      "consoleLine": 479,
+      "characterOffset": 69953,
+      "streamLine": 421,
+      "hostReceivedAt": "2026-11-20T03:04:37.519Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:40.049435 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"OK\" duration_ms=2720 context_state=\"none\" error_kind=\"none\"",
+      "fields": {
+        "method": "/openfga.v1.OpenFGAService/Check",
+        "status": "OK",
+        "duration_ms": 2720,
+        "context_state": "none",
+        "error_kind": "none"
+      },
+      "guestLoggedAt": "2026/11/20 03:02:40.049435"
+    },
+    {
+      "kind": "http_end",
+      "consoleLine": 480,
+      "characterOffset": 70117,
+      "streamLine": 422,
+      "hostReceivedAt": "2026-11-20T03:04:37.564Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:40.113670 http_end method=\"POST\" path=\"/stores/01M7VEF8TWWGQ20T27CJSYKFMS/check\" content_length=217 duration_ms=2902 context_error=<nil>",
+      "fields": {
+        "method": "POST",
+        "path": "/stores/01M7VEF8TWWGQ20T27CJSYKFMS/check",
+        "content_length": 217,
+        "duration_ms": 2902,
+        "context_error": "<nil>"
+      },
+      "guestLoggedAt": "2026/11/20 03:02:40.113670"
+    },
+    {
+      "kind": "rpc_end",
+      "consoleLine": 567,
+      "characterOffset": 110829,
+      "streamLine": 597,
+      "hostReceivedAt": "2026-11-20T03:09:26.285Z",
+      "line": "[browser-openfga] 2026/11/20 03:07:28.833755 rpc_end method=\"/openfga.v1.OpenFGAService/Write\" status=\"Code(4004)\" duration_ms=3087 context_state=\"deadline\" error_kind=\"other\"",
+      "fields": {
+        "method": "/openfga.v1.OpenFGAService/Write",
+        "status": "Code(4004)",
+        "duration_ms": 3087,
+        "context_state": "deadline",
+        "error_kind": "other"
+      },
+      "guestLoggedAt": "2026/11/20 03:07:28.833755"
+    }
+  ],
+  "checkOutcomes": [
+    {
+      "kind": "rpc_end",
+      "consoleLine": 479,
+      "characterOffset": 69953,
+      "streamLine": 421,
+      "hostReceivedAt": "2026-11-20T03:04:37.519Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:40.049435 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"OK\" duration_ms=2720 context_state=\"none\" error_kind=\"none\"",
+      "fields": {
+        "method": "/openfga.v1.OpenFGAService/Check",
+        "status": "OK",
+        "duration_ms": 2720,
+        "context_state": "none",
+        "error_kind": "none"
+      },
+      "guestLoggedAt": "2026/11/20 03:02:40.049435"
+    }
+  ],
+  "rpcFailures": [
+    {
+      "kind": "rpc_end",
+      "consoleLine": 567,
+      "characterOffset": 110829,
+      "streamLine": 597,
+      "hostReceivedAt": "2026-11-20T03:09:26.285Z",
+      "line": "[browser-openfga] 2026/11/20 03:07:28.833755 rpc_end method=\"/openfga.v1.OpenFGAService/Write\" status=\"Code(4004)\" duration_ms=3087 context_state=\"deadline\" error_kind=\"other\"",
+      "fields": {
+        "method": "/openfga.v1.OpenFGAService/Write",
+        "status": "Code(4004)",
+        "duration_ms": 3087,
+        "context_state": "deadline",
+        "error_kind": "other"
+      },
+      "guestLoggedAt": "2026/11/20 03:07:28.833755"
+    }
+  ],
+  "warmupOutcomes": [
+    {
+      "kind": "warmup_end",
+      "consoleLine": 443,
+      "characterOffset": 65292,
+      "streamLine": 380,
+      "hostReceivedAt": "2026-11-20T03:04:03.640Z",
+      "line": "[browser-openfga] 2026/11/20 03:02:06.130819 warmup_end duration_ms=23360 failed=false",
+      "fields": {
+        "duration_ms": 23360,
+        "failed": false
+      },
+      "guestLoggedAt": "2026/11/20 03:02:06.130819"
+    }
+  ],
+  "originalServiceErrors": [
+    {
+      "consoleLine": 569,
+      "characterOffset": 111180,
+      "streamLine": 600,
+      "hostReceivedAt": "2026-11-20T03:09:26.985Z",
+      "line": "Error: \"OpenFGA returned 500 Internal Server Error; expected 200\""
+    },
+    {
+      "consoleLine": 570,
+      "characterOffset": 111247,
+      "streamLine": 601,
+      "hostReceivedAt": "2026-11-20T03:09:31.184Z",
+      "line": "[browser-single] a required service exited (status 1)"
+    }
+  ],
+  "originalProtocolMarkers": [
+    {
+      "consoleLine": 340,
+      "characterOffset": 35842,
+      "streamLine": 278,
+      "hostReceivedAt": "2026-11-20T02:56:30.229Z",
+      "line": "LAB|boot"
+    }
+  ],
+  "terminalMarkers": [
+    {
+      "consoleLine": 685,
+      "characterOffset": 123476,
+      "streamLine": 674,
+      "hostReceivedAt": "2026-11-20T03:09:46.538Z",
+      "line": "LAB|boot-failed"
+    }
+  ],
+  "lastOriginalServiceEvent": {
+    "consoleLine": 570,
+    "characterOffset": 111247,
+    "streamLine": 601,
+    "hostReceivedAt": "2026-11-20T03:09:31.184Z",
+    "line": "[browser-single] a required service exited (status 1)"
+  },
+  "failure": {
+    "guest": "LAB|boot-failed",
+    "browserChecker": "AssertionError [ERR_ASSERTION]: {\"booted\":true,\"ready\":false,\"accepted\":false,\"checks\":0,\"passes\":[],\"source\":\"99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58\",\"startupManifest\":{\"base_source_commit\":\"99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58\",\"openfga_build\":{\"upstream_version\":\"1.10.3\",\"source_commit\":\"293893b22a53d8a130a5f7c97cab4bc8e91bcaa4\",\"go_version\":\"go1.24.6\",\"build_date\":\"2025-10-14T19:02:13Z\",\"target\":\"linux/amd64\",\"startup_dial_timeout_seconds\":60,\"transport_diagnostics\":\"http_and_unary_rpc_metadata_only\",\"unary_raw_logging\":\"disabled_browser_only\",\"startup_model_warmup\":\"in_process_codec_validation_with_exact_schema_cache\",\"model_validation_cache\":\"conditionless_exact_protobuf_body_except_id\",\"model_json_decoder\":\"pinned_json_decode_private_clone\",\"model_json_encoder\":\"single_exact_real_model_response\",\"first_resolver_typesystem_reuse\":\"one_shot_after_real_model_read\",\"schema_reachability_reuse\":\"readonly_plain_user_paths_on_startup_typesystem\",\"schema_reachability_max_relations\":512,\"schema_reachability_preparation\":\"two_breadth_first_walks\",\"schema_reachability_max_walks\":2,\"warmup_generated_validation\":\"ValidateAll\",\"tuple_write_typesystem_reuse\":\"same_request_store_and_model\",\"warmup_model_sha256\":\"a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d\",\"warmup_model_bytes\":52709,\"warmup_timeout_seconds\":60,\"warmup_cycles\":1,\"authorization_request_timeout_default_seconds\":3,\"patch_sha256\":\"f699ff2d2cc55c2888ae3bc1e474990097fe21d7f4491f2ee8e23727f3c78ced\",\"helper_sha256\":\"485d1452148f325e553ad82f79417ec27b46be24217ece9e149ee2f8452ad954\",\"tests_sha256\":\"18784ee73b605cd74060c0e61d584d17fad54eee0db85b2ac91a490a21087285\",\"warmup_helper_sha256\":\"5be5cca1bacc47f3b70b24de22eb513461efd96c71ab8f509b2fc20cbefce7df\",\"warmup_tests_sha256\":\"2d9d6d7aee965a4a29d3cbf89f2e8faedb5040dee1d9e788b5901eddfbcfe320\",\"model_codec_helper_sha256\":\"eb70a26523c3e8020247403e9a2dd2187421fa3a72612112715425395cc4eae7\",\"model_codec_tests_sha256\":\"f4e6b034bcc81af3dac07e2529906c6714b1531c6e6ff27b9a89f3821c01ab56\",\"model_codec_integration_tests_sha256\":\"d5f9d2a30c9bcc29fa702a8e36b0aeff41e96731130dcf2ecf1b932f5c355a1f\",\"model_validation_helper_sha256\":\"c960482baaced488a1afa206fefdbbee37ea90b8aadc40a1daeea955ad2a5584\",\"model_validation_tests_sha256\":\"77a7b20efc52d8b179ffffc7e913df7009eeb962ca61bb5d15a2043bdf935bec\",\"write_typesystem_tests_sha256\":\"af0392bfbd9e31ffdafae4a1a9c703d6d0b9e11599da044287d88bda3ae9a2ce\",\"resolver_transfer_integration_tests_sha256\":\"23f160617087a505cf3736e7b092171b37e134f32585dee28e8ee9c2def45203\",\"model_reuse_race_tests_sha256\":\"c928d27f0babcd9ecf3705ef69276b618d6ca4e72bc1161eaa0504fc2d7808f5\",\"go_sum_sha256\":\"ec04d405b1481247a862925af710f72d7a7e4684b8961ca4a6a3467911befb83\",\"binary_sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\",\"startup_dial_tests\":\"passed\",\"transport_diagnostics_tests\":\"passed\",\"warmup_tests\":\"passed\",\"model_codec_tests\":\"passed\",\"model_validation_tests\":\"passed\",\"schema_reachability_tests\":\"passed\",\"write_typesystem_tests\":\"passed\",\"model_reuse_race_tests\":\"passed\"},\"bootstrap_build\":{\"schema_version\":1,\"source_commit\":\"207d15fab685d3adb9c5d51a048982c2236ae75c\",\"target\":\"linux/amd64\",\"image_id\":\"sha256:1834dba7942932e1fe5abb176f9a65786e141d23128d607cec6be2fa87234865\",\"binary_bytes\":7444640,\"binary_sha256\":\"e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275\",\"dockerfile_sha256\":\"7b0294fb444df591975f914f0bd43aa0a46c903dcc36e688820f6b0ca6c00179\",\"cargo_toml_sha256\":\"1ed76c6d91b38b4ed0c3bf4f0e486b618bd1b41e79a4fd923071542474182544\",\"cargo_lock_sha256\":\"2ea76b7fe70c27b591400cc4574d039ef0712033df8edc7f8505d48cc5474679\",\"bootstrap_source_sha256\":\"53029e5aeee662c276346d32e0fb2edfff26a3d573512e2e9651cbca460e561d\",\"bootstrap_tests_sha256\":\"4e16aa34e3c19fd1c5d8c337eee13f2ccd5c8c48b0868f94783f05972cf2bb63\",\"timeout_scope\":\"bootstrap_model_post_and_get\",\"default_model_timeout_seconds\":5,\"min_model_timeout_seconds\":5,\"max_model_timeout_seconds\":30,\"browser_model_timeout_seconds\":30,\"empty_store_check\":\"one_real_higher_consistency_ownership_deny\",\"empty_store_check_default\":false,\"browser_empty_store_check\":true,\"empty_store_check_timeout_seconds\":5,\"empty_store_check_tests\":\"passed\",\"native_tests\":\"passed\",\"native_test_log_sha256\":\"8e440dbe5fbd36753baeb036377cdb7b1c3b96280ea3c2acac74c11febcec22b\",\"packaging_commit\":\"4b7a1e1933083232fb8305a60a47bdd3c32e6689\",\"native_proof_sha256\":\"d37029e3213995ff9d8fc58eb08adf0e3daeb30a0c0da5855231be7c16991646\",\"proof_semantics_origin_commit\":\"c8cf8630d86712567935e064dabd8b437640c8c6\",\"native_harness_runtime\":\"node\",\"expected_openfga_sha_input\":\"required_verified_build_metadata\",\"native_harness_sha256\":\"5c84bd3035d18b6d9361042819b9578599fb6ffa5d556eacca87daff49ba7869\",\"producer_sha256\":\"f8a5879e0eaf6a241737673b263128fe5c97c2358a35241bedf7b28441e778c3\",\"openfga_binary_sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\",\"openfga_build_sha256\":\"0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754\",\"workflow_commit\":\"bb8284f17e78667c6ea46a2de02de5dc3f3507af\",\"run_id\":\"43500949883\",\"run_attempt\":\"1\",\"browser_acceptance_verified\":false},\"emulator_build\":{\"converter_commit\":\"087c313479d51cdf255e4f28ded6ae7d8141297b\",\"converter_dockerfile_sha256\":\"f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508\",\"qemu_commit\":\"8604ed49a3cde392890b014a8d5a959c8a2fe72a\",\"backend_postimage_blob\":\"5b6be92da27d573577854f6badf7fbbb1082f83f\",\"emscripten_version\":\"4.0.10\",\"emsdk_image\":\"emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7\",\"max_instance_alive_before\":15000,\"max_instance_alive_after\":15000,\"max_instance_running_local\":2048,\"instance_budget_configuration\":\"shared_c_pre_run_setter\",\"firefox_instance_limit\":8192,\"chromium_instance_limit\":15000,\"instance_reservation\":\"atomic_compare_exchange\",\"instance_budget_tests\":\"passed\",\"instance_budget_bridge_tests\":\"passed\",\"runtime_diagnostics\":\"module_lifecycle_counters_v1\",\"runtime_diagnostics_tests\":\"passed\",\"i32_multiply_fix\":\"normalize_operands_before_widening_product\",\"multiply_emitter_preimage_blob\":\"3c85588be97b6c53a451e30c0593e8b433ede7b6\",\"multiply_emitter_postimage_blob\":\"d4078f5adac57d9ccc7d792773fff2ea65a33d6a\",\"i32_multiply_tests\":\"passed\",\"memory_barrier_fix\":\"emit_atomic_fence_for_tcg_mb\",\"barrier_emitter_preimage_blob\":\"d4078f5adac57d9ccc7d792773fff2ea65a33d6a\",\"barrier_emitter_postimage_blob\":\"4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355\",\"memory_barrier_tests\":\"passed\",\"idle_gc_policy\":\"pending_local_finalizers_timed_idle_wait\",\"idle_gc_poll_ms\":20,\"idle_gc_tests\":\"passed\",\"idle_gc_bridge_tests\":\"passed\",\"idle_gc_preimages\":{\"tcg/wasm32.c\":\"e0b26bdc8d6d5b987061f9090ae0b62b76c34e16\",\"system/cpus.c\":\"a444a747f0164ee9a998ef4b25b49a2efc4607a8\",\"include/tcg/wasm32-gc.h\":null},\"idle_gc_postimages\":{\"tcg/wasm32.c\":\"5b6be92da27d573577854f6badf7fbbb1082f83f\",\"system/cpus.c\":\"9252d9478b067a88a776a47ca746e097591bf695\",\"include/tcg/wasm32-gc.h\":\"c3b9c7b9e3c65191cba9cc0cca117f45965a6a58\"},\"instantiate_num\":1500,\"change_kind\":\"wasm_idle_gc_scheduling_candidate\",\"patch_sha256\":\"b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661\",\"builder_sha256\":\"61d925ec4365b1bdd8c7714d631bc7436dca7d4879b95e216ea5b2f1a6838e9d\",\"dockerfile_appendix_sha256\":\"5502d1193666d14d7f60e1641caa5c21d151ad0a9eff17760490dd95bd863218\",\"budget_test_sha256\":\"dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4\",\"diagnostics_test_sha256\":\"c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6\",\"budget_bridge_test_sha256\":\"5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528\",\"budget_bridge_proof_sha256\":\"22af5ca5096b036c9e6cfaab65dcd49e6d7ebeb98bd33a1ea0f188b6f46601d9\",\"multiply_patch_sha256\":\"c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2\",\"multiply_test_sha256\":\"ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff\",\"multiply_proof_sha256\":\"d4c8e27682b953cf3653b24be5dcfb1949d2df8d710f0c6970a2631fb63350e5\",\"barrier_patch_sha256\":\"49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339\",\"barrier_test_sha256\":\"13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca\",\"barrier_proof_sha256\":\"2a9fc5dd3e9d8bb76594a5e981db510eb76a4be76a2d62be136991b640bfc7ed\",\"idle_gc_patch_sha256\":\"48aa5fcb57790e51f2ad16e6075fc93bf6345c944df88de5b69e8daa45540e9f\",\"idle_gc_test_sha256\":\"d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14\",\"idle_gc_proof_sha256\":\"a7561bab0a0ab18a3e2b6f823e8a8889e2f660c8e34216f01c16c870f5a2f2a0\",\"idle_gc_bridge_test_sha256\":\"d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14\",\"idle_gc_bridge_proof_sha256\":\"434ef8628d8a1c6367f7e71843fd7c1cc3c8c2d276b063352f40f2302daa3a88\",\"files\":{\"out.js\":{\"bytes\":279363,\"sha256\":\"95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2\"},\"qemu-system-x86_64.wasm\":{\"bytes\":41250530,\"sha256\":\"bca14ba86cff602c979e3ae93df80611b186ecbe101542ec14e6809c528e0db3\"}},\"browser_acceptance\":\"not_run\"},\"files\":{\"guest.sh\":{\"bytes\":6354,\"sha256\":\"213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649\"},\"entrypoint.sh\":{\"bytes\":5367,\"sha256\":\"930a48ef13f3df61b4bc09170f512fc7279b6c537a99eff80f24038126687225\"},\"runtime/openfga\":{\"bytes\":63074488,\"sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\"},\"runtime/bootstrap\":{\"bytes\":7444640,\"sha256\":\"e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275\"}}},\"vm\":{\"cpus\":2,\"reportedLogicalCPUs\":4,\"cpuTopology\":\"2,sockets=2,cores=1,threads=1\",\"memoryMiB\":512,\"slabDebug\":false,\"kernelLogLevel\":7,\"qemuLiveInstanceLimit\":15000,\"entropyConfiguration\":{\"backend\":\"rng-random\",\"hostDevice\":\"/dev/urandom\",\"guestDevice\":\"virtio-rng-pci\",\"webCryptoRequired\":true}},\"error\":\"LAB|boot-failed\"}\n+ actual - expected\n\n+ 'LAB|boot-failed'\n- undefined\n",
+    "validation": "AssertionError [ERR_ASSERTION]: Production checker failed\n\n1 !== 0\n",
+    "outcome": {
+      "code": 1,
+      "signal": null
+    }
+  },
+  "githubEvidence": {
+    "run": 44663922895,
+    "job": 136048513861,
+    "artifact": 14596469669,
+    "bytes": 20076758,
+    "sha256": "03e83f9b2d233eff6f9ca9ca820a0f614edd0a24182b7c46d5e2781cba844266"
+  },
+  "reportNormalization": "Local archive path shortened; evidence content and verification results unchanged."
+}
