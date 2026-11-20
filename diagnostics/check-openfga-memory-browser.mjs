@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {git,record,verifyBuild} from './candidate-emulator.mjs';
-import {parseStrictJson,validateComponentEvents} from './memory-component-protocol.mjs';
+import {createComponentRecordParser,validateComponentEvents} from './memory-component-protocol.mjs';
 
 const sourceCommit = '444b069daf16e9606a0bbf1ea0aea7f4d61b97d8';
 const emulatorCommit = '6f35f24b7ca345cf47c873becee6a41ef94e65a9';
@@ -104,7 +104,8 @@ const evidence = {kind:'real_openfga_memory_browser_component',engine:'chromium'
   captureImplementation:await record(path.join(source,'browser-single/pages/log-stream.mjs')),
   events:[],pageErrors:[]};
 const guestLog = createGuestLogCollector();
-let browser,page,hostTimer,heartbeat,pendingLine='';
+const componentLog = createComponentRecordParser();
+let browser,page,hostTimer,heartbeat;
 let resolveTerminal,rejectFailure,resolveFailureDiagnostics;
 const terminal = new Promise(resolve=>{resolveTerminal=resolve;});
 const failureDiagnostics = new Promise(resolve=>{resolveFailureDiagnostics=resolve;});
@@ -118,16 +119,8 @@ const wait = promise=>Promise.race([promise,failure]);
 const consume = batch=>{
   guestLog.appendBatch(batch);
   for (const chunk of batch) {
-    pendingLine += chunk.text.replaceAll('\r','');
-    assert(pendingLine.length<=65536,'Unexpected unterminated serial line');
-    let newline;
-    while ((newline=pendingLine.indexOf('\n'))>=0) {
-      const line=pendingLine.slice(0,newline);
-      pendingLine=pendingLine.slice(newline+1);
-      if (!line.startsWith('FGA_MEMORY|')) continue;
-      const match=/^FGA_MEMORY\|(boot|cpu|stage|processes|bootstrap|request|done|failed)\|(\{.*\})$/.exec(line);
-      assert(match,'Malformed component record');
-      const event={event:match[1],data:parseStrictJson(match[2]),hostReceivedAt:new Date().toISOString(),sourceSequence:chunk.sequence};
+    for (const parsed of componentLog.append(chunk)) {
+      const event={...parsed,hostReceivedAt:new Date().toISOString()};
       evidence.events.push(event);
       assert(evidence.events.length<=64,'Unexpected component event count');
       console.log('FGA_MEMORY_HOST '+JSON.stringify({event:event.event,cycle:event.data.cycle,operation:event.data.operation,
@@ -194,10 +187,13 @@ try {
     await fs.writeFile(path.join(output,'chromium-stream.jsonl'),captured.jsonl);
     await page.screenshot({path:path.join(output,'chromium.png'),fullPage:true,timeout:10000}).catch(error=>{evidence.screenshotError=String(error);});
   }
+  evidence.componentCapture=componentLog.snapshot();
   if (evidence.componentPassed) {
     try {
       evidence.verified=validateComponentEvents(evidence.events);
       assert.equal(evidence.logCapture?.complete,true,'Incomplete source capture');
+      assert.equal(evidence.componentCapture.chunks,evidence.logCapture.chunks,'Component capture did not consume the full source prefix');
+      assert.equal(evidence.componentCapture.partialComponentRecord,false,'Truncated component record at capture cutoff');
       assert.deepEqual(evidence.pageErrors,[]);
       assert.equal(evidence.guest?.error,undefined,'Runtime error at capture cutoff');
       assert.equal(evidence.guest?.vm?.cpus,2);

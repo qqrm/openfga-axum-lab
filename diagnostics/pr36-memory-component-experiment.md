@@ -110,3 +110,23 @@ assignments and unquoted literal `write` assignments in the new diagnostic shell
 The follow-up spells out the empty strings and quotes the literals; it does not
 change runtime behavior, inputs, requests or deadlines. This setup failure is
 excluded from component-engine results.
+
+## Capture-only correction
+
+Run `44672651991`, workflow `872ca465`, passed setup and booted Linux with two
+observed guest CPUs, but stopped before the OpenFGA startup stage. The new
+component parser incorrectly concatenated all console sources as UART text.
+One complete QEMU telemetry chunk arrived between the CPU record's closing
+brace and its UART newline, causing strict JSON parsing to fail. The retained
+artifact is `14600283284`; this instrumentation failure is inconclusive about
+the engine, and is excluded from component-engine results.
+
+The correction preserves the production launcher and raw sequenced collector.
+It removes only whole original source chunks that exactly match the pinned
+producer's `[browser-qemu] {strict JSON object}\n` form from the component parser
+input, before reconstructing UART lines. All source bytes, including telemetry,
+remain in the raw evidence. Mixed/malformed telemetry, duplicate JSON keys,
+source gaps, trailing component garbage and truncated component records cannot
+pass. The actual failing chunk sequence is retained as a regression fixture;
+additional boundary tests insert telemetry at every byte position in a record.
+Inputs, guest workload, VM configuration and time budgets remain unchanged.

@@ -1,7 +1,8 @@
 // Synthetic verifier boundary tests. These do not run or prove a browser VM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pinnedModelSha,parseStrictJson,parseHttpResponse,validateComponentEvents} from './memory-component-protocol.mjs';
+import {readFileSync} from 'node:fs';
+import {pinnedModelSha,parseStrictJson,parseHttpResponse,validateComponentEvents,createComponentRecordParser} from './memory-component-protocol.mjs';
 const base64=value=>Buffer.from(value).toString('base64');
 const http=(body,status=200,extra='')=>Buffer.from(`HTTP/1.0 ${status} Result\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n${extra}\r\n${body}`);
 function fixture() {
@@ -61,4 +62,62 @@ test('HTTP close-delimited JSON and optional typed resolution are understood',()
   assert.equal(parseHttpResponse(raw).json.allowed,false);
   const events=fixture();response(requests(events)[0],'{"resolution":null,"allowed":false}');
   assert.equal(validateComponentEvents(events).cycles,2);
+});
+
+const telemetry='[browser-qemu] {"event":"registered","phase":"add_function","core_id":0}\n';
+const cpuLine='FGA_MEMORY|cpu|{"online_cpus":"0-1","allowed_cpus":"0-1","guest_seconds":1}\r\n';
+function parseChunks(texts) {
+  const parser=createComponentRecordParser();
+  const events=texts.flatMap((text,i)=>parser.append({sequence:i+1,text}));
+  return {events,capture:parser.snapshot()};
+}
+test('actual failed-run source chunks reconstruct the CPU record without changing its JSON',()=>{
+  const recorded=JSON.parse(readFileSync(new URL('./fixtures/openfga-memory-telemetry-interleaving.json',import.meta.url)));
+  assert.equal(recorded.texts.length,recorded.lastSourceSequence-recorded.firstSourceSequence+1);
+  assert(recorded.texts.join('').includes('"guest_seconds":1}[browser-qemu] '));
+  const {events,capture}=parseChunks(recorded.texts);
+  assert.deepEqual(events,[{event:'cpu',data:{online_cpus:'0-1',allowed_cpus:'0-1',guest_seconds:1},sourceSequence:recorded.texts.length}]);
+  assert.equal(capture.telemetryChunks,1);
+  assert.equal(capture.partialComponentRecord,false);
+});
+test('whole telemetry chunks may interrupt every byte boundary, including inside JSON and CRLF',()=>{
+  for (let boundary=0;boundary<=cpuLine.length;boundary++) {
+    const texts=[...cpuLine.slice(0,boundary),telemetry,...cpuLine.slice(boundary)];
+    const {events,capture}=parseChunks(texts);
+    assert.equal(events.length,1);
+    assert.deepEqual(events[0].data,{online_cpus:'0-1',allowed_cpus:'0-1',guest_seconds:1});
+    assert.equal(capture.chunks,texts.length);assert.equal(capture.telemetryChunks,1);
+    assert.equal(capture.partialComponentRecord,false);
+  }
+});
+test('telemetry is never stripped from component JSON string content',()=>{
+  const data={phase:'quoted [browser-qemu] {"event":"text"} and \\ text'};
+  const {events,capture}=parseChunks([...'FGA_MEMORY|stage|'+JSON.stringify(data)+'\n']);
+  assert.deepEqual(events[0].data,data);assert.equal(capture.telemetryChunks,0);
+});
+test('mixed, split, malformed and duplicate-key telemetry cannot be silently removed',()=>{
+  for (const texts of [
+    [telemetry+cpuLine],
+    [telemetry.slice(0,5),telemetry.slice(5)],
+    [telemetry.slice(0,-2),telemetry.slice(-2)],
+    ['[browser-qemu] {"event":"a","event":"b"}\n'],
+    ['[browser-qemu] []\n'],
+    ['[browser-qemu] {"event":1}\n'],
+    ['[browser-qemu] {"event":"a"} trailing\n'],
+  ]) assert.throws(()=>parseChunks(texts));
+});
+test('component payload remains strict after telemetry demultiplexing',()=>{
+  for (const line of [
+    'FGA_MEMORY|cpu|{"x":1} trailing\n',
+    'FGA_MEMORY|cpu|{"x":1,"x":2}\n',
+    'FGA_MEMORY|unknown|{}\n',
+    'prefix FGA_MEMORY|done|{}\n',
+    'FGA_MEMORY|cpu|{}[browser-qemu] {"event":"registered"}\n',
+  ]) assert.throws(()=>parseChunks([...line]));
+});
+test('source gaps and unterminated component records are observable',()=>{
+  const parser=createComponentRecordParser();
+  assert.throws(()=>parser.append({sequence:2,text:cpuLine}));
+  assert.equal(parseChunks([...cpuLine.slice(0,-1)]).capture.partialComponentRecord,true);
+  assert.equal(parseChunks(['FGA_MEMORY|done|{"cycles":2,"requests":10}\n','FGA_MEMORY|failed|{']).capture.partialComponentRecord,true);
 });

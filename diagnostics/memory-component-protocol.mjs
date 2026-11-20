@@ -44,6 +44,53 @@ export function parseStrictJson(text) {
   return value;
 }
 
+// The production transcript mixes UART writes with Module.print/printErr.
+// Their source chunk boundaries are preserved by log-stream.mjs. Remove only
+// complete, strictly parsed QEMU telemetry chunks before assembling guest lines;
+// never strip substrings from guest JSON or accept just a JSON prefix.
+export function createComponentRecordParser() {
+  let pending='',chunks=0,telemetryChunks=0,telemetryBytes=0,records=0;
+  return {
+    append({sequence,text}) {
+      assert.equal(sequence,chunks+1,'Component capture source sequence gap');
+      assert.equal(typeof text,'string');
+      chunks++;
+      if (text.startsWith('[browser-qemu] ')) {
+        const match=/^\[browser-qemu\] (\{[^\r\n]*\})\n$/.exec(text);
+        assert(match,'Malformed or mixed QEMU telemetry chunk');
+        const telemetry=parseStrictJson(match[1]);
+        assert.equal(typeof telemetry.event,'string','Missing QEMU telemetry event');
+        telemetryChunks++;telemetryBytes+=Buffer.byteLength(text);
+        return [];
+      }
+      pending+=text.replaceAll('\r','');
+      assert(pending.length<=65536,'Unexpected unterminated serial line');
+      const events=[];
+      let newline;
+      while ((newline=pending.indexOf('\n'))>=0) {
+        const line=pending.slice(0,newline);
+        pending=pending.slice(newline+1);
+        if (!line.startsWith('FGA_MEMORY|')) {
+          assert(!line.includes('[browser-qemu] '),'Split or mixed QEMU telemetry in reconstructed serial line');
+          assert(!line.includes('FGA_MEMORY|'),'Component record mixed with other serial text');
+          continue;
+        }
+        const match=/^FGA_MEMORY\|(boot|cpu|stage|processes|bootstrap|request|done|failed)\|(\{.*\})$/.exec(line);
+        assert(match,'Malformed component record');
+        events.push({event:match[1],data:parseStrictJson(match[2]),sourceSequence:sequence});
+        assert(++records<=64,'Unexpected component event count');
+      }
+      return events;
+    },
+    snapshot() {
+      const prefix='FGA_MEMORY|';
+      return {format:'component-records-from-source-chunks-v1',chunks,records,telemetryChunks,telemetryBytes,
+        pendingBytes:Buffer.byteLength(pending),
+        partialComponentRecord:pending.includes(prefix)||(pending.length>0&&prefix.startsWith(pending))};
+    }
+  };
+}
+
 export function decodeBase64(value, maxBytes = 16384) {
   assert.equal(typeof value, 'string', 'Missing base64 evidence');
   assert(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value), 'Invalid base64 evidence');
