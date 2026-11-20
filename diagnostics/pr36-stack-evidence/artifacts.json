@@ -1,0 +1,51 @@
+{
+  "runId": 44675797208,
+  "jobId": 136087192171,
+  "runAttempt": 1,
+  "runUrl": "https://github.com/qqrm/openfga-axum-lab/actions/runs/44675797208",
+  "jobConclusion": "failure",
+  "workflowCommit": "9785f31adc0af939a6d1c5edac183593fc69c718",
+  "runtimeSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+  "originalApplicationSource": "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58",
+  "artifacts": [
+    {
+      "id": 14603090975,
+      "name": "pr36-full-stack-datastore-comparison",
+      "size_in_bytes": 20432058,
+      "url": "https://api.github.com/repos/qqrm/openfga-axum-lab/actions/artifacts/14603090975",
+      "archive_download_url": "https://api.github.com/repos/qqrm/openfga-axum-lab/actions/artifacts/14603090975/zip",
+      "expired": false,
+      "created_at": "2026-11-20T04:56:49Z",
+      "expires_at": "2026-12-20T04:56:45Z",
+      "updated_at": "2026-11-20T04:56:49Z",
+      "digest": "sha256:2a0ce38614395e02da10d91f0c66cc64e6d430a2b61fa97dc4992cdca7c287cd",
+      "workflow_run": {
+        "id": 44675797208,
+        "repository_id": 1448202625,
+        "head_repository_id": 1448202625,
+        "head_branch": "diag/pr36-stack-20261120",
+        "head_sha": "9785f31adc0af939a6d1c5edac183593fc69c718"
+      }
+    },
+    {
+      "id": 14602104124,
+      "name": "pr36-stack-memory-first-arm",
+      "size_in_bytes": 304752,
+      "url": "https://api.github.com/repos/qqrm/openfga-axum-lab/actions/artifacts/14602104124",
+      "archive_download_url": "https://api.github.com/repos/qqrm/openfga-axum-lab/actions/artifacts/14602104124/zip",
+      "expired": false,
+      "created_at": "2026-11-20T04:48:49Z",
+      "expires_at": "2026-12-20T04:48:47Z",
+      "updated_at": "2026-11-20T04:48:49Z",
+      "digest": "sha256:f58ec25de44aed2dd680422aa71a96607a9b56cbd31c89c26373d56436319e7d",
+      "workflow_run": {
+        "id": 44675797208,
+        "repository_id": 1448202625,
+        "head_repository_id": 1448202625,
+        "head_branch": "diag/pr36-stack-20261120",
+        "head_sha": "9785f31adc0af939a6d1c5edac183593fc69c718"
+      }
+    }
+  ]
+}

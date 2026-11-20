@@ -1,0 +1,37 @@
+{
+  "label": "lightweight",
+  "run": 43470193142,
+  "head": "0a8d7dc4ba611fe7071b34005410f4dc832d7b71",
+  "artifact": 14060071538,
+  "artifact_name": "browser-log-transport-candidate",
+  "archive": {
+    "bytes": 46909,
+    "sha256": "2845492a3a08a09f4fc957b7907b920362cf521d96545e5569afc9918182cb34"
+  },
+  "members": {
+    "artifacts/browser-log-transport-candidate/summary.json": {
+      "bytes": 6487,
+      "sha256": "494f4ada3d02dbecd63e179a4ba5dbf12937fae6de55315ef70b4bff19cf0d1d"
+    },
+    "artifacts/browser-log-transport-candidate/node-tests.log": {
+      "bytes": 6996,
+      "sha256": "747dd6777968da2525aed847c7e683ebffc8b5965c7454b676b03bb5cec0d508"
+    },
+    "diagnostics/check-log-transport-candidate.mjs": {
+      "bytes": 16939,
+      "sha256": "6042f8049571a33e53f34defc36037d580aa797127397cd28ca2373a4bf92350"
+    },
+    "source-candidate/browser-single/pages/log-stream.mjs": {
+      "bytes": 8244,
+      "sha256": "90941538e1c26c7d657591c840b08f168bdc93db8a56d07921e3a9dc02d31bc3"
+    },
+    "source-candidate/browser-single/pages/launcher.js": {
+      "bytes": 10898,
+      "sha256": "e369bc067e1bcc1f932d7aeedffa1cb34bb63903093501791a722f88577343ee"
+    },
+    "source-candidate/browser-single/log-stream.test.mjs": {
+      "bytes": 18004,
+      "sha256": "dbe62e63ef170343fdf171e61bc59e18c8b128c4b7a51f4bc724b0a7fa071a52"
+    }
+  }
+}

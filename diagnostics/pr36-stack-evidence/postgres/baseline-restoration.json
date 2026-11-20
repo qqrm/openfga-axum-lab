@@ -1,0 +1,28 @@
+{
+  "kind": "verified_between_closed_stack_checkers",
+  "baselineSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "firstCheckerSummary": {
+    "bytes": 94038,
+    "sha256": "9f55d929c54688e7c0a7523c04c3e43b5e953d3047ee89f7e7cd1cf46bfc916a"
+  },
+  "originalFiles": {
+    "guest.sh": {
+      "bytes": 6354,
+      "sha256": "213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649"
+    },
+    "entrypoint.sh": {
+      "bytes": 5367,
+      "sha256": "930a48ef13f3df61b4bc09170f512fc7279b6c537a99eff80f24038126687225"
+    },
+    "runtime/startup-manifest.json": {
+      "bytes": 10365,
+      "sha256": "9ae882bf3bebbd50aca4b50699df569c7a8308daee90b1cb99e2782fd5981962"
+    },
+    "runtime/derived-runtime.json": {
+      "bytes": 6225,
+      "sha256": "40e544aadea36f95c40fa2edce24336fa06f93c7b908edbc365259dea3530b3c"
+    }
+  },
+  "restored": true,
+  "preservedFilesUnchanged": true
+}

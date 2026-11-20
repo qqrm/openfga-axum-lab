@@ -1,0 +1,73 @@
+{
+  "label": "kernel",
+  "run": 43473084506,
+  "head": "84af5832aed519e7f0628e36afd8d2fc3e4cc270",
+  "artifact": 14061334425,
+  "artifact_name": "browser-virtio-rng-kernel-candidate",
+  "archive": {
+    "bytes": 3689588,
+    "sha256": "c71c1e7fdb705e1b5351ed82d119322c0ff7ff9f9f068d5a75a611aded2935ad"
+  },
+  "members": {
+    "kernel/bzImage": {
+      "bytes": 3629632,
+      "sha256": "17abd1165f3b228457d809adf5f4eb9163c282b6ab5b4828e1c9803a257e5421"
+    },
+    "kernel/linux.config": {
+      "bytes": 75327,
+      "sha256": "4ba9caa843f2e00738b1892a3d5cb5ce8e976debdaa3629ce584614bd8f9345d"
+    },
+    "kernel/upstream.config": {
+      "bytes": 72360,
+      "sha256": "000b13b14f4ae8f4c2ef6f7a8b5df126d7557ee2cc804e5ed620d4ffdd10bd92"
+    },
+    "kernel/ipc-baseline.config": {
+      "bytes": 72396,
+      "sha256": "b109d75227af31a6128280fd192bc06aa1e3d290075a2cf1c2e4fe148df00fcc"
+    },
+    "kernel/acpi.config.diff": {
+      "bytes": 1707,
+      "sha256": "84520b160eab472b1db6d6b028bd3f0bae19dfda5498d0d914699d514dfd388c"
+    },
+    "kernel/acpi-baseline.config": {
+      "bytes": 75338,
+      "sha256": "fbee1ad0bc5fb73f2ca82ba98fa045b76ff19e67a148b40cb93b63916c2ad9b8"
+    },
+    "kernel/rng.config.diff": {
+      "bytes": 25,
+      "sha256": "c538bd039d205bd0951c068607f8240cf3baf31d69d744434a802cd9e5876358"
+    },
+    "kernel/COPYING": {
+      "bytes": 496,
+      "sha256": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0"
+    },
+    "kernel/GPL-2.0": {
+      "bytes": 18729,
+      "sha256": "f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79"
+    },
+    "kernel/SOURCE.txt": {
+      "bytes": 443,
+      "sha256": "9893a165618938a167fd389067e6140c273c1878fde681131ef8bd2675396f62"
+    },
+    "kernel/build.sha256": {
+      "bytes": 521,
+      "sha256": "28ffe830b37725cdbcd5618fdae6009f7603f3272c2a503dc87eef19a3bf7067"
+    },
+    "metadata.json": {
+      "bytes": 3286,
+      "sha256": "c0b12511caf1facaebe036e44666a2893422368a18e16d5a5b6ab773c5c9711b"
+    },
+    "Kernel.Dockerfile": {
+      "bytes": 3946,
+      "sha256": "9232b9e18ddf0df757fe5b57c6db9c953f1fde06ae68537dfc7d78039454a7a7"
+    },
+    "source-commit.txt": {
+      "bytes": 41,
+      "sha256": "815e5ebd8040af96450cd31ee59c37dfefb123aca3fba7ad8d54b759f02fa6f0"
+    },
+    "workflow-commit.txt": {
+      "bytes": 41,
+      "sha256": "fd7a319cbd81cc1a5454d127759a263e0726867589a393e0080e2a704516cd84"
+    }
+  }
+}

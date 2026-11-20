@@ -1,0 +1,12 @@
+{
+  "kind": "paired_full_stack_datastore_workflow_outcome",
+  "finishedAt": "2026-11-20T04:56:45.471Z",
+  "workflowCommit": "9785f31adc0af939a6d1c5edac183593fc69c718",
+  "runId": 44675797208,
+  "runAttempt": 1,
+  "memoryCheckerStepOutcome": "failure",
+  "postgresCheckerStepOutcome": "failure",
+  "comparisonContinuationPermitted": true,
+  "productionGatePassed": false,
+  "bothCheckerStepsPassed": false
+}

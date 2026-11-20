@@ -1,0 +1,99 @@
+{
+  "passed": true,
+  "scope": "fresh native candidate image; not browser acceptance",
+  "source_commit": "207d15fab685d3adb9c5d51a048982c2236ae75c",
+  "packaging_commit": "4b7a1e1933083232fb8305a60a47bdd3c32e6689",
+  "image_id": "sha256:1834dba7942932e1fe5abb176f9a65786e141d23128d607cec6be2fa87234865",
+  "binary_sha256": "e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275",
+  "openfga_binary_sha256": "d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b",
+  "default_failures": [
+    {
+      "phase": "default-post",
+      "exit": 1,
+      "elapsed_ms": 5057,
+      "config_published": false,
+      "response_still_withheld": true,
+      "stderr": "Error: reqwest::Error { kind: Request, url: \"http://127.0.0.1:18080/stores/01M7B9VX99EFA0ZVJRRZ7ZPM9W/authorization-models\", source: TimedOut }\n"
+    },
+    {
+      "phase": "default-get",
+      "exit": 1,
+      "elapsed_ms": 5060,
+      "config_published": false,
+      "response_still_withheld": true,
+      "stderr": "Error: \"OpenFGA target cannot be verified; refusing silent reset: error sending request for url (http://127.0.0.1:18080/stores/01M7B9W3DYJ3YJ3QZ1VN54NFJ1/authorization-models/01M7B9W3E3XK02VXT7ARB4J99C)\"\n"
+    }
+  ],
+  "opt_in_model_timeout_seconds": 30,
+  "delayed_model_post_and_get_seconds": 6,
+  "actual_postgres_model_count": 4,
+  "empty_store_check": {
+    "request_count": 1,
+    "status": 200,
+    "allowed": false,
+    "store_id": "01M7B9WFNE5T31AHHCBZHZZJP1",
+    "authorization_model_id": "01M7B9WFNJCR4GY4SGBQJ9N84Q",
+    "consistency": "HIGHER_CONSISTENCY",
+    "tuple_key": {
+      "object": "lakekeeper_table:browser-bootstrap-probe",
+      "relation": "ownership",
+      "user": "user:browser-bootstrap-probe"
+    },
+    "tuple_count_before": 0
+  },
+  "empty_store_check_deadline_failure": {
+    "phase": "check-deadline",
+    "exit": 1,
+    "elapsed_ms": 5081,
+    "config_published": false,
+    "response_still_withheld": true,
+    "stderr": "Error: reqwest::Error { kind: Request, url: \"http://127.0.0.1:18080/stores/01M7B9W9K1RW7AQYT9VTRZZSB6/check\", source: TimedOut }\n",
+    "real_check": {
+      "request_count": 1,
+      "status": 200,
+      "allowed": false,
+      "store_id": "01M7B9W9K1RW7AQYT9VTRZZSB6",
+      "authorization_model_id": "01M7B9W9K6D9M6RT1NGVEVWBKM",
+      "consistency": "HIGHER_CONSISTENCY",
+      "tuple_key": {
+        "object": "lakekeeper_table:browser-bootstrap-probe",
+        "relation": "ownership",
+        "user": "user:browser-bootstrap-probe"
+      },
+      "tuple_count_before": 0
+    }
+  },
+  "delayed_empty_store_check_seconds": 6,
+  "actual_postgres_tuple_count_before_app": 0,
+  "native_passes": [
+    {
+      "accepted": true,
+      "statuses": [
+        403,
+        204,
+        200,
+        204,
+        403
+      ],
+      "version": {
+        "revision": "unknown",
+        "version": "0.1.0"
+      }
+    },
+    {
+      "accepted": true,
+      "statuses": [
+        403,
+        204,
+        200,
+        204,
+        403
+      ],
+      "version": {
+        "revision": "unknown",
+        "version": "0.1.0"
+      }
+    }
+  ],
+  "browser_acceptance_verified": false
+}

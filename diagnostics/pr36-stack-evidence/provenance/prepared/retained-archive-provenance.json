@@ -1,0 +1,441 @@
+{
+  "label": "retained",
+  "run": 43402635950,
+  "head": "379e3280c2a1c789071292af141648eb2fc3ffbc",
+  "artifact": 14029511154,
+  "artifact_name": "pages-browser-vm-evidence",
+  "archive": {
+    "bytes": 260830150,
+    "sha256": "73e4c4d2f2204ef4da0450e472b50ffb507e52b6a46fe55e0cab153b4fa3976e"
+  },
+  "members": {
+    "browser-output/wasm/runtime-source.zip": {
+      "bytes": 226321852,
+      "sha256": "fd7511caa98399d245adce39feb3398884f8dc56a82aa44c625e6fa46bf0acee"
+    },
+    "browser-output/wasm/runtime/derived-runtime.json": {
+      "bytes": 4474,
+      "sha256": "6cd61d4f6e27a57089eaae91eab1aa69ff6265afc17875a4cb0b606954974b1d"
+    },
+    "browser-output/wasm/runtime/startup-manifest.json": {
+      "bytes": 6168,
+      "sha256": "e112b6bec00570d46f0f5d08c92b17d1e0ad7012240299ab9c883f7db05f99d4"
+    },
+    "artifacts/browser-emulator/COPYING": {
+      "bytes": 17992,
+      "sha256": "6f04ae8364d0079a192b14635f4b1da294ce18724c034c39a6a41d1b09df6100"
+    },
+    "artifacts/browser-emulator/COPYING.LIB": {
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    "artifacts/browser-emulator/Dockerfile.appendix": {
+      "bytes": 11212,
+      "sha256": "3fab783ecaeb7d3f05c34549c0eb86cf8e6c7033587872a3470bfaf0b7847738"
+    },
+    "artifacts/browser-emulator/LICENSE": {
+      "bytes": 1177,
+      "sha256": "139c64b7a9ae62858ff969aae622ecfcf4f1519655bd92d2e70a1a2fb615690e"
+    },
+    "artifacts/browser-emulator/SOURCE.txt": {
+      "bytes": 2816,
+      "sha256": "e3fc12df025a048e39ad7b789955f4de13cf59a78208ce1df07a81c7bd23768c"
+    },
+    "artifacts/browser-emulator/build.json": {
+      "bytes": 3101,
+      "sha256": "ff02978c7dfe0085e1c8194a0e17b581199e7fa1b3e698a64e607c9d8aca675c"
+    },
+    "artifacts/browser-emulator/build.sh": {
+      "bytes": 12773,
+      "sha256": "e7588c998341139d506cb75209b33b38fc9c85cd6528573437e346a0ccb830b9"
+    },
+    "artifacts/browser-emulator/check-i32-multiply.mjs": {
+      "bytes": 13263,
+      "sha256": "ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff"
+    },
+    "artifacts/browser-emulator/check-instance-budget-bridge.mjs": {
+      "bytes": 10126,
+      "sha256": "5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528"
+    },
+    "artifacts/browser-emulator/check-instance-budget.mjs": {
+      "bytes": 12377,
+      "sha256": "dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4"
+    },
+    "artifacts/browser-emulator/check-memory-barrier.mjs": {
+      "bytes": 15636,
+      "sha256": "13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca"
+    },
+    "artifacts/browser-emulator/config-host.mak": {
+      "bytes": 375,
+      "sha256": "8434cae97c97d67f7cea0dfa1b51888b0d9f5eae0e45ebfedcd6dae17c1b861d"
+    },
+    "artifacts/browser-emulator/emscripten-version.txt": {
+      "bytes": 331,
+      "sha256": "213df36e3597ae21529432b056190e6497f1f4d0f0aeee0cfc48b55c85a241d5"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-compiler.log": {
+      "bytes": 246,
+      "sha256": "a0c53652fafca11023ff750ce8063706fbefbd341169f8f734d8510c86f0b8c9"
+    },
+    "artifacts/browser-emulator/check-runtime-diagnostics.mjs": {
+      "bytes": 7484,
+      "sha256": "c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-emitted.txt": {
+      "bytes": 712,
+      "sha256": "9771907d52a7246303b835175bf1e711814db4aa04dd2caf03c734dca99933e6"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-emitter.c": {
+      "bytes": 5643,
+      "sha256": "cb71a765542b05de8a5d7ed8779cf719e69dc61f0dd52154d02f1bc5e8dcfd8d"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-signed-aliased.wasm": {
+      "bytes": 237,
+      "sha256": "c211b6b33e3e897d70842a1057c8e83eaa793954fc658479f35f86a88f51a1f8"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-signed-distinct.wasm": {
+      "bytes": 237,
+      "sha256": "e295cb0f00a3e9b19d8ec7064fc8056697da9932a8e4766b79d39e8272a33675"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-signed-square.wasm": {
+      "bytes": 237,
+      "sha256": "f2f25e9ae7378475cc6eb2d1f10a4e96e3153e3b512f04dfbf66bfdfa055c35f"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-signed-swapped.wasm": {
+      "bytes": 237,
+      "sha256": "1172c23e270b328a5ddb8c3e6a38064a84ca92658eaa62a3f9b61e0146d49e1a"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-unsigned-aliased.wasm": {
+      "bytes": 237,
+      "sha256": "c211b6b33e3e897d70842a1057c8e83eaa793954fc658479f35f86a88f51a1f8"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-unsigned-distinct.wasm": {
+      "bytes": 237,
+      "sha256": "e295cb0f00a3e9b19d8ec7064fc8056697da9932a8e4766b79d39e8272a33675"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-unsigned-square.wasm": {
+      "bytes": 237,
+      "sha256": "f2f25e9ae7378475cc6eb2d1f10a4e96e3153e3b512f04dfbf66bfdfa055c35f"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/baseline-unsigned-swapped.wasm": {
+      "bytes": 237,
+      "sha256": "1172c23e270b328a5ddb8c3e6a38064a84ca92658eaa62a3f9b61e0146d49e1a"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-compiler.log": {
+      "bytes": 248,
+      "sha256": "b0f54cea8b84004cca5fbf6bef45daf03ed4b84355b719a3c7f2b9c258e4fabf"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-emitted.txt": {
+      "bytes": 776,
+      "sha256": "a8206b3f1724a8ee98e818b3205631aaad3336fb6c120ec328562e92d1e81278"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-emitter.c": {
+      "bytes": 5955,
+      "sha256": "44e2294f1ff85214c37e1dd4b927bf16d251e515c933fde5c2ae6fa8932cf9b0"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-signed-aliased.wasm": {
+      "bytes": 241,
+      "sha256": "879d93a2872924f1655da4ae00e6b8d7af0a15863e853bb895e56b6afe0df7ff"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-signed-distinct.wasm": {
+      "bytes": 241,
+      "sha256": "ed792aba0ac94d2ce9b87af6cb1ae476455f9f7a35a2007c383d4f486427f709"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-signed-square.wasm": {
+      "bytes": 241,
+      "sha256": "3edc5ecfd249d04c860f8b1db0ed9f80475a34b428c869961be4d0d124b5e4d9"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-signed-swapped.wasm": {
+      "bytes": 241,
+      "sha256": "67b03cfd4d06eed143c2f8dc204d3757c119043b9875cb82fc73867e3be7e261"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-unsigned-aliased.wasm": {
+      "bytes": 241,
+      "sha256": "838b38da745e05090f25b2c51cac384ef25386c784fa6ba7f0f5c2fc910edc1d"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-unsigned-distinct.wasm": {
+      "bytes": 241,
+      "sha256": "59b5d91de2d43371f7cbe42330502167b8ed6ecfd8bbe7ecd23daaff1f6203be"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-unsigned-square.wasm": {
+      "bytes": 241,
+      "sha256": "57b5e5f753db625ada633623c3b6b8af250ce8547200f41ca4b3bfb67ab50624"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/candidate-unsigned-swapped.wasm": {
+      "bytes": 241,
+      "sha256": "38847c12973221c0d2b8f763bb4a3bc17738531d9660cb955c19bea20d425902"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/i32-multiply.patch": {
+      "bytes": 1247,
+      "sha256": "c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/patched-tcg-target.c.inc": {
+      "bytes": 121281,
+      "sha256": "08616503fdcb994447eb777d7b15d9951ca0618c1fe5c77671532f4980135b1b"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/results.json": {
+      "bytes": 58413,
+      "sha256": "fe7709f036da636927d4bfb5d42793b1f71190022d49befa865b3d5b84af93be"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/summary.json": {
+      "bytes": 5235,
+      "sha256": "29bdb13a5ecd4f869fd8a717cc7320c3c7ff87ff695e48d55127aeafccd64809"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/upstream-tcg-target.c.inc": {
+      "bytes": 120969,
+      "sha256": "bdb846b844f3d7708eece5f5f1d20d71a309b7c59e3a9ada84cc51544aaa8774"
+    },
+    "artifacts/browser-emulator/i32-multiply-proof/tcg-target.h": {
+      "bytes": 5376,
+      "sha256": "b35bf018fed9dbe03a1be5dabadea2929f9cd184f70549fe27756c179d77a7e4"
+    },
+    "artifacts/browser-emulator/i32-multiply-tests.log": {
+      "bytes": 45009,
+      "sha256": "427a0163de1068e10d83a9d8d2d51d9a1d23bc7e8261d73da9589fc2c1db4521"
+    },
+    "artifacts/browser-emulator/i32-multiply.patch": {
+      "bytes": 1247,
+      "sha256": "c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate-15000.json": {
+      "bytes": 176,
+      "sha256": "a12920d7fa424ae61cdf2d5a06558ddc09f71f514297dfdce10cabc07455931f"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate-15000.log": {
+      "bytes": 101,
+      "sha256": "2eeb46648ed3df510383ea6cc63ee1032356fdd5a48facdba97f067bdf64f345"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate-8192.json": {
+      "bytes": 173,
+      "sha256": "70f494228f2e56e749896de0ecf69d03257544df2a3c2d4af343e93677f51867"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate-8192.log": {
+      "bytes": 98,
+      "sha256": "2f6fbd30d5ee91886bb2e519e0bf8ecab3beefc95ccf759428264cb8d275085a"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate-compiler.log": {
+      "bytes": 143,
+      "sha256": "cbb56576ce82b23e203932d20a162e6ef87d45908d46a5cb5d8c207c62cbff72"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate.c": {
+      "bytes": 6139,
+      "sha256": "333914a6b1e0d8080fb9b3e848e90f9a93a87beb55349ee02b14483f42f83f44"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate.mjs": {
+      "bytes": 168287,
+      "sha256": "82d833390088ab36610c662f0ef7e851ea8d45ff4ba596515f1aed483f5d80a8"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/candidate.wasm": {
+      "bytes": 287563,
+      "sha256": "0254ef14de2869f74ef7928ca6e9d07bc6a0776592e64effd63de7b7d4bba20e"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/compiler-version.txt": {
+      "bytes": 331,
+      "sha256": "213df36e3597ae21529432b056190e6497f1f4d0f0aeee0cfc48b55c85a241d5"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/missing-export-8192.log": {
+      "bytes": 831,
+      "sha256": "1dea25bcb8fcb462740e5a812d89effb4c3245c2cc76f92b0ffd30e9f3c58ce6"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/missing-export-compiler.log": {
+      "bytes": 143,
+      "sha256": "cbb56576ce82b23e203932d20a162e6ef87d45908d46a5cb5d8c207c62cbff72"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/missing-export.c": {
+      "bytes": 6118,
+      "sha256": "d4d63db11cab5103900eba113e406a9fdf3831c851d4aa5de4871c6f76d1c2ec"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/missing-export.mjs": {
+      "bytes": 168148,
+      "sha256": "2cd50f27f35058e32bbf958c9d30fb296b9827a702433dabdcf0a0407e854c4f"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/missing-export.wasm": {
+      "bytes": 287345,
+      "sha256": "80a808d941002b1ccb642d901197b3f00c3703cc1b59332d4409f0487427fd7c"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/private-state-8192.log": {
+      "bytes": 1890,
+      "sha256": "ee49ee041a8767d6d46bf8132927404d07bdea3873aa940f6b4ddc00f1d0bf0b"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/private-state-compiler.log": {
+      "bytes": 143,
+      "sha256": "cbb56576ce82b23e203932d20a162e6ef87d45908d46a5cb5d8c207c62cbff72"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/private-state.c": {
+      "bytes": 6148,
+      "sha256": "313fec56066185819c41841c47d7a2b7e369b42fcd6b1a6965d8784dcb8563fe"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/private-state.mjs": {
+      "bytes": 168299,
+      "sha256": "f6ff2cf68365653a0e31708208652be15feac757312d9702170fa95c15a88ccd"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/private-state.wasm": {
+      "bytes": 287582,
+      "sha256": "d578880ab64fc07cb21e445377e346283b4071866598b72840ea58029cd07583"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/runner.mjs": {
+      "bytes": 2151,
+      "sha256": "4c65ce3d6c10eb79afd86d9ef4a7a636922dec1d72a585ebbabb139d627a249d"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-proof/summary.json": {
+      "bytes": 3837,
+      "sha256": "a4512c4d54142eac945bfbea167a0ac95cfb098ff9edda7ecba9f54d43cb594f"
+    },
+    "artifacts/browser-emulator/instance-budget-bridge-tests.log": {
+      "bytes": 342,
+      "sha256": "e7b0016b666c6dce0bbfa2c03db1c41ad6be06215faec16a425ec8b5a408b422"
+    },
+    "artifacts/browser-emulator/instance-budget-tests.log": {
+      "bytes": 1207,
+      "sha256": "ba32cdafea74f6a07f7611dfdb7006062b3830728ee3c21f11262e481f10272a"
+    },
+    "artifacts/browser-emulator/instance-budget.patch": {
+      "bytes": 9204,
+      "sha256": "b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/atomic.h": {
+      "bytes": 14629,
+      "sha256": "0b6dab3e29211e7c31e4c846aa85d5961d4c67a84a189ebe18b1ab83cd0b2374"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-compiler.json": {
+      "bytes": 282,
+      "sha256": "5d799a146a2b4cc84a507139e4094983adecbc13f71d6f41d8d4c980f3fd95fe"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-emitted.txt": {
+      "bytes": 1002,
+      "sha256": "00969f5734374d03af5490a3d68ba96f1616b58ca2ed1234bb0cfba96caac736"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-emitter.c": {
+      "bytes": 3561,
+      "sha256": "77766cfea6c49b11a1f2470f073c11bc72aa4b9e747768c5d099b61c27dea37b"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-no-memory-stack.wasm": {
+      "bytes": 42,
+      "sha256": "7e8ecb546dcab6f24fead2767dd22dab0fbc215391eac6ac050dc7866ac2adca"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-shared-stack.wasm": {
+      "bytes": 60,
+      "sha256": "a69b8358e0603e79416a62e82a84559a833be63659dd8e51236e0e07af307da5"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-shared-write-fence-read.wasm": {
+      "bytes": 66,
+      "sha256": "fdc6d43e2d13ab6d84159e8cbcef488d682b6620c4abf9781be16df52cbf57f2"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/baseline-tcg-target.c.inc": {
+      "bytes": 121281,
+      "sha256": "08616503fdcb994447eb777d7b15d9951ca0618c1fe5c77671532f4980135b1b"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-compiler.json": {
+      "bytes": 284,
+      "sha256": "f9f06f80537d758c630e84c8b3d2b55d7b95919c9277c04a4824621b82b222b1"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-emitted.txt": {
+      "bytes": 1258,
+      "sha256": "e5797f2fd4c8be4e18868684632618f43b905956a37dd82db66742f1aa6b84fa"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-emitter.c": {
+      "bytes": 3690,
+      "sha256": "873529ffe213d5c1ff5cd79edc40450efc187c14822611ade9a06a2326c1cc0e"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-no-memory-stack.wasm": {
+      "bytes": 44,
+      "sha256": "8a241ec9351abef3e9de9506292cba84d6e5d1903df11f161cb13f38fd9d02f4"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-shared-stack.wasm": {
+      "bytes": 62,
+      "sha256": "bd78918aa000d9f21bfc6f7fa8e50dc58bcdb9760d606173039495a0bdff2ddc"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/candidate-shared-write-fence-read.wasm": {
+      "bytes": 68,
+      "sha256": "d8be0b9e58a4e8a3d52c79f9c07fffa78c924cb0b702ffb6736375d28f73a20f"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/cpu.h": {
+      "bytes": 87630,
+      "sha256": "8112aed237d6b40ce0742055b4d37277547c0e3daa947da93a897b5574c380ae"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/check-memory-barrier.mjs": {
+      "bytes": 15636,
+      "sha256": "13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/invalid-fe03.wasm": {
+      "bytes": 43,
+      "sha256": "7d90bc32a7896a419fa1d0346fa281adf1897407c47f17ce6b745d5bf91e9d5c"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/invalid-fe0301.wasm": {
+      "bytes": 44,
+      "sha256": "68b5090d1da0e7f92a5f3c6b17c4be7c0e7f7bd2b7754c283a2e42fa83593f86"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/invalid-fe0330.wasm": {
+      "bytes": 44,
+      "sha256": "ccdfd374055598c1ef04885c75addac5e6943899c94ff45cdafcd27634552cc3"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/memory-barrier.patch": {
+      "bytes": 499,
+      "sha256": "49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/patch-apply-reverse.json": {
+      "bytes": 550,
+      "sha256": "c1181921d961e5cb56723985512a1153174e185bae3444fb773c73ca26264181"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/patched-tcg-target.c.inc": {
+      "bytes": 121410,
+      "sha256": "759ae2a1ab30bb0608e33a157c149e7ea7c5d4036393d9da88c71fe6296d16a8"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/summary.json": {
+      "bytes": 6041,
+      "sha256": "e8bb2bb3425ababba676827602951abb9b880d6b37dcc34dc5750f8d1b51a5db"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/tcg-mo.h": {
+      "bytes": 2028,
+      "sha256": "c67d8ef7a2326c24fea654d024c1503a11b9a9d49a4e72ad58fc59bf2adbcac2"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/tcg-op-ldst.c": {
+      "bytes": 41650,
+      "sha256": "1edf0fc08ee5711f03d0ebfc5203b534552d6b4040ce0abecc8cfe10d3041206"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/tcg-op.c": {
+      "bytes": 104582,
+      "sha256": "706e14da2895be0cd9a33adc71fd1079d975441611fc3142882be6448d53f338"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/tcg-target.h": {
+      "bytes": 5376,
+      "sha256": "b35bf018fed9dbe03a1be5dabadea2929f9cd184f70549fe27756c179d77a7e4"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/upstream-tcg-target.c.inc": {
+      "bytes": 120969,
+      "sha256": "bdb846b844f3d7708eece5f5f1d20d71a309b7c59e3a9ada84cc51544aaa8774"
+    },
+    "artifacts/browser-emulator/memory-barrier-proof/wasm32.c": {
+      "bytes": 47348,
+      "sha256": "2218b871889a47d7a695b77d402d6c8e85962e5f743240ccd5afe86ce2ac1de1"
+    },
+    "artifacts/browser-emulator/memory-barrier-tests.log": {
+      "bytes": 641,
+      "sha256": "93a138fabb6e0a4a57cec5b67b4398a194babb3f7c6ba8a53788dc333a8097e4"
+    },
+    "artifacts/browser-emulator/memory-barrier.patch": {
+      "bytes": 499,
+      "sha256": "49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339"
+    },
+    "artifacts/browser-emulator/out.js": {
+      "bytes": 279363,
+      "sha256": "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"
+    },
+    "artifacts/browser-emulator/qemu-system-x86_64.wasm": {
+      "bytes": 41246941,
+      "sha256": "e85450e88a390c3494c9ce4d8fb599c8ed14afd8ae40b48deeee1bc6b3f34c0e"
+    },
+    "artifacts/browser-emulator/runtime-diagnostics-tests.log": {
+      "bytes": 401,
+      "sha256": "82b658c8eb3e793b1f7b54f6eb2f44830384c19702fdbd49dbddfca1c504043b"
+    },
+    "artifacts/browser-emulator/submodules.txt": {
+      "bytes": 852,
+      "sha256": "567ce5f2e65e324628b4467c325e17040425b138e9d656863749311aa65afc39"
+    },
+    "artifacts/browser-emulator/upstream.Dockerfile": {
+      "bytes": 48863,
+      "sha256": "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508"
+    }
+  }
+}

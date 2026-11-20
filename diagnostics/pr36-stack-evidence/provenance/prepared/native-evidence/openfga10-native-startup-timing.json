@@ -1,0 +1,22 @@
+{
+  "scope": "native service startup observations only",
+  "producerSource": "bb8fed250bdee9931f7702ae2475d28e5e9eed8f",
+  "runtimeSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "stackLogAvailable": true,
+  "stackLogBytes": 749770,
+  "stackLogSha256": "c2106178df758025ddb75bfcb02fa9adbc5f04c3bb22057ff5426ccfd6a5db49",
+  "sourceExpectedSchemaPairs": 316,
+  "sourceMaximumGraphWalks": 2,
+  "sourceMaximumRelations": 512,
+  "existingWarmupTimeoutSeconds": 60,
+  "typesystemStageIncludesOriginalValidationAndSchemaSeed": true,
+  "warmupRecords": [
+    "[browser-openfga] 2026/11/13 20:33:52.064218 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60",
+    "[browser-openfga] 2026/11/13 20:33:52.082184 warmup_cycle cycle=1 completed=true current_stage=complete failed=false json_decode_ms=2 protobuf_ms=2 generated_validation_ms=0 typesystem_ms=8 response_codec_ms=3",
+    "[browser-openfga] 2026/11/13 20:33:52.082201 warmup_end duration_ms=18 failed=false"
+  ],
+  "warmupRecordCount": 3,
+  "recordsTruncated": false,
+  "browserPerformanceVerified": false,
+  "browserAcceptanceVerified": false
+}

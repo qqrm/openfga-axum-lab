@@ -1,0 +1,264 @@
+{
+  "archiveId": 14603090975,
+  "archiveBytes": 20432058,
+  "archiveSHA256": "2a0ce38614395e02da10d91f0c66cc64e6d430a2b61fa97dc4992cdca7c287cd",
+  "interimArchiveId": 14602104124,
+  "allInterimMembersIdentical": true,
+  "files": {
+    "comparison-continuation.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/comparison-continuation.json",
+      "bytes": 972,
+      "sha256": "e4325256f8ef3c0e8e324a695fc02e1ff925ad635e53947de9a5961c93e8acb7"
+    },
+    "memory/checker-transform.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/checker-transform.json",
+      "bytes": 712,
+      "sha256": "03194dc479696d031c3adb229662600efdb3acf120cbcaaa6db37f06701e1259"
+    },
+    "comparison-outcome.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/comparison-outcome.json",
+      "bytes": 407,
+      "sha256": "172eb7bc36c1f3684c3266cba953b1b11c8a6895849aec040091b4f91e7d5978"
+    },
+    "memory/chromium-stream.jsonl": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/chromium-stream.jsonl",
+      "bytes": 980186,
+      "sha256": "30a1e54635de41a8df3158d0c82d5eb51279286f626c88fb5d8e3b4d33319f4b"
+    },
+    "memory/chromium-console.txt": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/chromium-console.txt",
+      "bytes": 242992,
+      "sha256": "ab253d1ee597c75052a31c06b4f126addc8c67bae812aaf3f1a0ec179934cac4"
+    },
+    "memory/chromium.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/chromium.json",
+      "bytes": 22590,
+      "sha256": "ee864f20bbe99717a94f7d2be4d0a0132e61393eab38ca3c0416adbc73e7821a"
+    },
+    "memory/job-budget.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/job-budget.json",
+      "bytes": 569,
+      "sha256": "bdce65aa4e34cf3422dd62f47be34bfea01e9b22f675c3f0a45fe9bf61a4ff8a"
+    },
+    "memory/stack-overlay.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/stack-overlay.json",
+      "bytes": 56509,
+      "sha256": "7bd6c8bdaa9a7ca1d22e44dfa507abc820dd28e9b09308db33c54af12bbfb6f9"
+    },
+    "memory/summary.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/summary.json",
+      "bytes": 94038,
+      "sha256": "9f55d929c54688e7c0a7523c04c3e43b5e953d3047ee89f7e7cd1cf46bfc916a"
+    },
+    "memory/topology-observation.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/memory/topology-observation.json",
+      "bytes": 423,
+      "sha256": "69b37d4a62d02ea63a8086e26d483dbf54c5dd9952e44ca5893137f4c345c419"
+    },
+    "postgres/baseline-restoration.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/baseline-restoration.json",
+      "bytes": 895,
+      "sha256": "9e52dca7c9b8b80ff1782090c72f3774a6a23632e3ce664e8474baf3d7e21dc8"
+    },
+    "postgres/checker-transform.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/checker-transform.json",
+      "bytes": 716,
+      "sha256": "f64ef0b47156787686c87cdff34ed8b093cd8127a65987f49b0530a1cb50dbf3"
+    },
+    "postgres/chromium-console.txt": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/chromium-console.txt",
+      "bytes": 96149,
+      "sha256": "1ed844815a9d1588aad126235dcbe892a1a7678956439bb8a544709691186295"
+    },
+    "postgres/chromium-stream.jsonl": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/chromium-stream.jsonl",
+      "bytes": 327744,
+      "sha256": "5feaeac82f5bbc7c7f8f82d5344480af4cf6f104e8f1050a1ea4733d8ad43436"
+    },
+    "postgres/job-budget.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/job-budget.json",
+      "bytes": 574,
+      "sha256": "a1e9c233930cd3412996b8dd0ffb8892acdd7fee51d8d0fbb2c544844490e577"
+    },
+    "postgres/chromium.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/chromium.json",
+      "bytes": 22586,
+      "sha256": "2fae920eb7f34f6535691415064025c64fe1290adefb62c2b0b3637af0331e67"
+    },
+    "postgres/stack-overlay.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/stack-overlay.json",
+      "bytes": 55612,
+      "sha256": "92316f60c737f3a2310162f84c23ab634a622a3fdacdb2eb19bef42c58cc5668"
+    },
+    "postgres/summary.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/summary.json",
+      "bytes": 94010,
+      "sha256": "9eaca3e4bd748dc71cf32ffcf53a8ff392d58d7393097af081680aa87ea877b1"
+    },
+    "postgres/topology-observation.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/postgres/topology-observation.json",
+      "bytes": 423,
+      "sha256": "69b37d4a62d02ea63a8086e26d483dbf54c5dd9952e44ca5893137f4c345c419"
+    },
+    "provenance/artifacts/pr36-vcpu-gate/chromium/system-chrome-smoke.json": {
+      "archiveMember": "artifacts/pr36-vcpu-gate/chromium/system-chrome-smoke.json",
+      "bytes": 3879,
+      "sha256": "0039b3acc1049d25cf33ab45a64e52e4df61c575b626564a6a9d91bb852612f4"
+    },
+    "host-cpu.txt": {
+      "archiveMember": "artifacts/pr36-vcpu-gate/host-cpu.txt",
+      "bytes": 3427,
+      "sha256": "3d9601a374bc3faf0c92865c7dfdd07f45e654ae6742304cea818ce3e5a7bdb4"
+    },
+    "host-memory.txt": {
+      "archiveMember": "artifacts/pr36-vcpu-gate/host-memory.txt",
+      "bytes": 1671,
+      "sha256": "032fe266ad414075da27b6e990808ba3380578a17df05cb3eefe7dd6151f4159"
+    },
+    "provenance/artifacts/pr36-vcpu-gate/topology-overlay.json": {
+      "archiveMember": "artifacts/pr36-vcpu-gate/topology-overlay.json",
+      "bytes": 46837,
+      "sha256": "98c76757b3c89a1d339d3b73d0e3aa66e67cd9e45ac3f22f0b5d1ce598480aee"
+    },
+    "provenance/artifacts/pr36-idle-gc-gate/emulator-overlay.json": {
+      "archiveMember": "artifacts/pr36-idle-gc-gate/emulator-overlay.json",
+      "bytes": 29535,
+      "sha256": "ef7dd42b5acc0108d259bf7c1f4595dd2c7eec078c319a49799bfca4f8eb8899"
+    },
+    "provenance/candidate-emulator/candidate-provenance.json": {
+      "archiveMember": "candidate-emulator/candidate-provenance.json",
+      "bytes": 4484,
+      "sha256": "7f2fdddeb8464b6b4905d4bea2d2b5f904bd9b090af2cb93f63945bbabe27742"
+    },
+    "provenance/artifacts/openfga10-bfs-browser-gate/materialization.json": {
+      "archiveMember": "artifacts/openfga10-bfs-browser-gate/materialization.json",
+      "bytes": 76554,
+      "sha256": "db414541d796c933923262120da408dda41b8118cd583c6f26ecb4ef0fcc6a85"
+    },
+    "provenance/prepared/bootstrap-archive-provenance.json": {
+      "archiveMember": "prepared/bootstrap-archive-provenance.json",
+      "bytes": 860,
+      "sha256": "5e154acd836c6998c3662f4a1548485556c7738a7e7309f9830a0c79824ca398"
+    },
+    "provenance/prepared/candidate-emulator-archive-provenance.json": {
+      "archiveMember": "prepared/candidate-emulator-archive-provenance.json",
+      "bytes": 31632,
+      "sha256": "2dedb0ad1a9b98ec52e724987cea514d57c20e26944a1654b01d2ef660cecbb3"
+    },
+    "job-timing.json": {
+      "archiveMember": "prepared/job-timing.json",
+      "bytes": 320,
+      "sha256": "06df99cda091b7add22c972d013cabfe974b9c87397ee695796d9362b2778c5b"
+    },
+    "provenance/prepared/kernel-archive-provenance.json": {
+      "archiveMember": "prepared/kernel-archive-provenance.json",
+      "bytes": 2424,
+      "sha256": "65ddcaa35e2c0b9a054974ddc7ac4fb97a2d1ba9553f44bf67758d48b51d3a7e"
+    },
+    "provenance/prepared/lightweight-archive-provenance.json": {
+      "archiveMember": "prepared/lightweight-archive-provenance.json",
+      "bytes": 1362,
+      "sha256": "729c8434d6475a77a7c1efb29e9ae5c8bf0c9f609c51e878424ba22405067390"
+    },
+    "provenance/prepared/native-archive-provenance.json": {
+      "archiveMember": "prepared/native-archive-provenance.json",
+      "bytes": 10439,
+      "sha256": "2ef7d0627a03da15ff4704619279e83335c8870c1992a453d1ef1909f954a89b"
+    },
+    "provenance/prepared/native-evidence/browser-bootstrap-proof/native-result.json": {
+      "archiveMember": "prepared/native-evidence/browser-bootstrap-proof/native-result.json",
+      "bytes": 3145,
+      "sha256": "d37029e3213995ff9d8fc58eb08adf0e3daeb30a0c0da5855231be7c16991646"
+    },
+    "provenance/prepared/native-evidence/browser-bootstrap-proof/openfga-build.json": {
+      "archiveMember": "prepared/native-evidence/browser-bootstrap-proof/openfga-build.json",
+      "bytes": 3012,
+      "sha256": "0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754"
+    },
+    "provenance/prepared/native-evidence/openfga10-build-verification.json": {
+      "archiveMember": "prepared/native-evidence/openfga10-build-verification.json",
+      "bytes": 3635,
+      "sha256": "add1548e37ad9657d9447201a98b8ecb4775ac487af77c5eef77b4256a95145c"
+    },
+    "provenance/prepared/native-evidence/openfga10-native-startup-timing.json": {
+      "archiveMember": "prepared/native-evidence/openfga10-native-startup-timing.json",
+      "bytes": 1188,
+      "sha256": "428d9b07258ae7e1e9171058cd1b6c6d1b27d33481deef84bd9bcd13b2f785f7"
+    },
+    "provenance/prepared/native-evidence/openfga10-verifier-input.json": {
+      "archiveMember": "prepared/native-evidence/openfga10-verifier-input.json",
+      "bytes": 5765,
+      "sha256": "a06e2cce43ab153a4814db609d06f6ed9d5a08bfc265862a0ed24ed1edd5d05a"
+    },
+    "provenance/prepared/retained-archive-provenance.json": {
+      "archiveMember": "prepared/retained-archive-provenance.json",
+      "bytes": 20103,
+      "sha256": "14f31b4f82717e50c8b2ddb94d8e8cfe56f387d19dce8cb845d6926a1cce32b1"
+    },
+    "provenance/prepared/stack-baseline/entrypoint.sh": {
+      "archiveMember": "prepared/stack-baseline/entrypoint.sh",
+      "bytes": 5367,
+      "sha256": "930a48ef13f3df61b4bc09170f512fc7279b6c537a99eff80f24038126687225"
+    },
+    "provenance/prepared/stack-baseline/guest.sh": {
+      "archiveMember": "prepared/stack-baseline/guest.sh",
+      "bytes": 6354,
+      "sha256": "213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649"
+    },
+    "provenance/prepared/stack-baseline/manifest.json": {
+      "archiveMember": "prepared/stack-baseline/manifest.json",
+      "bytes": 647,
+      "sha256": "010dce556fa490e3a04ccff0c9a6d48e976d60955ccf7bd85be2bfa1875b057d"
+    },
+    "provenance/prepared/stack-baseline/runtime/derived-runtime.json": {
+      "archiveMember": "prepared/stack-baseline/runtime/derived-runtime.json",
+      "bytes": 6225,
+      "sha256": "40e544aadea36f95c40fa2edce24336fa06f93c7b908edbc365259dea3530b3c"
+    },
+    "provenance/prepared/stack-baseline/runtime/startup-manifest.json": {
+      "archiveMember": "prepared/stack-baseline/runtime/startup-manifest.json",
+      "bytes": 10365,
+      "sha256": "9ae882bf3bebbd50aca4b50699df569c7a8308daee90b1cb99e2782fd5981962"
+    },
+    "provenance/source-candidate/artifacts/browser-openfga/build.json": {
+      "archiveMember": "source-candidate/artifacts/browser-openfga/build.json",
+      "bytes": 3012,
+      "sha256": "0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/memory-entrypoint.sh": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/memory-entrypoint.sh",
+      "bytes": 8200,
+      "sha256": "11e36a961892b23e0ec45baf115170fb32e7a6499e005600f0341b530bf6bf3f"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/memory-guest.sh": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/memory-guest.sh",
+      "bytes": 7357,
+      "sha256": "3155b6cda39ce4eca48f21153eba9101dca5c10066e29f343e657310a789fef9"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/memory-transform.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/memory-transform.json",
+      "bytes": 10100,
+      "sha256": "007f4cd2815bda2e9b1224fe3b39228d750f815dd7f1ab4e0ebc246f3d53b168"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/postgres-guest.sh": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/postgres-guest.sh",
+      "bytes": 7357,
+      "sha256": "3155b6cda39ce4eca48f21153eba9101dca5c10066e29f343e657310a789fef9"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/postgres-entrypoint.sh": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/postgres-entrypoint.sh",
+      "bytes": 8192,
+      "sha256": "ba15f4333adf5784806dd902b8d16439be411b30b6d677d058382640f55df7be"
+    },
+    "provenance/artifacts/pr36-stack-continuation/shell-preflight/postgres-transform.json": {
+      "archiveMember": "artifacts/pr36-stack-continuation/shell-preflight/postgres-transform.json",
+      "bytes": 9258,
+      "sha256": "6461e580ddb816c384a1c3ece0e1a96fcdb91e64fd86ee1ec1368403afa036cf"
+    },
+    "provenance/prepared/job-start-observations.jsonl": {
+      "archiveMember": "prepared/job-start-observations.jsonl",
+      "bytes": 628,
+      "sha256": "af977d229086d28a4e9e9c46fac04ee6bc5035100dc614054aec15343f1b8307"
+    }
+  }
+}

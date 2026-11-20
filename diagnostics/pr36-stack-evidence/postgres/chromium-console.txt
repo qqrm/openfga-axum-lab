@@ -1,0 +1,648 @@
+this.program: warning: hub 0 is not connected to host network
+c[?7l[2J[0mSeaBIOS (version rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.org)
+
+
+iPXE (http://ipxe.org) 00:05.0 CA00 PCI2.10 PnP PMM+1EFD0DF0+1EF30DF0 CA00
+Press Ctrl-B to configure iPXE (PCI 00:05.0)...                                                                               
+
+
+Booting from ROM...
+c[?7l[2Jearly console in extract_kernel
+input_data: 0x00000000020562e0
+input_len: 0x000000000036a27a
+output: 0x0000000001000000
+output_len: 0x000000000138c690
+kernel_total_size: 0x0000000001030000
+needed_size: 0x0000000001400000
+trampoline_32bit: 0x000000000009d000
+Physical KASLR using RDTSC...
+Virtual KASLR using RDTSC...
+
+Decompressing Linux... Parsing ELF... Performing relocations... done.
+Booting the kernel.
+[    0.000000] Linux version 6.1.0-authz-ipc+ (authzlab@browser) (x86_64-linux-gnu-gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #1 SMP PREEMPT_DYNAMIC 2022-12-11 22:15:18 UTC
+[    0.000000] Command line: earlyprintk=ttyS0,115200n8 console=ttyS0,115200n8 root=/dev/vda rootwait ro virtio_net.napi_tx=false loglevel=7 QEMU_MODE=1 init=/sbin/tini -- /sbin/init
+[    0.000000] x86/fpu: x87 FPU will use FXSAVE
+[    0.000000] signal: max sigframe size: 1040
+[    0.000000] BIOS-provided physical RAM map:
+[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000001ffdcfff] usable
+[    0.000000] BIOS-e820: [mem 0x000000001ffdd000-0x000000001fffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved
+[    0.000000] printk: bootconsole [earlyser0] enabled
+[    0.000000] NX (Execute Disable) protection: active
+[    0.000000] SMBIOS 3.0.0 present.
+[    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.org 04/01/2014
+[    0.000000] tsc: Fast TSC calibration failed
+[    0.000000] last_pfn = 0x1ffdd max_arch_pfn = 0x400000000
+[    0.000000] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+Memory KASLR using RDTSC...
+[    0.000000] found SMP MP-table at [mem 0x000f5440-0x000f544f]
+[    0.000000] ACPI: Early table checksum verification disabled
+[    0.000000] ACPI: RSDP 0x00000000000F5210 000014 (v00 BOCHS )
+[    0.000000] ACPI: RSDT 0x000000001FFE1CB3 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: FACP 0x000000001FFE1B5F 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: DSDT 0x000000001FFE0040 001B1F (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: FACS 0x000000001FFE0000 000040
+[    0.000000] ACPI: APIC 0x000000001FFE1BD3 000080 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: HPET 0x000000001FFE1C53 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: WAET 0x000000001FFE1C8B 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.000000] ACPI: Reserving FACP table memory at [mem 0x1ffe1b5f-0x1ffe1bd2]
+[    0.000000] ACPI: Reserving DSDT table memory at [mem 0x1ffe0040-0x1ffe1b5e]
+[    0.000000] ACPI: Reserving FACS table memory at [mem 0x1ffe0000-0x1ffe003f]
+[    0.000000] ACPI: Reserving APIC table memory at [mem 0x1ffe1bd3-0x1ffe1c52]
+[    0.000000] ACPI: Reserving HPET table memory at [mem 0x1ffe1c53-0x1ffe1c8a]
+[    0.000000] ACPI: Reserving WAET table memory at [mem 0x1ffe1c8b-0x1ffe1cb2]
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+[    0.000000]   DMA32    [mem 0x0000000001000000-0x000000001ffdcfff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000000001000-0x000000000009efff]
+[    0.000000]   node   0: [mem 0x0000000000100000-0x000000001ffdcfff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000000001000-0x000000001ffdcfff]
+[    0.000000] On node 0, zone DMA: 1 pages in unavailable ranges
+[    0.000000] On node 0, zone DMA: 97 pages in unavailable ranges
+[    0.000000] On node 0, zone DMA32: 35 pages in unavailable ranges
+[    0.000000] ACPI: PM-Timer IO Port: 0x608
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])
+[    0.000000] IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)
+[    0.000000] ACPI: Using ACPI (MADT) for SMP configuration information
+[    0.000000] ACPI: HPET id: 0x8086a201 base: 0xfed00000
+[    0.000000] smpboot: Allowing 2 CPUs, 0 hotplug CPUs
+[    0.000000] [mem 0x20000000-0xfffbffff] available for PCI devices
+[    0.000000] clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.000000] setup_percpu: NR_CPUS:64 nr_cpumask_bits:2 nr_cpu_ids:2 nr_node_ids:1
+[    0.000000] percpu: Embedded 41 pages/cpu s135976 r0 d31960 u1048576
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 128733
+[    0.000000] Kernel command line: earlyprintk=ttyS0,115200n8 console=ttyS0,115200n8 root=/dev/vda rootwait ro virtio_net.napi_tx=false loglevel=7 QEMU_MODE=1 init=/sbin/tini -- /sbin/init
+[    0.000000] Unknown kernel command line parameters "QEMU_MODE=1", will be passed to user space.
+[    0.000000] Dentry cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 497076K/523756K available (8193K kernel code, 908K rwdata, 844K rodata, 1024K init, 688K bss, 26420K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] Dynamic Preempt: none
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=64 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 10 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] NR_IRQS: 4352, nr_irqs: 56, preallocated irqs: 16
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] Console: colour VGA+ 80x25
+[    0.000000] printk: console [ttyS0] enabled
+[    0.000000] printk: console [ttyS0] enabled
+[    0.000000] printk: bootconsole [earlyser0] disabled
+[    0.000000] printk: bootconsole [earlyser0] disabled
+[    0.000000] ACPI: Core revision 20220331
+[    0.000000] clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604467 ns
+[    0.010000] APIC: Switch to symmetric I/O mode setup
+[    0.040000] ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1
+[    0.120000] tsc: Unable to calibrate against PIT
+[    0.120000] tsc: using HPET reference calibration
+[    0.120000] tsc: Detected 1000.000 MHz processor
+[    0.002590] tsc: Marking TSC unstable due to TSCs unsynchronized
+[    0.006799] Calibrating delay loop (skipped), value calculated using timer frequency.. 2000.00 BogoMIPS (lpj=10000000)
+[    0.016595] pid_max: default: 4096 minimum: 301
+[    0.033929] Mount-cache hash table entries: 1024 (order: 1, 8192 bytes, linear)
+[    0.036569] Mountpoint-cache hash table entries: 1024 (order: 1, 8192 bytes, linear)
+Poking KASLR using RDTSC...
+[    0.102314] process: using AMD E400 aware idle routine
+[    0.105259] Last level iTLB entries: 4KB 512, 2MB 255, 4MB 127
+[    0.106434] Last level dTLB entries: 4KB 512, 2MB 255, 4MB 127, 1GB 0
+[    0.111479] Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+[    0.116889] Spectre V2 : Mitigation: Retpolines
+[    0.119335] Spectre V2 : Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch
+[    0.122584] Spectre V2 : Spectre v2 / SpectreRSB : Filling RSB on VMEXIT
+[    0.652865] Freeing SMP alternatives memory: 16K
+[    0.810854] smpboot: CPU0: AMD QEMU Virtual CPU version 2.5+ (family: 0xf, model: 0x6b, stepping: 0x1)
+[    0.843295] cblist_init_generic: Setting adjustable number of callback queues.
+[    0.846374] cblist_init_generic: Setting shift to 1 and lim to 1.
+[    0.852934] cblist_init_generic: Setting shift to 1 and lim to 1.
+[    0.859849] Performance Events: PMU not available due to virtualization, using software events only.
+[    0.877069] rcu: Hierarchical SRCU implementation.
+[    0.880215] rcu: 	Max phase no-delay instances is 1000.
+[    0.899964] smp: Bringing up secondary CPUs ...
+[    0.922555] x86: Booting SMP configuration:
+[    0.924775] .... node  #0, CPUs:      #1
+[    1.113989] smp: Brought up 1 node, 2 CPUs
+[    1.119755] smpboot: Max logical packages: 2
+[    1.122519] smpboot: Total of 2 processors activated (4349.25 BogoMIPS)
+[    1.181955] devtmpfs: initialized
+[    1.232780] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    1.237000] futex hash table entries: 16 (order: -2, 1024 bytes, linear)
+[    1.278760] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    1.324535] thermal_sys: Registered thermal governor 'step_wise'
+[    1.324760] thermal_sys: Registered thermal governor 'user_space'
+[    1.336589] cpuidle: using governor ladder
+[    1.356675] PCI: Using configuration type 1 for base access
+[    1.375734] mtrr: your CPUs had inconsistent fixed MTRR settings
+[    1.376429] mtrr: your CPUs had inconsistent variable MTRR settings
+[    1.379544] mtrr: your CPUs had inconsistent MTRRdefType settings
+[    1.386395] mtrr: probably your BIOS does not setup all CPUs.
+[    1.389840] mtrr: corrected configuration.
+[    1.696964] ACPI: Added _OSI(Module Device)
+[    1.699649] ACPI: Added _OSI(Processor Device)
+[    1.702399] ACPI: Added _OSI(3.0 _SCP Extensions)
+[    1.705249] ACPI: Added _OSI(Processor Aggregator Device)
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1198,"live_limit":15000,"attempted_total":1024,"module_created_total":1024,"instance_created_total":1024,"registered_total":1024,"detached_total":0,"gc_total":0,"encoded_bytes_total":861190,"encoded_bytes_max":2594}
+[    1.979250] ACPI: 1 ACPI AML tables successfully acquired and loaded
+[    2.100615] ACPI: Interpreter enabled
+[    2.106730] ACPI: PM: (supports S0 S3 S5)
+[    2.108569] ACPI: Using IOAPIC for interrupt routing
+[    2.113984] PCI: Using host bridge windows from ACPI; if necessary, use "pci=nocrs" and report a bug
+[    2.116740] PCI: Using E820 reservations for host bridge windows
+[    2.150660] ACPI: Enabled 2 GPEs in block 00 to 0F
+[    2.782509] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+[    2.787689] acpi PNP0A03:00: _OSC: OS supports [ASPM ClockPM Segments HPX-Type3]
+[    2.792555] acpi PNP0A03:00: PCIe port services disabled; not requesting _OSC control
+[    2.798399] acpi PNP0A03:00: fail to add MMCONFIG information, can't access extended PCI configuration space under this bridge.
+[    2.829305] PCI host bridge to bus 0000:00
+[    2.832219] pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]
+[    2.836590] pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]
+[    2.840530] pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]
+[    2.844785] pci_bus 0000:00: root bus resource [mem 0x20000000-0xfebfffff window]
+[    2.846495] pci_bus 0000:00: root bus resource [mem 0x100000000-0x17fffffff window]
+[    2.850749] pci_bus 0000:00: root bus resource [bus 00-ff]
+[    2.860769] pci 0000:00:00.0: [8086:1237] type 00 class 0x060000
+[    2.886039] pci 0000:00:01.0: [8086:7000] type 00 class 0x060100
+[    2.902770] pci 0000:00:01.1: [8086:7010] type 00 class 0x010180
+[    2.909949] pci 0000:00:01.1: reg 0x20: [io  0xc100-0xc10f]
+[    2.914644] pci 0000:00:01.1: legacy IDE quirk: reg 0x10: [io  0x01f0-0x01f7]
+[    2.916685] pci 0000:00:01.1: legacy IDE quirk: reg 0x14: [io  0x03f6]
+[    2.920670] pci 0000:00:01.1: legacy IDE quirk: reg 0x18: [io  0x0170-0x0177]
+[    2.926505] pci 0000:00:01.1: legacy IDE quirk: reg 0x1c: [io  0x0376]
+[    2.946494] pci 0000:00:01.3: [8086:7113] type 00 class 0x068000
+[    2.961389] pci 0000:00:02.0: [1234:1111] type 00 class 0x030000
+[    2.966230] pci 0000:00:02.0: reg 0x10: [mem 0xfd000000-0xfdffffff pref]
+[    2.972530] pci 0000:00:02.0: reg 0x18: [mem 0xfebd0000-0xfebd0fff]
+[    2.981354] pci 0000:00:02.0: reg 0x30: [mem 0xfebc0000-0xfebcffff pref]
+[    3.001805] pci 0000:00:03.0: [1af4:1009] type 00 class 0x000200
+[    3.007040] pci 0000:00:03.0: reg 0x10: [io  0xc080-0xc09f]
+[    3.011775] pci 0000:00:03.0: reg 0x14: [mem 0xfebd1000-0xfebd1fff]
+[    3.021949] pci 0000:00:03.0: reg 0x20: [mem 0xfe000000-0xfe003fff 64bit pref]
+[    3.157165] pci 0000:00:04.0: [1af4:1009] type 00 class 0x000200
+[    3.161970] pci 0000:00:04.0: reg 0x10: [io  0xc0a0-0xc0bf]
+[    3.166955] pci 0000:00:04.0: reg 0x14: [mem 0xfebd2000-0xfebd2fff]
+[    3.175529] pci 0000:00:04.0: reg 0x20: [mem 0xfe004000-0xfe007fff 64bit pref]
+[    3.304885] pci 0000:00:05.0: [1af4:1000] type 00 class 0x020000
+[    3.307855] pci 0000:00:05.0: reg 0x10: [io  0xc0c0-0xc0df]
+[    3.312124] pci 0000:00:05.0: reg 0x14: [mem 0xfebd3000-0xfebd3fff]
+[    3.321990] pci 0000:00:05.0: reg 0x20: [mem 0xfe008000-0xfe00bfff 64bit pref]
+[    3.327820] pci 0000:00:05.0: reg 0x30: [mem 0xfeb80000-0xfebbffff pref]
+[    3.450909] pci 0000:00:06.0: [1af4:1005] type 00 class 0x00ff00
+[    3.455819] pci 0000:00:06.0: reg 0x10: [io  0xc0e0-0xc0ff]
+[    3.457745] pci 0000:00:06.0: reg 0x14: [mem 0xfebd4000-0xfebd4fff]
+[    3.468455] pci 0000:00:06.0: reg 0x20: [mem 0xfe00c000-0xfe00ffff 64bit pref]
+[    3.604855] pci 0000:00:07.0: [1af4:1001] type 00 class 0x010000
+[    3.607899] pci 0000:00:07.0: reg 0x10: [io  0xc000-0xc07f]
+[    3.611694] pci 0000:00:07.0: reg 0x14: [mem 0xfebd5000-0xfebd5fff]
+[    3.621289] pci 0000:00:07.0: reg 0x20: [mem 0xfe010000-0xfe013fff 64bit pref]
+[    3.801279] ACPI: PCI: Interrupt link LNKA configured for IRQ 10
+[    3.818349] ACPI: PCI: Interrupt link LNKB configured for IRQ 10
+[    3.834010] ACPI: PCI: Interrupt link LNKC configured for IRQ 11
+[    3.851200] ACPI: PCI: Interrupt link LNKD configured for IRQ 11
+[    3.860550] ACPI: PCI: Interrupt link LNKS configured for IRQ 9
+[    3.905804] iommu: Default domain type: Translated 
+[    3.906435] iommu: DMA domain TLB invalidation policy: lazy mode 
+[    3.917550] pps_core: LinuxPPS API ver. 1 registered
+[    3.919949] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    3.925660] PTP clock support registered
+[    3.965410] PCI: Using ACPI for IRQ routing
+[    3.984609] pci 0000:00:02.0: vgaarb: setting as boot VGA device
+[    3.986230] pci 0000:00:02.0: vgaarb: bridge control possible
+[    3.986230] pci 0000:00:02.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none
+[    3.986534] vgaarb: loaded
+[    3.997724] clocksource: Switched to clocksource hpet
+[    4.011359] pnp: PnP ACPI init
+[    4.078750] pnp: PnP ACPI: found 6 devices
+[    4.399924] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+[    4.407929] NET: Registered PF_INET protocol family
+[    4.416669] IP idents hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    4.453220] tcp_listen_portaddr_hash hash table entries: 256 (order: 0, 4096 bytes, linear)
+[    4.458665] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    4.463920] TCP established hash table entries: 4096 (order: 3, 32768 bytes, linear)
+[    4.470075] TCP bind hash table entries: 4096 (order: 5, 131072 bytes, linear)
+[    4.474870] TCP: Hash tables configured (established 4096 bind 4096)
+[    4.484055] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    4.488919] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    4.498970] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    4.505115] pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]
+[    4.508910] pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]
+[    4.512020] pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]
+[    4.519650] pci_bus 0000:00: resource 7 [mem 0x20000000-0xfebfffff window]
+[    4.522900] pci_bus 0000:00: resource 8 [mem 0x100000000-0x17fffffff window]
+[    4.572120] workingset: timestamp_bits=46 max_order=17 bucket_order=0
+[    4.891785] 9p: Installing v9fs 9p2000 file system support
+[    4.928015] input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0
+[    4.945585] ACPI: button: Power Button [PWRF]
+[   11.650255] ACPI: \_SB_.LNKC: Enabled at IRQ 11
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":685,"live_limit":15000,"attempted_total":2048,"module_created_total":2048,"instance_created_total":2048,"registered_total":2048,"detached_total":0,"gc_total":0,"encoded_bytes_total":1794158,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1111,"live_limit":15000,"attempted_total":1024,"module_created_total":1024,"instance_created_total":1024,"registered_total":1024,"detached_total":0,"gc_total":0,"encoded_bytes_total":902703,"encoded_bytes_max":3689}
+[   18.883769] ACPI: \_SB_.LNKD: Enabled at IRQ 10
+[   25.903340] ACPI: \_SB_.LNKA: Enabled at IRQ 10
+[   32.698580] ACPI: \_SB_.LNKB: Enabled at IRQ 11
+[   39.512025] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[   39.522925] 00:04: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A
+[   39.605640] random: crng init done
+[   39.634785] virtio_blk virtio4: 2/0/0 default/read/poll queues
+[   39.674705] virtio_blk virtio4: [vda] 1067716 512-byte logical blocks (547 MB/521 MiB)
+[   39.774700] i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12
+[   39.792375] serio: i8042 KBD port at 0x60,0x64 irq 1
+[   39.796850] serio: i8042 AUX port at 0x60,0x64 irq 12
+[   39.801950] rtc_cmos 00:05: RTC can wake from S4
+[   39.836024] rtc_cmos 00:05: registered as rtc0
+[   39.839264] rtc_cmos 00:05: setting system clock to 2026-11-20T04:49:41 UTC (1795150181)
+[   39.847139] rtc_cmos 00:05: alarms up to one day, y3k, 242 bytes nvram, hpet irqs
+[   39.867780] NET: Registered PF_PACKET protocol family
+[   39.875690] 9pnet: Installing 9P2000 support
+[   39.904775] IPI shorthand broadcast: enabled
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":700,"live_limit":15000,"attempted_total":3072,"module_created_total":3072,"instance_created_total":3072,"registered_total":3072,"detached_total":1024,"gc_total":0,"encoded_bytes_total":2708596,"encoded_bytes_max":13614}
+[   39.997430] VFS: Mounted root (iso9660 filesystem) readonly on device 254:0.
+[   40.008560] devtmpfs: mounted
+[   40.586930] Freeing unused kernel image (initmem) memory: 1024K
+[   40.590840] Write protecting the kernel read-only data: 12288k
+[   40.706750] Freeing unused kernel image (text/rodata gap) memory: 2044K
+[   40.755830] Freeing unused kernel image (rodata/data gap) memory: 1204K
+[   40.759940] Run /sbin/tini as init process
+2026/11/20 04:49:43 mounting {FSType:proc Src:proc Dst:/proc Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/run Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/sys Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/tmp Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/var Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/mnt Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:cgroup2 Src:none Dst:/sys/fs/cgroup Flags:0 Data: Dir:[{Path:/sys/fs/cgroup Mode:438}] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/etc Flags:0 Data: Dir:[] File:[] PostDir:[] PostFile:[{Path:/etc/hosts Mode:420 Contents:127.0.0.1	localhost
+} {Path:/etc/resolv.conf Mode:420 Contents:}] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:tmpfs Src:tmpfs Dst:/run/bundle Flags:0 Data: Dir:[{Path:/run/bundle Mode:438}] File:[] PostDir:[] PostFile:[] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:43 mounting {FSType:overlay Src:overlay Dst:/run/rootfs Flags:0 Data:lowerdir=/oci/rootfs,upperdir=/run/rootfs-upper,workdir=/run/rootfs-work Dir:[{Path:/run/rootfs Mode:493} {Path:/run/rootfs-upper Mode:493} {Path:/run/rootfs-work Mode:493}] File:[] PostDir:[{Path:/run/rootfs/etc/ Mode:420} {Path:/run/rootfs/etc/ Mode:420}] PostFile:[{Path:/run/rootfs/etc/hosts Mode:420 Contents:127.0.0.1	localhost
+} {Path:/run/rootfs/etc/resolv.conf Mode:420 Contents:}] Cmd:[] Async:false Optional:false}
+2026/11/20 04:49:44 executing(pre-run): [vmtouch -tv /sbin/runc /sbin/init]
+/sbin/runc
+[                                                            ] 0/3299[OOOOOo                                                      ] 321/3299[OOOOOOOOOOOOo                                               ] 685/3299[OOOOOOOOOOOOOOOOOOo                                         ] 1025/3299[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1808,"live_limit":15000,"attempted_total":4096,"module_created_total":4096,"instance_created_total":4096,"registered_total":4096,"detached_total":2048,"gc_total":0,"encoded_bytes_total":3652086,"encoded_bytes_max":13614}
+[OOOOOOOOOOOOOOOOOOOOOOOo                                    ] 1313/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                              ] 1601/3299[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":597,"live_limit":15000,"attempted_total":2048,"module_created_total":2048,"instance_created_total":2048,"registered_total":2048,"detached_total":0,"gc_total":0,"encoded_bytes_total":1793028,"encoded_bytes_max":3689}
+[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                          ] 1857/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo                   ] 2234/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo             ] 2561/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo        ] 2845/3299[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":616,"live_limit":15000,"attempted_total":5120,"module_created_total":5120,"instance_created_total":5120,"registered_total":5120,"detached_total":3072,"gc_total":0,"encoded_bytes_total":4621004,"encoded_bytes_max":13614}
+[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo ] 3201/3299[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 3299/3299
+/sbin/init
+[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 662/662[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO] 662/662
+
+           Files: 2
+     Directories: 0
+   Touched Pages: 3961 (15M)
+         Elapsed: 1.236 seconds
+==========[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":597,"live_limit":15000,"attempted_total":6144,"module_created_total":6144,"instance_created_total":6144,"registered_total":6144,"detached_total":4096,"gc_total":0,"encoded_bytes_total":5537389,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":659,"live_limit":15000,"attempted_total":3072,"module_created_total":3072,"instance_created_total":3072,"registered_total":3072,"detached_total":1024,"gc_total":0,"encoded_bytes_total":2723312,"encoded_bytes_max":4039}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":704,"live_limit":15000,"attempted_total":7168,"module_created_total":7168,"instance_created_total":7168,"registered_total":7168,"detached_total":5120,"gc_total":0,"encoded_bytes_total":6495126,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":856,"live_limit":15000,"attempted_total":8192,"module_created_total":8192,"instance_created_total":8192,"registered_total":8192,"detached_total":6144,"gc_total":0,"encoded_bytes_total":7404266,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":856,"live_limit":15000,"attempted_total":9216,"module_created_total":9216,"instance_created_total":9216,"registered_total":9216,"detached_total":7168,"gc_total":0,"encoded_bytes_total":8346165,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":621,"live_limit":15000,"attempted_total":4096,"module_created_total":4096,"instance_created_total":4096,"registered_total":4096,"detached_total":2048,"gc_total":0,"encoded_bytes_total":3624660,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":774,"live_limit":15000,"attempted_total":10240,"module_created_total":10240,"instance_created_total":10240,"registered_total":10240,"detached_total":8192,"gc_total":4096,"encoded_bytes_total":9263889,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1988,"live_limit":15000,"attempted_total":11264,"module_created_total":11264,"instance_created_total":11264,"registered_total":11264,"detached_total":9216,"gc_total":4096,"encoded_bytes_total":10216680,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1506,"live_limit":15000,"attempted_total":5120,"module_created_total":5120,"instance_created_total":5120,"registered_total":5120,"detached_total":3072,"gc_total":0,"encoded_bytes_total":4553766,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":725,"live_limit":15000,"attempted_total":12288,"module_created_total":12288,"instance_created_total":12288,"registered_total":12288,"detached_total":10240,"gc_total":4096,"encoded_bytes_total":11142866,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":637,"live_limit":15000,"attempted_total":13312,"module_created_total":13312,"instance_created_total":13312,"registered_total":13312,"detached_total":11264,"gc_total":4096,"encoded_bytes_total":12086661,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":451,"live_limit":15000,"attempted_total":6144,"module_created_total":6144,"instance_created_total":6144,"registered_total":6144,"detached_total":4096,"gc_total":4096,"encoded_bytes_total":5463116,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1827,"live_limit":15000,"attempted_total":7168,"module_created_total":7168,"instance_created_total":7168,"registered_total":7168,"detached_total":5120,"gc_total":4096,"encoded_bytes_total":6394569,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":589,"live_limit":15000,"attempted_total":8192,"module_created_total":8192,"instance_created_total":8192,"registered_total":8192,"detached_total":6144,"gc_total":4096,"encoded_bytes_total":7312102,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":675,"live_limit":15000,"attempted_total":9216,"module_created_total":9216,"instance_created_total":9216,"registered_total":9216,"detached_total":7168,"gc_total":4096,"encoded_bytes_total":8239207,"encoded_bytes_max":9846}
+
+LAB|boot
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1399,"live_limit":15000,"attempted_total":10240,"module_created_total":10240,"instance_created_total":10240,"registered_total":10240,"detached_total":8192,"gc_total":4096,"encoded_bytes_total":9155058,"encoded_bytes_max":9846}
+[browser-guest] confirmed online CPUs: 0-1
+[browser-guest] confirmed service CPU availability: 0-1
+[browser-guest] staging the verified OpenFGA and bootstrap executables
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":949,"live_limit":15000,"attempted_total":11264,"module_created_total":11264,"instance_created_total":11264,"registered_total":11264,"detached_total":9216,"gc_total":4096,"encoded_bytes_total":10085247,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":765,"live_limit":15000,"attempted_total":14336,"module_created_total":14336,"instance_created_total":14336,"registered_total":14336,"detached_total":12288,"gc_total":11264,"encoded_bytes_total":12997372,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":636,"live_limit":15000,"attempted_total":15360,"module_created_total":15360,"instance_created_total":15360,"registered_total":15360,"detached_total":13312,"gc_total":11264,"encoded_bytes_total":13947684,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":933,"live_limit":15000,"attempted_total":16384,"module_created_total":16384,"instance_created_total":16384,"registered_total":16384,"detached_total":14336,"gc_total":11264,"encoded_bytes_total":14898375,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":818,"live_limit":15000,"attempted_total":17408,"module_created_total":17408,"instance_created_total":17408,"registered_total":17408,"detached_total":15360,"gc_total":11264,"encoded_bytes_total":15822507,"encoded_bytes_max":13614}
+[browser-guest] executables staged; starting the real services
+[browser-single] initializing isolated PostgreSQL 17
+STACK|phase|{"phase":"initdb-start","datastore":"postgres","guest_seconds":1,"uptime_seconds":"59.79","clock_scope":"entrypoint"}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":764,"live_limit":15000,"attempted_total":18432,"module_created_total":18432,"instance_created_total":18432,"registered_total":18432,"detached_total":16384,"gc_total":11264,"encoded_bytes_total":16747212,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":652,"live_limit":15000,"attempted_total":12288,"module_created_total":12288,"instance_created_total":12288,"registered_total":12288,"detached_total":10240,"gc_total":10240,"encoded_bytes_total":11023440,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":681,"live_limit":15000,"attempted_total":13312,"module_created_total":13312,"instance_created_total":13312,"registered_total":13312,"detached_total":11264,"gc_total":10240,"encoded_bytes_total":11975110,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":696,"live_limit":15000,"attempted_total":14336,"module_created_total":14336,"instance_created_total":14336,"registered_total":14336,"detached_total":12288,"gc_total":10240,"encoded_bytes_total":12916541,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":990,"live_limit":15000,"attempted_total":15360,"module_created_total":15360,"instance_created_total":15360,"registered_total":15360,"detached_total":13312,"gc_total":10240,"encoded_bytes_total":13958036,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1885,"live_limit":15000,"attempted_total":16384,"module_created_total":16384,"instance_created_total":16384,"registered_total":16384,"detached_total":14336,"gc_total":10240,"encoded_bytes_total":14985410,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":619,"live_limit":15000,"attempted_total":19456,"module_created_total":19456,"instance_created_total":19456,"registered_total":19456,"detached_total":17408,"gc_total":11264,"encoded_bytes_total":17679577,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":791,"live_limit":15000,"attempted_total":17408,"module_created_total":17408,"instance_created_total":17408,"registered_total":17408,"detached_total":15360,"gc_total":10240,"encoded_bytes_total":15984244,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":653,"live_limit":15000,"attempted_total":20480,"module_created_total":20480,"instance_created_total":20480,"registered_total":20480,"detached_total":18432,"gc_total":18432,"encoded_bytes_total":18643022,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":704,"live_limit":15000,"attempted_total":18432,"module_created_total":18432,"instance_created_total":18432,"registered_total":18432,"detached_total":16384,"gc_total":10240,"encoded_bytes_total":16927887,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":934,"live_limit":15000,"attempted_total":19456,"module_created_total":19456,"instance_created_total":19456,"registered_total":19456,"detached_total":17408,"gc_total":10240,"encoded_bytes_total":17849608,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":822,"live_limit":15000,"attempted_total":20480,"module_created_total":20480,"instance_created_total":20480,"registered_total":20480,"detached_total":18432,"gc_total":10240,"encoded_bytes_total":18847814,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":798,"live_limit":15000,"attempted_total":21504,"module_created_total":21504,"instance_created_total":21504,"registered_total":21504,"detached_total":19456,"gc_total":10240,"encoded_bytes_total":19896469,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1360,"live_limit":15000,"attempted_total":22528,"module_created_total":22528,"instance_created_total":22528,"registered_total":22528,"detached_total":20480,"gc_total":20480,"encoded_bytes_total":20876249,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1454,"live_limit":15000,"attempted_total":21504,"module_created_total":21504,"instance_created_total":21504,"registered_total":21504,"detached_total":19456,"gc_total":18432,"encoded_bytes_total":19566850,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1199,"live_limit":15000,"attempted_total":22528,"module_created_total":22528,"instance_created_total":22528,"registered_total":22528,"detached_total":20480,"gc_total":18432,"encoded_bytes_total":20536777,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":608,"live_limit":15000,"attempted_total":23552,"module_created_total":23552,"instance_created_total":23552,"registered_total":23552,"detached_total":21504,"gc_total":18432,"encoded_bytes_total":21497651,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":597,"live_limit":15000,"attempted_total":24576,"module_created_total":24576,"instance_created_total":24576,"registered_total":24576,"detached_total":22528,"gc_total":18432,"encoded_bytes_total":22492794,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":783,"live_limit":15000,"attempted_total":25600,"module_created_total":25600,"instance_created_total":25600,"registered_total":25600,"detached_total":23552,"gc_total":18432,"encoded_bytes_total":23445464,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":437,"live_limit":15000,"attempted_total":23552,"module_created_total":23552,"instance_created_total":23552,"registered_total":23552,"detached_total":21504,"gc_total":20480,"encoded_bytes_total":21781329,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1148,"live_limit":15000,"attempted_total":26624,"module_created_total":26624,"instance_created_total":26624,"registered_total":26624,"detached_total":24576,"gc_total":18432,"encoded_bytes_total":24434451,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":727,"live_limit":15000,"attempted_total":24576,"module_created_total":24576,"instance_created_total":24576,"registered_total":24576,"detached_total":22528,"gc_total":20480,"encoded_bytes_total":22756469,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1327,"live_limit":15000,"attempted_total":27648,"module_created_total":27648,"instance_created_total":27648,"registered_total":27648,"detached_total":25600,"gc_total":18432,"encoded_bytes_total":25380518,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":820,"live_limit":15000,"attempted_total":25600,"module_created_total":25600,"instance_created_total":25600,"registered_total":25600,"detached_total":23552,"gc_total":20480,"encoded_bytes_total":23693312,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1745,"live_limit":15000,"attempted_total":28672,"module_created_total":28672,"instance_created_total":28672,"registered_total":28672,"detached_total":26624,"gc_total":26624,"encoded_bytes_total":26338429,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":597,"live_limit":15000,"attempted_total":29696,"module_created_total":29696,"instance_created_total":29696,"registered_total":29696,"detached_total":27648,"gc_total":26624,"encoded_bytes_total":27298828,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":622,"live_limit":15000,"attempted_total":26624,"module_created_total":26624,"instance_created_total":26624,"registered_total":26624,"detached_total":24576,"gc_total":20480,"encoded_bytes_total":24626542,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":700,"live_limit":15000,"attempted_total":30720,"module_created_total":30720,"instance_created_total":30720,"registered_total":30720,"detached_total":28672,"gc_total":26624,"encoded_bytes_total":28276374,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":740,"live_limit":15000,"attempted_total":27648,"module_created_total":27648,"instance_created_total":27648,"registered_total":27648,"detached_total":25600,"gc_total":20480,"encoded_bytes_total":25582002,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":604,"live_limit":15000,"attempted_total":31744,"module_created_total":31744,"instance_created_total":31744,"registered_total":31744,"detached_total":29696,"gc_total":26624,"encoded_bytes_total":29260759,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":438,"live_limit":15000,"attempted_total":28672,"module_created_total":28672,"instance_created_total":28672,"registered_total":28672,"detached_total":26624,"gc_total":20480,"encoded_bytes_total":26506506,"encoded_bytes_max":9846}
+STACK|phase|{"phase":"initdb-complete","datastore":"postgres","guest_seconds":155,"uptime_seconds":"213.90","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"postgres-start","datastore":"postgres","guest_seconds":155,"uptime_seconds":"213.93","clock_scope":"entrypoint"}
+waiting for server to start........ done
+server started
+STACK|phase|{"phase":"postgres-ready","datastore":"postgres","guest_seconds":163,"uptime_seconds":"221.52","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"createdb-openfga-start","datastore":"postgres","guest_seconds":163,"uptime_seconds":"221.55","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"createdb-openfga-complete","datastore":"postgres","guest_seconds":178,"uptime_seconds":"237.18","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"createdb-authzlab-start","datastore":"postgres","guest_seconds":179,"uptime_seconds":"237.21","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"createdb-authzlab-complete","datastore":"postgres","guest_seconds":191,"uptime_seconds":"249.67","clock_scope":"entrypoint"}
+[browser-single] migrating and starting real OpenFGA 1.10.3
+STACK|phase|{"phase":"openfga-migrate-start","datastore":"postgres","guest_seconds":191,"uptime_seconds":"249.72","clock_scope":"entrypoint"}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":704,"live_limit":15000,"attempted_total":32768,"module_created_total":32768,"instance_created_total":32768,"registered_total":32768,"detached_total":30720,"gc_total":30720,"encoded_bytes_total":30217101,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":791,"live_limit":15000,"attempted_total":29696,"module_created_total":29696,"instance_created_total":29696,"registered_total":29696,"detached_total":27648,"gc_total":20480,"encoded_bytes_total":27450920,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":665,"live_limit":15000,"attempted_total":33792,"module_created_total":33792,"instance_created_total":33792,"registered_total":33792,"detached_total":31744,"gc_total":30720,"encoded_bytes_total":31181174,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":600,"live_limit":15000,"attempted_total":34816,"module_created_total":34816,"instance_created_total":34816,"registered_total":34816,"detached_total":32768,"gc_total":30720,"encoded_bytes_total":32142591,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":653,"live_limit":15000,"attempted_total":30720,"module_created_total":30720,"instance_created_total":30720,"registered_total":30720,"detached_total":28672,"gc_total":28672,"encoded_bytes_total":28365514,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1071,"live_limit":15000,"attempted_total":35840,"module_created_total":35840,"instance_created_total":35840,"registered_total":35840,"detached_total":33792,"gc_total":30720,"encoded_bytes_total":33091220,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":3739,"live_limit":15000,"attempted_total":31744,"module_created_total":31744,"instance_created_total":31744,"registered_total":31744,"detached_total":29696,"gc_total":28672,"encoded_bytes_total":29302055,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":740,"live_limit":15000,"attempted_total":36864,"module_created_total":36864,"instance_created_total":36864,"registered_total":36864,"detached_total":34816,"gc_total":30720,"encoded_bytes_total":34041326,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":922,"live_limit":15000,"attempted_total":32768,"module_created_total":32768,"instance_created_total":32768,"registered_total":32768,"detached_total":30720,"gc_total":28672,"encoded_bytes_total":30254706,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1086,"live_limit":15000,"attempted_total":37888,"module_created_total":37888,"instance_created_total":37888,"registered_total":37888,"detached_total":35840,"gc_total":30720,"encoded_bytes_total":35000403,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1374,"live_limit":15000,"attempted_total":38912,"module_created_total":38912,"instance_created_total":38912,"registered_total":38912,"detached_total":36864,"gc_total":30720,"encoded_bytes_total":35948102,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1149,"live_limit":15000,"attempted_total":39936,"module_created_total":39936,"instance_created_total":39936,"registered_total":39936,"detached_total":37888,"gc_total":30720,"encoded_bytes_total":36910368,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":748,"live_limit":15000,"attempted_total":40960,"module_created_total":40960,"instance_created_total":40960,"registered_total":40960,"detached_total":38912,"gc_total":38912,"encoded_bytes_total":37875847,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":2206,"live_limit":15000,"attempted_total":41984,"module_created_total":41984,"instance_created_total":41984,"registered_total":41984,"detached_total":39936,"gc_total":38912,"encoded_bytes_total":38837649,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":653,"live_limit":15000,"attempted_total":33792,"module_created_total":33792,"instance_created_total":33792,"registered_total":33792,"detached_total":31744,"gc_total":28672,"encoded_bytes_total":31186315,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":600,"live_limit":15000,"attempted_total":43008,"module_created_total":43008,"instance_created_total":43008,"registered_total":43008,"detached_total":40960,"gc_total":38912,"encoded_bytes_total":39799241,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":620,"live_limit":15000,"attempted_total":34816,"module_created_total":34816,"instance_created_total":34816,"registered_total":34816,"detached_total":32768,"gc_total":28672,"encoded_bytes_total":32148081,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":437,"live_limit":15000,"attempted_total":35840,"module_created_total":35840,"instance_created_total":35840,"registered_total":35840,"detached_total":33792,"gc_total":28672,"encoded_bytes_total":33113386,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":615,"live_limit":15000,"attempted_total":36864,"module_created_total":36864,"instance_created_total":36864,"registered_total":36864,"detached_total":34816,"gc_total":28672,"encoded_bytes_total":34059194,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":437,"live_limit":15000,"attempted_total":37888,"module_created_total":37888,"instance_created_total":37888,"registered_total":37888,"detached_total":35840,"gc_total":28672,"encoded_bytes_total":35022829,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1015,"live_limit":15000,"attempted_total":38912,"module_created_total":38912,"instance_created_total":38912,"registered_total":38912,"detached_total":36864,"gc_total":36864,"encoded_bytes_total":36009011,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":950,"live_limit":15000,"attempted_total":39936,"module_created_total":39936,"instance_created_total":39936,"registered_total":39936,"detached_total":37888,"gc_total":36864,"encoded_bytes_total":37069336,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":612,"live_limit":15000,"attempted_total":44032,"module_created_total":44032,"instance_created_total":44032,"registered_total":44032,"detached_total":41984,"gc_total":38912,"encoded_bytes_total":40716191,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":747,"live_limit":15000,"attempted_total":40960,"module_created_total":40960,"instance_created_total":40960,"registered_total":40960,"detached_total":38912,"gc_total":36864,"encoded_bytes_total":38023162,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":738,"live_limit":15000,"attempted_total":41984,"module_created_total":41984,"instance_created_total":41984,"registered_total":41984,"detached_total":39936,"gc_total":36864,"encoded_bytes_total":38971861,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":638,"live_limit":15000,"attempted_total":45056,"module_created_total":45056,"instance_created_total":45056,"registered_total":45056,"detached_total":43008,"gc_total":38912,"encoded_bytes_total":41705709,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":873,"live_limit":15000,"attempted_total":43008,"module_created_total":43008,"instance_created_total":43008,"registered_total":43008,"detached_total":40960,"gc_total":36864,"encoded_bytes_total":39941455,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1363,"live_limit":15000,"attempted_total":46080,"module_created_total":46080,"instance_created_total":46080,"registered_total":46080,"detached_total":44032,"gc_total":38912,"encoded_bytes_total":42618512,"encoded_bytes_max":13614}
+STACK|phase|{"phase":"openfga-migrate-complete","datastore":"postgres","guest_seconds":209,"uptime_seconds":"267.98","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"openfga-start","datastore":"postgres","guest_seconds":209,"uptime_seconds":"268.01","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"openfga-started","datastore":"postgres","guest_seconds":209,"uptime_seconds":"268.14","clock_scope":"entrypoint"}
+[browser-single] waiting for the OpenFGA HTTP listener
+STACK|phase|{"phase":"openfga-listener-start","datastore":"postgres","guest_seconds":210,"uptime_seconds":"268.22","clock_scope":"entrypoint"}
+[browser-openfga] 2026/11/20 04:52:49.029089 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60
+[browser-openfga] 2026/11/20 04:53:00.195215 warmup_cycle cycle=1 completed=true current_stage=complete failed=false json_decode_ms=2166 protobuf_ms=936 generated_validation_ms=225 typesystem_ms=5999 response_codec_ms=1657
+[browser-openfga] 2026/11/20 04:53:00.198369 warmup_end duration_ms=11174 failed=false
+2026-11-20T04:53:01.417Z	[33mWARN[0m	authentication is disabled
+2026-11-20T04:53:01.479Z	[33mWARN[0m	gRPC TLS is disabled, serving connections using insecure plaintext
+[browser-openfga] 2026/11/20 04:53:01.638145 grpc_dial_start timeout_seconds=60
+[browser-openfga] 2026/11/20 04:53:01.821535 grpc_dial_end duration_ms=183 failed=false context_error=<nil>
+2026-11-20T04:53:01.854Z	[33mWARN[0m	HTTP TLS is disabled, serving connections using insecure plaintext
+STACK|phase|{"phase":"openfga-listener-ready","datastore":"postgres","guest_seconds":236,"uptime_seconds":"294.48","clock_scope":"entrypoint"}
+[browser-single] binding the pinned Lakekeeper model and seeding real SQL data
+STACK|phase|{"phase":"bootstrap-start","datastore":"postgres","guest_seconds":236,"uptime_seconds":"294.52","clock_scope":"entrypoint"}
+[browser-openfga] 2026/11/20 04:53:06.210950 http_start method="GET" path="/healthz" content_length=0
+[browser-openfga] 2026/11/20 04:53:06.300254 rpc_start method="/grpc.health.v1.Health/Check"
+[browser-openfga] 2026/11/20 04:53:06.568299 rpc_end method="/grpc.health.v1.Health/Check" status="OK" duration_ms=267 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:06.623809 http_end method="GET" path="/healthz" content_length=0 duration_ms=412 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:06.700025 http_start method="POST" path="/stores" content_length=27
+[browser-openfga] 2026/11/20 04:53:06.755660 rpc_start method="/openfga.v1.OpenFGAService/CreateStore"
+[browser-openfga] 2026/11/20 04:53:06.926015 rpc_end method="/openfga.v1.OpenFGAService/CreateStore" status="OK" duration_ms=170 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:06.970385 http_end method="POST" path="/stores" content_length=27 duration_ms=270 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:07.051510 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models" content_length=52708
+[browser-openfga] 2026/11/20 04:53:07.649015 model_decode cache_hit=true bytes=52708 duration_ms=580 failed=false
+[browser-openfga] 2026/11/20 04:53:08.430575 rpc_start method="/openfga.v1.OpenFGAService/WriteAuthorizationModel"
+[browser-openfga] 2026/11/20 04:53:09.639944 rpc_end method="/openfga.v1.OpenFGAService/WriteAuthorizationModel" status="OK" duration_ms=1209 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:09.661240 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models" content_length=52708 duration_ms=2609 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:09.706359 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0
+[browser-openfga] 2026/11/20 04:53:09.747160 rpc_start method="/openfga.v1.OpenFGAService/GetStore"
+[browser-openfga] 2026/11/20 04:53:09.845600 rpc_end method="/openfga.v1.OpenFGAService/GetStore" status="OK" duration_ms=98 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:09.876670 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0 duration_ms=170 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:09.908329 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0
+[browser-openfga] 2026/11/20 04:53:09.950280 rpc_start method="/openfga.v1.OpenFGAService/ReadAuthorizationModel"
+[browser-openfga] 2026/11/20 04:53:10.396879 rpc_end method="/openfga.v1.OpenFGAService/ReadAuthorizationModel" status="OK" duration_ms=446 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:13.566875 model_encode cache_hit=false cache_stored=true bytes=81691 duration_ms=2525 failed=false
+[browser-openfga] 2026/11/20 04:53:13.616295 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0 duration_ms=3707 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:16.878540 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=50
+[browser-openfga] 2026/11/20 04:53:16.944885 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:53:17.160015 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=215 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:17.207200 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=50 duration_ms=328 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:17.249970 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=217
+[browser-openfga] 2026/11/20 04:53:17.307579 rpc_start method="/openfga.v1.OpenFGAService/Check"
+2026/11/20 04:53:17 [browser-openfga] model_resolver_transfer claimed=true
+[browser-openfga] 2026/11/20 04:53:18.554045 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=1246 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:18.580590 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=217 duration_ms=1330 context_error=<nil>
+Empty store and pinned model provisioned; SQL authorization migration remains required
+STACK|phase|{"phase":"bootstrap-complete","datastore":"postgres","guest_seconds":250,"uptime_seconds":"308.40","clock_scope":"entrypoint"}
+[browser-single] starting real Axum, HTTP port 3000
+STACK|phase|{"phase":"app-start","datastore":"postgres","guest_seconds":250,"uptime_seconds":"309.02","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"app-started","datastore":"postgres","guest_seconds":250,"uptime_seconds":"309.08","clock_scope":"entrypoint"}
+STACK|phase|{"phase":"app-wait","datastore":"postgres","guest_seconds":250,"uptime_seconds":"309.09","clock_scope":"entrypoint"}
+[browser-openfga] 2026/11/20 04:53:22.098305 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0
+[browser-openfga] 2026/11/20 04:53:22.139105 rpc_start method="/openfga.v1.OpenFGAService/GetStore"
+[browser-openfga] 2026/11/20 04:53:22.222420 rpc_end method="/openfga.v1.OpenFGAService/GetStore" status="OK" duration_ms=83 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:22.257650 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0 duration_ms=159 context_error=<nil>
+[browser-openfga] 2026/11/20 04:53:22.363109 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0
+[browser-openfga] 2026/11/20 04:53:22.421015 rpc_start method="/openfga.v1.OpenFGAService/ReadAuthorizationModel"
+[browser-openfga] 2026/11/20 04:53:22.428454 rpc_end method="/openfga.v1.OpenFGAService/ReadAuthorizationModel" status="OK" duration_ms=7 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:53:23.718615 model_encode cache_hit=true cache_stored=false bytes=81691 duration_ms=464 failed=false
+[browser-openfga] 2026/11/20 04:53:23.754269 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0 duration_ms=1391 context_error=<nil>
+[2m2026-11-20T04:53:33.419690Z[0m [33m WARN[0m [2msqlx::query[0m[2m:[0m slow statement: execution time exceeded alert threshold [3msummary[0m[2m=[0m"-- Preserve previously applied …" [3mdb.statement[0m[2m=[0m"\n\n-- Preserve previously applied migrations and their data. The runtime now uses\n-- the catalog schema; it never interprets historic demo rows as catalog grants.\nCREATE TABLE catalog_projects (\n    id TEXT PRIMARY KEY,\n    name TEXT NOT NULL\n);\nCREATE TABLE catalog_memberships (\n    project_id TEXT NOT NULL REFERENCES catalog_projects(id),\n    user_id TEXT NOT NULL REFERENCES users(id),\n    PRIMARY KEY (project_id, user_id)\n);\nCREATE TABLE catalog_warehouses (\n    id TEXT PRIMARY KEY,\n    project_id TEXT NOT NULL REFERENCES catalog_projects(id),\n    name TEXT NOT NULL,\n    owner_id TEXT NOT NULL,\n    UNIQUE (project_id, id),\n    FOREIGN KEY (project_id, owner_id) REFERENCES catalog_memberships(project_id, user_id)\n);\nCREATE TABLE catalog_namespaces (\n    id TEXT PRIMARY KEY,\n    project_id TEXT NOT NULL,\n    warehouse_id TEXT NOT NULL,\n    name TEXT NOT NULL,\n    owner_id TEXT NOT NULL,\n    UNIQUE (project_id, warehouse_id, id),\n    FOREIGN KEY (project_id, warehouse_id) REFERENCES catalog_warehouses(project_id, id),\n    FOREIGN KEY (project_id, owner_id) REFERENCES catalog_memberships(project_id, user_id)\n);\nCREATE TABLE catalog_roles (\n    id TEXT PRIMARY KEY,\n    project_id TEXT NOT NULL REFERENCES catalog_projects(id),\n    name TEXT NOT NULL,\n    owner_id TEXT NOT NULL,\n    UNIQUE (project_id, id),\n    FOREIGN KEY (project_id, owner_id) REFERENCES catalog_memberships(project_id, user_id)\n);\nCREATE TABLE catalog_tables (\n    project_id TEXT NOT NULL,\n    warehouse_id TEXT NOT NULL,\n    id TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    name TEXT NOT NULL,\n    description TEXT NOT NULL,\n    owner_id TEXT NOT NULL,\n    creator_id TEXT,\n    status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'updating', 'deleting', 'deleted')),\n    idempotency_key TEXT,\n    request_hash BYTEA,\n    delete_actor TEXT REFERENCES users(id),\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n    PRIMARY KEY (warehouse_id, id),\n    UNIQUE (project_id, warehouse_id, id),\n    FOREIGN KEY (project_id, warehouse_id, namespace_id)\n        REFERENCES catalog_namespaces(project_id, warehouse_id, id),\n    FOREIGN KEY (project_id, owner_id) REFERENCES catalog_memberships(project_id, user_id),\n    FOREIGN KEY (project_id, creator_id) REFERENCES catalog_memberships(project_id, user_id),\n    CHECK ((idempotency_key IS NULL) = (request_hash IS NULL)),\n    CHECK (idempotency_key IS NULL OR creator_id IS NOT NULL)\n);\nCREATE UNIQUE INDEX catalog_table_idempotency\n    ON catalog_tables(project_id, warehouse_id, creator_id, idempotency_key)\n    WHERE idempotency_key IS NOT NULL;\nCREATE TABLE catalog_pending_updates (\n    project_id TEXT NOT NULL,\n    warehouse_id TEXT NOT NULL,\n    table_id TEXT NOT NULL,\n    actor_id TEXT NOT NULL REFERENCES users(id),\n    operation TEXT NOT NULL CHECK (operation IN ('owner', 'namespace')),\n    owner_id TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    writes JSONB NOT NULL CHECK (jsonb_typeof(writes) = 'array'),\n    deletes JSONB NOT NULL CHECK (jsonb_typeof(deletes) = 'array'),\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n    PRIMARY KEY (warehouse_id, table_id),\n    FOREIGN KEY (project_id, warehouse_id, table_id)\n        REFERENCES catalog_tables(project_id, warehouse_id, id),\n    FOREIGN KEY (project_id, owner_id) REFERENCES catalog_memberships(project_id, user_id),\n    FOREIGN KEY (project_id, warehouse_id, namespace_id)\n        REFERENCES catalog_namespaces(project_id, warehouse_id, id)\n);\n-- Random, actor-bound cursors do not expose identifiers of filtered objects.\nCREATE TABLE catalog_list_cursors (\n    id TEXT PRIMARY KEY,\n    project_id TEXT NOT NULL,\n    warehouse_id TEXT NOT NULL,\n    actor_id TEXT NOT NULL REFERENCES users(id),\n    last_id TEXT NOT NULL,\n    expires_at TIMESTAMPTZ NOT NULL,\n    FOREIGN KEY (project_id, warehouse_id) REFERENCES catalog_warehouses(project_id, id)\n);\nCREATE INDEX catalog_list_cursors_expiry ON catalog_list_cursors(expires_at);\n\n" [3mrows_affected[0m[2m=[0m0 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m3.44862003s [3melapsed_secs[0m[2m=[0m3.44862003 [3mslow_threshold[0m[2m=[0m1s
+[2m2026-11-20T04:53:35.500000Z[0m [33m WARN[0m [2msqlx::query[0m[2m:[0m slow statement: execution time exceeded alert threshold [3msummary[0m[2m=[0m"-- Migration input is …" [3mdb.statement[0m[2m=[0m"\n\n-- Migration input is a documented relational source contract for the lab, not\n-- a claim to be Lakekeeper's internal PostgreSQL schema. Resource owners and\n-- hierarchy come from catalog_*; these tables retain existing ACL/role rows.\nCREATE TABLE legacy_project_grants (\n    project_id text NOT NULL REFERENCES catalog_projects(id),\n    subject_kind text NOT NULL,\n    subject_id text NOT NULL,\n    relation text NOT NULL,\n    PRIMARY KEY (project_id, subject_kind, subject_id, relation)\n);\nCREATE TABLE legacy_resource_grants (\n    object_kind text NOT NULL,\n    object_id text NOT NULL,\n    subject_kind text NOT NULL,\n    subject_id text NOT NULL,\n    relation text NOT NULL,\n    PRIMARY KEY (object_kind, object_id, subject_kind, subject_id, relation)\n);\nCREATE TABLE legacy_role_assignments (\n    role_id text NOT NULL REFERENCES catalog_roles(id),\n    subject_kind text NOT NULL,\n    subject_id text NOT NULL,\n    PRIMARY KEY (role_id, subject_kind, subject_id)\n);\n\nCREATE TABLE authorization_migration (\n    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),\n    status text NOT NULL DEFAULT 'pending'\n        CHECK (status IN ('pending', 'writing', 'verifying', 'active')),\n    store_id text,\n    model_id text,\n    model_sha256 text,\n    source_sha256 text,\n    next_tuple bigint NOT NULL DEFAULT 0 CHECK (next_tuple >= 0),\n    tuple_count bigint NOT NULL DEFAULT 0 CHECK (tuple_count >= 0),\n    verified_checks bigint NOT NULL DEFAULT 0 CHECK (verified_checks >= 0),\n    activated_at timestamptz,\n    updated_at timestamptz NOT NULL DEFAULT now(),\n    CHECK (next_tuple <= tuple_count),\n    CHECK ((status = 'pending') = (source_sha256 IS NULL)),\n    CHECK (status = 'pending' OR\n        (store_id IS NOT NULL AND model_id IS NOT NULL AND model_sha256 IS NOT NULL)),\n    CHECK ((status = 'active') = (activated_at IS NOT NULL))\n);\nINSERT INTO authorization_migration DEFAULT VALUES;\n\n-- The frozen legacy tables are an audit source after activation. They must not\n-- be replayed after a live revoke or an ownership transfer. To migrate a new\n-- source/target pair, an operator needs an explicit new rollout procedure.\nCREATE FUNCTION guard_legacy_authorization_source() RETURNS trigger LANGUAGE plpgsql AS $$\nDECLARE bound_hash text;\nBEGIN\n    SELECT source_sha256 INTO bound_hash FROM authorization_migration WHERE singleton FOR SHARE;\n    IF bound_hash IS NOT NULL THEN\n        RAISE EXCEPTION 'authorization source is frozen by a bound migration';\n    END IF;\n    RETURN NULL;\nEND;\n$$;\nCREATE TRIGGER freeze_legacy_project_grants BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON legacy_project_grants FOR EACH STATEMENT EXECUTE FUNCTION guard_legacy_authorization_source();\nCREATE TRIGGER freeze_legacy_resource_grants BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON legacy_resource_grants FOR EACH STATEMENT EXECUTE FUNCTION guard_legacy_authorization_source();\nCREATE TRIGGER freeze_legacy_role_assignments BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON legacy_role_assignments FOR EACH STATEMENT EXECUTE FUNCTION guard_legacy_authorization_source();\n\n-- Application rows remain mutable once the new authorization graph is active.\n-- During migration the source is stable, including across process restarts.\nCREATE FUNCTION guard_catalog_during_authorization_migration() RETURNS trigger LANGUAGE plpgsql AS $$\nDECLARE migration_status text;\nBEGIN\n    SELECT status INTO migration_status FROM authorization_migration WHERE singleton FOR SHARE;\n    IF migration_status IN ('writing', 'verifying') THEN\n        RAISE EXCEPTION 'catalog source is frozen while authorization migration is incomplete';\n    END IF;\n    RETURN NULL;\nEND;\n$$;\nCREATE TRIGGER freeze_catalog_projects BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_projects FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\nCREATE TRIGGER freeze_catalog_memberships BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_memberships FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\nCREATE TRIGGER freeze_catalog_warehouses BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_warehouses FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\nCREATE TRIGGER freeze_catalog_namespaces BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_namespaces FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\nCREATE TRIGGER freeze_catalog_tables BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_tables FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\nCREATE TRIGGER freeze_catalog_roles BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE\nON catalog_roles FOR EACH STATEMENT EXECUTE FUNCTION guard_catalog_during_authorization_migration();\n\n" [3mrows_affected[0m[2m=[0m1 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m1.69278464s [3melapsed_secs[0m[2m=[0m1.69278464 [3mslow_threshold[0m[2m=[0m1s
+[2m2026-11-20T04:53:38.377004Z[0m [33m WARN[0m [2msqlx::query[0m[2m:[0m slow statement: execution time exceeded alert threshold [3msummary[0m[2m=[0m"-- Add the Openlane …" [3mdb.statement[0m[2m=[0m"\n\n-- Add the Openlane task scenario without rewriting applied migration checksums\n-- or deleting records from the retired demonstration. Old tables are not served.\nCREATE TABLE organizations (\n    id TEXT PRIMARY KEY,\n    name TEXT NOT NULL,\n    owner_id TEXT NOT NULL REFERENCES users(id),\n    authz_pending BOOLEAN NOT NULL DEFAULT false,\n    authz_uncertain BOOLEAN NOT NULL DEFAULT false,\n    authorization_version BIGINT NOT NULL DEFAULT 0 CHECK (authorization_version >= 0)\n);\nCREATE TABLE organization_members (\n    organization_id TEXT NOT NULL REFERENCES organizations(id),\n    user_id TEXT NOT NULL REFERENCES users(id),\n    role TEXT NOT NULL CHECK (role IN ('member', 'admin')),\n    PRIMARY KEY (organization_id, user_id)\n);\nCREATE TABLE organization_permissions (\n    organization_id TEXT NOT NULL REFERENCES organizations(id),\n    user_id TEXT NOT NULL REFERENCES users(id),\n    relation TEXT NOT NULL CHECK (relation IN ('can_view_task', 'can_edit_task', 'can_delete_task')),\n    PRIMARY KEY (organization_id, user_id, relation)\n);\nCREATE TABLE tasks (\n    id TEXT PRIMARY KEY,\n    organization_id TEXT NOT NULL REFERENCES organizations(id),\n    title TEXT NOT NULL,\n    description TEXT NOT NULL,\n    task_status TEXT NOT NULL CHECK (task_status IN ('todo', 'in_progress', 'done')),\n    assigner_id TEXT NOT NULL REFERENCES users(id),\n    status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'deleting', 'deleted')),\n    delete_actor TEXT REFERENCES users(id),\n    idempotency_key TEXT,\n    request_hash BYTEA,\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n    CHECK ((idempotency_key IS NULL) = (request_hash IS NULL))\n);\nCREATE UNIQUE INDEX tasks_assigner_idempotency\n    ON tasks (organization_id, assigner_id, idempotency_key) WHERE idempotency_key IS NOT NULL;\nCREATE INDEX tasks_organization ON tasks (organization_id, id);\nCREATE TABLE task_relations (\n    task_id TEXT NOT NULL REFERENCES tasks(id),\n    user_id TEXT NOT NULL REFERENCES users(id),\n    relation TEXT NOT NULL CHECK (relation IN ('viewer', 'editor', 'assignee', 'blocked')),\n    PRIMARY KEY (task_id, user_id, relation)\n);\n-- Desired SQL state and its remote projection are staged in the same transaction.\n-- Every public read/mutation fences a pending organization until acknowledgement.\nCREATE TABLE authorization_jobs (\n    organization_id TEXT PRIMARY KEY REFERENCES organizations(id),\n    attempted BOOLEAN NOT NULL DEFAULT false,\n    writes TEXT NOT NULL,\n    deletes TEXT NOT NULL,\n    delete_object TEXT,\n    activate_task_id TEXT REFERENCES tasks(id),\n    delete_task_id TEXT REFERENCES tasks(id),\n    CHECK (activate_task_id IS NULL OR delete_task_id IS NULL)\n);\n\n" [3mrows_affected[0m[2m=[0m0 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m2.55413043s [3melapsed_secs[0m[2m=[0m2.55413043 [3mslow_threshold[0m[2m=[0m1s
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":637,"live_limit":15000,"attempted_total":44032,"module_created_total":44032,"instance_created_total":44032,"registered_total":44032,"detached_total":41984,"gc_total":36864,"encoded_bytes_total":40892922,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":768,"live_limit":15000,"attempted_total":47104,"module_created_total":47104,"instance_created_total":47104,"registered_total":47104,"detached_total":45056,"gc_total":45056,"encoded_bytes_total":43589967,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":603,"live_limit":15000,"attempted_total":48128,"module_created_total":48128,"instance_created_total":48128,"registered_total":48128,"detached_total":46080,"gc_total":45056,"encoded_bytes_total":44559739,"encoded_bytes_max":13614}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":902,"live_limit":15000,"attempted_total":45056,"module_created_total":45056,"instance_created_total":45056,"registered_total":45056,"detached_total":43008,"gc_total":36864,"encoded_bytes_total":41833687,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":779,"live_limit":15000,"attempted_total":49152,"module_created_total":49152,"instance_created_total":49152,"registered_total":49152,"detached_total":47104,"gc_total":45056,"encoded_bytes_total":45565581,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1158,"live_limit":15000,"attempted_total":50176,"module_created_total":50176,"instance_created_total":50176,"registered_total":50176,"detached_total":48128,"gc_total":45056,"encoded_bytes_total":46527581,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":797,"live_limit":15000,"attempted_total":46080,"module_created_total":46080,"instance_created_total":46080,"registered_total":46080,"detached_total":44032,"gc_total":44032,"encoded_bytes_total":42769567,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":676,"live_limit":15000,"attempted_total":51200,"module_created_total":51200,"instance_created_total":51200,"registered_total":51200,"detached_total":49152,"gc_total":45056,"encoded_bytes_total":47473532,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":779,"live_limit":15000,"attempted_total":47104,"module_created_total":47104,"instance_created_total":47104,"registered_total":47104,"detached_total":45056,"gc_total":44032,"encoded_bytes_total":43720586,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1201,"live_limit":15000,"attempted_total":52224,"module_created_total":52224,"instance_created_total":52224,"registered_total":52224,"detached_total":50176,"gc_total":45056,"encoded_bytes_total":48409754,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":600,"live_limit":15000,"attempted_total":53248,"module_created_total":53248,"instance_created_total":53248,"registered_total":53248,"detached_total":51200,"gc_total":45056,"encoded_bytes_total":49373254,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":750,"live_limit":15000,"attempted_total":48128,"module_created_total":48128,"instance_created_total":48128,"registered_total":48128,"detached_total":46080,"gc_total":44032,"encoded_bytes_total":44651028,"encoded_bytes_max":9846}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":0,"wasm_size":1044,"live_limit":15000,"attempted_total":54272,"module_created_total":54272,"instance_created_total":54272,"registered_total":54272,"detached_total":52224,"gc_total":45056,"encoded_bytes_total":50333705,"encoded_bytes_max":17480}
+[browser-qemu] {"event":"registered","phase":"add_function","core_id":1,"wasm_size":1095,"live_limit":15000,"attempted_total":49152,"module_created_total":49152,"instance_created_total":49152,"registered_total":49152,"detached_total":47104,"gc_total":44032,"encoded_bytes_total":45601330,"encoded_bytes_max":9846}
+[2m2026-11-20T04:55:23.642710Z[0m [33m WARN[0m [2msqlx::query[0m[2m:[0m slow statement: execution time exceeded alert threshold [3msummary[0m[2m=[0m"INSERT INTO catalog_projects(id,name) VALUES …" [3mdb.statement[0m[2m=[0m"\n\nINSERT INTO catalog_projects(id,name) VALUES ('acme','Acme Analytics'),('other','Other tenant');\nINSERT INTO catalog_memberships(project_id,user_id) VALUES ('acme','alice'),('acme','bob'),('acme','carol'),('acme','dave'),('other','eve');\nINSERT INTO catalog_warehouses(id,project_id,name,owner_id) VALUES ('analytics','acme','Analytics warehouse','alice'),('external','other','Other warehouse','eve');\nINSERT INTO catalog_namespaces(id,project_id,warehouse_id,name,owner_id) VALUES ('metrics','acme','analytics','Metrics','alice'),('restricted','acme','analytics','Restricted','alice'),('other-metrics','other','external','Metrics','eve');\nINSERT INTO catalog_roles(id,project_id,name,owner_id) VALUES ('analysts','acme','Analysts','alice'),('analyst-members','acme','Analyst members','alice'),('other-analysts','other','Analysts','eve');\nINSERT INTO catalog_tables(project_id,warehouse_id,id,namespace_id,name,description,owner_id,status) VALUES\n ('acme','analytics','requests','metrics','Requests','Synthetic HTTP request observations','carol','active'),\n ('acme','analytics','latency','metrics','Latency','Synthetic latency measurements','alice','active'),\n ('acme','analytics','errors','metrics','Errors','Synthetic error observations','bob','active'),\n ('other','external','requests','other-metrics','Other requests','Synthetic observations from a separate tenant','eve','active');\nINSERT INTO legacy_project_grants(project_id,subject_kind,subject_id,relation) VALUES ('acme','user','alice','project_admin'),('acme','role','analyst-members','select'),('acme','role','analysts','create'),('other','user','eve','project_admin');\nINSERT INTO legacy_role_assignments(role_id,subject_kind,subject_id) VALUES ('analysts','user','bob'),('analyst-members','role','analysts');\nINSERT INTO legacy_resource_grants(object_kind,object_id,subject_kind,subject_id,relation) VALUES\n ('lakekeeper_table','analytics/latency','user','dave','select');\n" [3mrows_affected[0m[2m=[0m26 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m1.46659508s [3melapsed_secs[0m[2m=[0m1.46659508 [3mslow_threshold[0m[2m=[0m1s
+[browser-openfga] 2026/11/20 04:55:24.803460 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0
+[browser-openfga] 2026/11/20 04:55:24.848815 rpc_start method="/openfga.v1.OpenFGAService/GetStore"
+[browser-openfga] 2026/11/20 04:55:24.915829 rpc_end method="/openfga.v1.OpenFGAService/GetStore" status="OK" duration_ms=66 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:24.937390 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0 duration_ms=133 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:24.972885 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0
+[browser-openfga] 2026/11/20 04:55:25.004945 rpc_start method="/openfga.v1.OpenFGAService/ReadAuthorizationModel"
+[browser-openfga] 2026/11/20 04:55:25.006830 rpc_end method="/openfga.v1.OpenFGAService/ReadAuthorizationModel" status="OK" duration_ms=1 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:26.095460 model_encode cache_hit=true cache_stored=false bytes=81691 duration_ms=433 failed=false
+[browser-openfga] 2026/11/20 04:55:26.126340 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0 duration_ms=1153 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:28.708395 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:28.739595 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:28.892150 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=152 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:28.914474 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=206 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:29.038039 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:29.077164 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:29.121694 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=44 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:29.152099 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=118 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:29.270129 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/write" content_length=3419
+[browser-openfga] 2026/11/20 04:55:29.392875 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:55:30.981135 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=1588 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:31.012470 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/write" content_length=3419 duration_ms=1742 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:31.187200 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:31.223220 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:31.311980 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=88 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:31.419720 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=232 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:31.487410 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=199
+[browser-openfga] 2026/11/20 04:55:31.526535 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:55:33.898140 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=2371 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:34.149694 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=199 duration_ms=2662 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:34.291920 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=202
+[browser-openfga] 2026/11/20 04:55:34.373115 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:55:38.058430 rpc_end method="/openfga.v1.OpenFGAService/Check" status="Code(4004)" duration_ms=3685 context_state="deadline" error_kind="other"
+[browser-openfga] 2026/11/20 04:55:38.304935 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=202 duration_ms=4013 context_error=<nil>
+Error: "OpenFGA returned 500 Internal Server Error; expected 200"
+STACK|phase|{"phase":"app-wait-finished","datastore":"postgres","guest_seconds":392,"uptime_seconds":"450.76","clock_scope":"entrypoint"}
+[browser-single] a required service exited (status 1)
+STACK|entrypoint-exit|{"reason":"required-service-exited","phase":"app-wait-finished","datastore":"postgres","exit_code":1,"guest_seconds":392,"uptime_seconds":"450.81","clock_scope":"entrypoint","app_pid":228,"fga_pid":167,"app_state":"exited","fga_state":"S"}
+STACK|guest-failure|{"reason":"entrypoint-exited","guest_seconds":411,"uptime_seconds":"460.57","clock_scope":"guest-wrapper","readiness_deadline_seconds":900,"child_pid":10,"child_state":"exited"}
+
+Guest diagnostic: /tmp/browser-lab-startup.log
+ activate_task_id TEXT REFERENCES tasks(id),\n    delete_task_id TEXT REFERENCES tasks(id),\n    CHECK (activate_task_id IS NULL OR delete_task_id IS NULL)\n);\n\n" [3mrows_affected[0m[2m=[0m0 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m2.55413043s [3melapsed_secs[0m[2m=[0m2.55413043 [3mslow_threshold[0m[2m=[0m1s
+[2m2026-11-20T04:55:23.642710Z[0m [33m WARN[0m [2msqlx::query[0m[2m:[0m slow statement: execution time exceeded alert threshold [3msummary[0m[2m=[0m"INSERT INTO catalog_projects(id,name) VALUES …" [3mdb.statement[0m[2m=[0m"\n\nINSERT INTO catalog_projects(id,name) VALUES ('acme','Acme Analytics'),('other','Other tenant');\nINSERT INTO catalog_memberships(project_id,user_id) VALUES ('acme','alice'),('acme','bob'),('acme','carol'),('acme','dave'),('other','eve');\nINSERT INTO catalog_warehouses(id,project_id,name,owner_id) VALUES ('analytics','acme','Analytics warehouse','alice'),('external','other','Other warehouse','eve');\nINSERT INTO catalog_namespaces(id,project_id,warehouse_id,name,owner_id) VALUES ('metrics','acme','analytics','Metrics','alice'),('restricted','acme','analytics','Restricted','alice'),('other-metrics','other','external','Metrics','eve');\nINSERT INTO catalog_roles(id,project_id,name,owner_id) VALUES ('analysts','acme','Analysts','alice'),('analyst-members','acme','Analyst members','alice'),('other-analysts','other','Analysts','eve');\nINSERT INTO catalog_tables(project_id,warehouse_id,id,namespace_id,name,description,owner_id,status) VALUES\n ('acme','analytics','requests','metrics','Requests','Synthetic HTTP request observations','carol','active'),\n ('acme','analytics','latency','metrics','Latency','Synthetic latency measurements','alice','active'),\n ('acme','analytics','errors','metrics','Errors','Synthetic error observations','bob','active'),\n ('other','external','requests','other-metrics','Other requests','Synthetic observations from a separate tenant','eve','active');\nINSERT INTO legacy_project_grants(project_id,subject_kind,subject_id,relation) VALUES ('acme','user','alice','project_admin'),('acme','role','analyst-members','select'),('acme','role','analysts','create'),('other','user','eve','project_admin');\nINSERT INTO legacy_role_assignments(role_id,subject_kind,subject_id) VALUES ('analysts','user','bob'),('analyst-members','role','analysts');\nINSERT INTO legacy_resource_grants(object_kind,object_id,subject_kind,subject_id,relation) VALUES\n ('lakekeeper_table','analytics/latency','user','dave','select');\n" [3mrows_affected[0m[2m=[0m26 [3mrows_returned[0m[2m=[0m0 [3melapsed[0m[2m=[0m1.46659508s [3melapsed_secs[0m[2m=[0m1.46659508 [3mslow_threshold[0m[2m=[0m1s
+[browser-openfga] 2026/11/20 04:55:24.803460 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0
+[browser-openfga] 2026/11/20 04:55:24.848815 rpc_start method="/openfga.v1.OpenFGAService/GetStore"
+[browser-openfga] 2026/11/20 04:55:24.915829 rpc_end method="/openfga.v1.OpenFGAService/GetStore" status="OK" duration_ms=66 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:24.937390 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T" content_length=0 duration_ms=133 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:24.972885 http_start method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0
+[browser-openfga] 2026/11/20 04:55:25.004945 rpc_start method="/openfga.v1.OpenFGAService/ReadAuthorizationModel"
+[browser-openfga] 2026/11/20 04:55:25.006830 rpc_end method="/openfga.v1.OpenFGAService/ReadAuthorizationModel" status="OK" duration_ms=1 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:26.095460 model_encode cache_hit=true cache_stored=false bytes=81691 duration_ms=433 failed=false
+[browser-openfga] 2026/11/20 04:55:26.126340 http_end method="GET" path="/stores/01M7VMT5JP239CGHYGS7953G6T/authorization-models/01M7VMT7CM1GC0QRZ24X27AKK2" content_length=0 duration_ms=1153 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:28.708395 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:28.739595 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:28.892150 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=152 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:28.914474 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=206 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:29.038039 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:29.077164 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:29.121694 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=44 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:29.152099 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=118 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:29.270129 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/write" content_length=3419
+[browser-openfga] 2026/11/20 04:55:29.392875 rpc_start method="/openfga.v1.OpenFGAService/Write"
+[browser-openfga] 2026/11/20 04:55:30.981135 rpc_end method="/openfga.v1.OpenFGAService/Write" status="OK" duration_ms=1588 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:31.012470 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/write" content_length=3419 duration_ms=1742 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:31.187200 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76
+[browser-openfga] 2026/11/20 04:55:31.223220 rpc_start method="/openfga.v1.OpenFGAService/Read"
+[browser-openfga] 2026/11/20 04:55:31.311980 rpc_end method="/openfga.v1.OpenFGAService/Read" status="OK" duration_ms=88 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:31.419720 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/read" content_length=76 duration_ms=232 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:31.487410 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=199
+[browser-openfga] 2026/11/20 04:55:31.526535 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:55:33.898140 rpc_end method="/openfga.v1.OpenFGAService/Check" status="OK" duration_ms=2371 context_state="none" error_kind="none"
+[browser-openfga] 2026/11/20 04:55:34.149694 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=199 duration_ms=2662 context_error=<nil>
+[browser-openfga] 2026/11/20 04:55:34.291920 http_start method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=202
+[browser-openfga] 2026/11/20 04:55:34.373115 rpc_start method="/openfga.v1.OpenFGAService/Check"
+[browser-openfga] 2026/11/20 04:55:38.058430 rpc_end method="/openfga.v1.OpenFGAService/Check" status="Code(4004)" duration_ms=3685 context_state="deadline" error_kind="other"
+[browser-openfga] 2026/11/20 04:55:38.304935 http_end method="POST" path="/stores/01M7VMT5JP239CGHYGS7953G6T/check" content_length=202 duration_ms=4013 context_error=<nil>
+Error: "OpenFGA returned 500 Internal Server Error; expected 200"
+STACK|phase|{"phase":"app-wait-finished","datastore":"postgres","guest_seconds":392,"uptime_seconds":"450.76","clock_scope":"entrypoint"}
+[browser-single] a required service exited (status 1)
+STACK|entrypoint-exit|{"reason":"required-service-exited","phase":"app-wait-finished","datastore":"postgres","exit_code":1,"guest_seconds":392,"uptime_seconds":"450.81","clock_scope":"entrypoint","app_pid":228,"fga_pid":167,"app_state":"exited","fga_state":"S"}
+
+Guest diagnostic: /tmp/browser-lab/initdb.log
+The files belonging to this database system will be owned by user "postgres".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "en_US.utf8".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+creating directory /tmp/browser-lab/postgres ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... UTC
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+Guest diagnostic: /tmp/browser-lab/postgres.log
+2026-11-20 04:51:50.469 UTC [121] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+2026-11-20 04:51:50.481 UTC [121] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-11-20 04:51:50.498 UTC [121] LOG:  listening on Unix socket "/tmp/browser-lab/.s.PGSQL.5432"
+2026-11-20 04:51:51.023 UTC [126] LOG:  database system was shut down at 2026-11-20 04:51:40 UTC
+2026-11-20 04:51:52.127 UTC [121] LOG:  database system is ready to accept connections
+2026-11-20 04:52:32.160 UTC [161] ERROR:  relation "goose_db_version" does not exist at character 36
+2026-11-20 04:52:32.160 UTC [161] STATEMENT:  SELECT version_id, is_applied from goose_db_version ORDER BY id DESC
+2026-11-20 04:55:45.407 UTC [121] LOG:  received fast shutdown request
+2026-11-20 04:55:45.417 UTC [121] LOG:  aborting any active transactions
+2026-11-20 04:55:46.291 UTC [121] LOG:  background worker "logical replication launcher" (PID 131) exited with exit code 1
+2026-11-20 04:55:46.412 UTC [124] LOG:  shutting down
+2026-11-20 04:55:46.420 UTC [124] LOG:  checkpoint starting: shutdown immediate
+2026-11-20 04:55:48.732 UTC [124] LOG:  checkpoint complete: wrote 946 buffers (46.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=1.578 s, sync=0.656 s, total=2.311 s; sync files=735, longest=0.011 s, average=0.001 s; distance=9440 kB, estimate=9440 kB; lsn=0/1E1E668, redo lsn=0/1E1E668
+2026-11-20 04:55:50.095 UTC [121] LOG:  database system is shut down
+
+Guest diagnostic: /proc/meminfo
+MemTotal:         501624 kB
+MemFree:          283712 kB
+MemAvailable:     349112 kB
+Buffers:             464 kB
+Cached:           197476 kB
+SwapCached:            0 kB
+Active:           120952 kB
+Inactive:          83060 kB
+Active(anon):      80072 kB
+Inactive(anon):    50972 kB
+Active(file):      40880 kB
+Inactive(file):    32088 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:          6084 kB
+Mapped:            16676 kB
+Shmem:            124972 kB
+KReclaimable:       4088 kB
+Slab:              10420 kB
+SReclaimable:       4088 kB
+SUnreclaim:         6332 kB
+KernelStack:         896 kB
+PageTables:          412 kB
+SecPageTables:         0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:      250812 kB
+Committed_AS:     325512 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:         976 kB
+VmallocChunk:          0 kB
+Percpu:              328 kB
+DirectMap4k:       20340 kB
+DirectMap2M:      503808 kB
+
+Guest diagnostic: /sys/devices/system/cpu/online
+0-1
+
+Guest diagnostic: /proc/uptime
+462.74 355.03
+
+LAB|boot-failed
+
+ERROR: LAB|boot-failed

@@ -1,0 +1,101 @@
+{
+  "source": "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58",
+  "linux_source": "830b3c68c1fb1e9176028d02ef86f3cf76aa2476",
+  "changes": [
+    "Linux kernel configuration: SYSVIPC, SYSVIPC_SYSCTL, IPC_NS, ACPI, X86_PM_TIMER and HW_RANDOM_VIRTIO",
+    "remove unused 128 MiB migration snapshot",
+    "QEMU: evict at 2048 retained instances per CPU; shared startup live cap 8192 for Firefox, 15000 otherwise",
+    "QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged",
+    "QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked",
+    "QEMU: emit atomic.fence for compiled TCG memory barriers; source-derived Wasm encoding and execution checked",
+    "Verified host-mount startup overlay: entrypoint, OpenFGA adaptation and initial-bootstrap-only CLI",
+    "QEMU: evict at 2048 retained instances per CPU; shared startup live cap 8192 for Firefox, 15000 otherwise",
+    "QEMU: passive per-worker module lifecycle counters; original exceptions propagate unchanged",
+    "QEMU: normalize i32 operands before signed/unsigned widening multiply; actual emitted Wasm regression checked",
+    "QEMU: emit atomic.fence for compiled TCG memory barriers; source-derived Wasm encoding and execution checked",
+    "QEMU: service owner-local pending finalizers during idle vCPU waits, releasing the BQL before JS yield; live caps and active dispatch unchanged"
+  ],
+  "rootfs_changed": false,
+  "data": {
+    "bytes": 550773312,
+    "sha256": "7863b9794e6cc69f7661056ecdbc42439b1143febba5294812ca203491df5a2f"
+  },
+  "loader_sha256": "17d523c59fb6f7efd8b42ea03877c21bb0e3fa76dbef3486568d37dec677a078",
+  "kernel_sha256": "17abd1165f3b228457d809adf5f4eb9163c282b6ab5b4828e1c9803a257e5421",
+  "emulator_build": {
+    "converter_commit": "087c313479d51cdf255e4f28ded6ae7d8141297b",
+    "converter_dockerfile_sha256": "f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508",
+    "qemu_commit": "8604ed49a3cde392890b014a8d5a959c8a2fe72a",
+    "backend_postimage_blob": "5b6be92da27d573577854f6badf7fbbb1082f83f",
+    "emscripten_version": "4.0.10",
+    "emsdk_image": "emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7",
+    "max_instance_alive_before": 15000,
+    "max_instance_alive_after": 15000,
+    "max_instance_running_local": 2048,
+    "instance_budget_configuration": "shared_c_pre_run_setter",
+    "firefox_instance_limit": 8192,
+    "chromium_instance_limit": 15000,
+    "instance_reservation": "atomic_compare_exchange",
+    "instance_budget_tests": "passed",
+    "instance_budget_bridge_tests": "passed",
+    "runtime_diagnostics": "module_lifecycle_counters_v1",
+    "runtime_diagnostics_tests": "passed",
+    "i32_multiply_fix": "normalize_operands_before_widening_product",
+    "multiply_emitter_preimage_blob": "3c85588be97b6c53a451e30c0593e8b433ede7b6",
+    "multiply_emitter_postimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "i32_multiply_tests": "passed",
+    "memory_barrier_fix": "emit_atomic_fence_for_tcg_mb",
+    "barrier_emitter_preimage_blob": "d4078f5adac57d9ccc7d792773fff2ea65a33d6a",
+    "barrier_emitter_postimage_blob": "4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355",
+    "memory_barrier_tests": "passed",
+    "idle_gc_policy": "pending_local_finalizers_timed_idle_wait",
+    "idle_gc_poll_ms": 20,
+    "idle_gc_tests": "passed",
+    "idle_gc_bridge_tests": "passed",
+    "idle_gc_preimages": {
+      "tcg/wasm32.c": "e0b26bdc8d6d5b987061f9090ae0b62b76c34e16",
+      "system/cpus.c": "a444a747f0164ee9a998ef4b25b49a2efc4607a8",
+      "include/tcg/wasm32-gc.h": null
+    },
+    "idle_gc_postimages": {
+      "tcg/wasm32.c": "5b6be92da27d573577854f6badf7fbbb1082f83f",
+      "system/cpus.c": "9252d9478b067a88a776a47ca746e097591bf695",
+      "include/tcg/wasm32-gc.h": "c3b9c7b9e3c65191cba9cc0cca117f45965a6a58"
+    },
+    "instantiate_num": 1500,
+    "change_kind": "wasm_idle_gc_scheduling_candidate",
+    "patch_sha256": "b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661",
+    "builder_sha256": "61d925ec4365b1bdd8c7714d631bc7436dca7d4879b95e216ea5b2f1a6838e9d",
+    "dockerfile_appendix_sha256": "5502d1193666d14d7f60e1641caa5c21d151ad0a9eff17760490dd95bd863218",
+    "budget_test_sha256": "dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4",
+    "diagnostics_test_sha256": "c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6",
+    "budget_bridge_test_sha256": "5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528",
+    "budget_bridge_proof_sha256": "22af5ca5096b036c9e6cfaab65dcd49e6d7ebeb98bd33a1ea0f188b6f46601d9",
+    "multiply_patch_sha256": "c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2",
+    "multiply_test_sha256": "ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff",
+    "multiply_proof_sha256": "d4c8e27682b953cf3653b24be5dcfb1949d2df8d710f0c6970a2631fb63350e5",
+    "barrier_patch_sha256": "49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339",
+    "barrier_test_sha256": "13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca",
+    "barrier_proof_sha256": "2a9fc5dd3e9d8bb76594a5e981db510eb76a4be76a2d62be136991b640bfc7ed",
+    "idle_gc_patch_sha256": "48aa5fcb57790e51f2ad16e6075fc93bf6345c944df88de5b69e8daa45540e9f",
+    "idle_gc_test_sha256": "d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14",
+    "idle_gc_proof_sha256": "a7561bab0a0ab18a3e2b6f823e8a8889e2f660c8e34216f01c16c870f5a2f2a0",
+    "idle_gc_bridge_test_sha256": "d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14",
+    "idle_gc_bridge_proof_sha256": "434ef8628d8a1c6367f7e71843fd7c1cc3c8c2d276b063352f40f2302daa3a88",
+    "files": {
+      "out.js": {
+        "bytes": 279363,
+        "sha256": "95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2"
+      },
+      "qemu-system-x86_64.wasm": {
+        "bytes": 41250530,
+        "sha256": "bca14ba86cff602c979e3ae93df80611b186ecbe101542ec14e6809c528e0db3"
+      }
+    },
+    "browser_acceptance": "not_run"
+  },
+  "startup_overlay": {
+    "manifest": "startup-manifest.json",
+    "sha256": "9ae882bf3bebbd50aca4b50699df569c7a8308daee90b1cb99e2782fd5981962"
+  }
+}

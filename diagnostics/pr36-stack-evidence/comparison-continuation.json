@@ -1,0 +1,26 @@
+{
+  "kind": "full_stack_comparison_continuation_gate",
+  "checkedAt": "2026-11-20T04:48:49.536Z",
+  "jobTimeoutMilliseconds": 3900000,
+  "requiredRemainingMilliseconds": 1680000,
+  "proceed": true,
+  "job": {
+    "id": 136087192171,
+    "name": "Browser full-stack datastore comparison",
+    "run_id": 44675797208,
+    "head_sha": "9785f31adc0af939a6d1c5edac183593fc69c718",
+    "started_at": "2026-11-20T04:38:48Z",
+    "run_attempt": 1,
+    "source": "GitHub Actions current job API",
+    "observed_at": "2026-11-20T04:39:03.304758+00:00"
+  },
+  "firstSummary": {
+    "path": "artifacts/pr36-stack-continuation/memory/summary.json",
+    "bytes": 94038,
+    "sha256": "9f55d929c54688e7c0a7523c04c3e43b5e953d3047ee89f7e7cd1cf46bfc916a"
+  },
+  "firstApplicationAcceptancePassed": false,
+  "firstContinuationReason": "The real full-stack guest reported a functional startup or acceptance failure",
+  "jobElapsedMilliseconds": 601539,
+  "jobRemainingMilliseconds": 3298461
+}

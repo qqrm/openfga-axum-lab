@@ -1,0 +1,312 @@
+{
+  "kind": "verified_full_stack_runtime_transform",
+  "baselineSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "datastore": "postgres",
+  "input": {
+    "guest": {
+      "bytes": 6354,
+      "sha256": "213c1e9d0938c5082ffbc6b96086b3d3aa21ab2dc09c58afa1d2b17b1ef80649"
+    },
+    "entrypoint": {
+      "bytes": 5367,
+      "sha256": "930a48ef13f3df61b4bc09170f512fc7279b6c537a99eff80f24038126687225"
+    }
+  },
+  "output": {
+    "guest": {
+      "bytes": 7357,
+      "sha256": "3155b6cda39ce4eca48f21153eba9101dca5c10066e29f343e657310a789fef9"
+    },
+    "entrypoint": {
+      "bytes": 8192,
+      "sha256": "ba15f4333adf5784806dd902b8d16439be411b30b6d677d058382640f55df7be"
+    }
+  },
+  "inverseRestoresPinnedSources": true,
+  "productionAcceptanceTailUnchanged": true,
+  "postgresApplicationStartupUnchanged": true,
+  "postgresBothDatabasesCreated": true,
+  "authorizationDeadlinesChanged": false,
+  "authorizationWorkloadChanged": false,
+  "additionalAuthorizationWarmup": false,
+  "originalLabToolAcceptance": true,
+  "observationProtocol": "STACK|phase, STACK|entrypoint-exit, STACK|guest-failure; original LAB protocol unchanged",
+  "observationClock": "guest_seconds is local SECONDS; clock_scope identifies shell; uptime_seconds is shared Linux uptime",
+  "edits": [
+    {
+      "file": "entrypoint",
+      "label": "builtin phase and process observations",
+      "functional": false,
+      "before": {
+        "bytes": 9,
+        "sha256": "b465b02fd4e72422cb46f4e2a3eabe110fd28ab0b834bef247f13462332e45e0"
+      },
+      "after": {
+        "bytes": 1976,
+        "sha256": "ede087eb065095204168d156519f2dff9a2159dc09c2dcdc6e1550954d9a70f3"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "observe exit before cleanup",
+      "functional": false,
+      "before": {
+        "bytes": 66,
+        "sha256": "239f894463eb2f14960fedd8f14873aa675c37222cca4f0765d25c54ae680e13"
+      },
+      "after": {
+        "bytes": 110,
+        "sha256": "96f6be603b7ff34006ab9fd8ac1a2afecebd418e2a46db79231540904a4d9952"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "classify interrupt",
+      "functional": false,
+      "before": {
+        "bytes": 20,
+        "sha256": "df49a22e61918d5a4661c529d6d4b1c77a4d781d5b8d91f7914908e8534dd471"
+      },
+      "after": {
+        "bytes": 50,
+        "sha256": "6e6f2ff13adcce076bb7c1fabf4688b8779b14a684533ec36bca5c4cabf87565"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "classify termination",
+      "functional": false,
+      "before": {
+        "bytes": 21,
+        "sha256": "83c46013c4bde7cb407ee0e22cb707864f7f36b8a3b88b65e7f05c19aca23691"
+      },
+      "after": {
+        "bytes": 52,
+        "sha256": "fb469fc3d1fa92811a564f9637daf769af94f4d24e15d6908be9801c7924d6b5"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "initdb phase",
+      "functional": false,
+      "before": {
+        "bytes": 225,
+        "sha256": "0e1c58934c1009a16e1ec78ccb4bb970c90f56fa1bbbedc4a52cacdcd2292055"
+      },
+      "after": {
+        "bytes": 278,
+        "sha256": "9532a9c0c0d6c0b3b35116bcf4d540f39686cc9bb2df6797eabed23390b543c7"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "PostgreSQL startup phase",
+      "functional": false,
+      "before": {
+        "bytes": 266,
+        "sha256": "2b508c353ac63b9a737e52d3a3be7f904fb40b6d812c12e8f3992fd641d86f99"
+      },
+      "after": {
+        "bytes": 320,
+        "sha256": "e461ae376d252af0ebad99e04398dd8ac827401f663313fa9075f65c1befcadc"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "OpenFGA database creation phase",
+      "functional": false,
+      "before": {
+        "bytes": 56,
+        "sha256": "eff966f0d44bb0a7d1afb55732e577e84535b5aa3772b77f5ecd96495c8147df"
+      },
+      "after": {
+        "bytes": 129,
+        "sha256": "ac0709fff053d71a0d03e4a93f325011d445ca3eed53ef80c25048d1317e4b72"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "application database creation phase",
+      "functional": false,
+      "before": {
+        "bytes": 57,
+        "sha256": "364f0b2c94b8d2be26322a40627dc6329fb0a20e436e9745e2f05744becb910f"
+      },
+      "after": {
+        "bytes": 132,
+        "sha256": "e3f25ea4374830bdfb7f3aaa4b3c2f139519cf9dffbcb0a18b6b7ad57efd0ed6"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "OpenFGA SQL migration phase",
+      "functional": false,
+      "before": {
+        "bytes": 26,
+        "sha256": "ec3bbf16d1c1aed6717dc1e36d9c390432d930978eea72a2beb79dd0ead45ed3"
+      },
+      "after": {
+        "bytes": 97,
+        "sha256": "8f7ad55e8e0efc7e1c801245baafa1ad8e60e325f08ebe851606e3828193edd5"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "OpenFGA process phase",
+      "functional": false,
+      "before": {
+        "bytes": 35,
+        "sha256": "a83486edacfde374aff7288a2436d0e784e3760a03817222e808b627f0f2a350"
+      },
+      "after": {
+        "bytes": 89,
+        "sha256": "27bb0d8808c41de6d034daa6b59bc1f64b25965bf4c8d3e2ce8c36d6676f3e0a"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "listener phase",
+      "functional": false,
+      "before": {
+        "bytes": 21,
+        "sha256": "a57941eaee0fcf39d2e015c00ba7440e61d2169f1db49993e846b4ed9a487252"
+      },
+      "after": {
+        "bytes": 56,
+        "sha256": "a32542eb6541c46d28dfc6c38abf8630afd1c39bc2f7587e1dbc07be8314f08f"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "classify listener child exit",
+      "functional": false,
+      "before": {
+        "bytes": 84,
+        "sha256": "9a8e81c70a6ef65aac16d1d4b25dfe3170872f1f07e62b55474bf154a005f7b4"
+      },
+      "after": {
+        "bytes": 141,
+        "sha256": "d3715ea02fef4291662ef6df90c0361a9157c4314e373781998223a1e324bc45"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "classify listener deadline",
+      "functional": false,
+      "before": {
+        "bytes": 72,
+        "sha256": "74e29fd9835651a75735b5c373a434fcd08c18fc9f56f3675aef363f2b1c0100"
+      },
+      "after": {
+        "bytes": 120,
+        "sha256": "7a2f746e7d10b27fca2d0876903caac07635ca83fbac669582c144be9a8079c8"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "listener ready phase",
+      "functional": false,
+      "before": {
+        "bytes": 86,
+        "sha256": "e6da4b29df23d3d2856e6720bcea00077b90d600bad778d903f74f907c5d29af"
+      },
+      "after": {
+        "bytes": 121,
+        "sha256": "970e3d66308dcfe313fcf505f1e1243150cd84531df7a003c2d8cbfea73a9484"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "bootstrap phase",
+      "functional": false,
+      "before": {
+        "bytes": 30,
+        "sha256": "d393365456cd207f1bc730b4fab064d59269382915864185d18aade9acc9cf01"
+      },
+      "after": {
+        "bytes": 89,
+        "sha256": "bededd640d94a78e0d8a75c3cfec55e0d757e8a903ddf49ab2a16d6b85f36b35"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "application process phase",
+      "functional": false,
+      "before": {
+        "bytes": 32,
+        "sha256": "3aea1db6cf6eac40e8c411965683c341552e54bde4a197d35af8be88fed29c2e"
+      },
+      "after": {
+        "bytes": 78,
+        "sha256": "cfbcfeab6144708d006261fa5a94c9b9b94a360415cb5f0d2fe05c69e5772899"
+      }
+    },
+    {
+      "file": "entrypoint",
+      "label": "observe required-service exit",
+      "functional": false,
+      "before": {
+        "bytes": 54,
+        "sha256": "62cfac40444908cdf1e4b168254f941a4929ea5eae8b1bbb428b27885341f181"
+      },
+      "after": {
+        "bytes": 147,
+        "sha256": "587abc4ad16d1bfeaa152c54fd372f9b85920ae4d8fac659e56a897fd9260404"
+      }
+    },
+    {
+      "file": "guest",
+      "label": "builtin readiness failure observation",
+      "functional": false,
+      "before": {
+        "bytes": 10,
+        "sha256": "ebab0e9256b0a4051a7ac3c50748e8715b7438a9a16bafe1301d51df7806181a"
+      },
+      "after": {
+        "bytes": 856,
+        "sha256": "0ab4f08d0deadb44966468cd7f4b75b2123cefd4bfbb255f4c4c454226807840"
+      }
+    },
+    {
+      "file": "guest",
+      "label": "default readiness exit reason",
+      "functional": false,
+      "before": {
+        "bytes": 47,
+        "sha256": "77f72b3eed31fe6e405b9f41af8d8c2c2bb473afa480e3205328f4500f9df11b"
+      },
+      "after": {
+        "bytes": 87,
+        "sha256": "fbb230fde91ac73c8312ea5a01d268d11d9660be0c62776462eba919d9308040"
+      }
+    },
+    {
+      "file": "guest",
+      "label": "classify readiness child exit",
+      "functional": false,
+      "before": {
+        "bytes": 56,
+        "sha256": "5c81223045b86951ea47663645e01b32076277fd0df3fb259c12007aef499eb8"
+      },
+      "after": {
+        "bytes": 114,
+        "sha256": "14c56ea8a1a78e6ec84dba027195ac93ff8e8849c17b3c5ec091cd4faebd1ff0"
+      }
+    },
+    {
+      "file": "guest",
+      "label": "observe failure before bounded diagnostics",
+      "functional": false,
+      "before": {
+        "bytes": 106,
+        "sha256": "abecd0a1e92cc5cdd252404002cc40d1f43362e7824f751a571a94e6cc3ffa60"
+      },
+      "after": {
+        "bytes": 165,
+        "sha256": "bce772ae680d15ca2846a7d0b602598978887ac187d7d8fe1509f4225358a29c"
+      }
+    }
+  ],
+  "functionalChanges": [],
+  "executionVerified": false
+}

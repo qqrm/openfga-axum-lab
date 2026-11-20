@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 3,
+  "experiment": "fresh_openfga10_two_walk_schema_reachability_and_bootstrap_deny",
+  "producerSource": "bb8fed250bdee9931f7702ae2475d28e5e9eed8f",
+  "runtimeSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "rustSource": "207d15fab685d3adb9c5d51a048982c2236ae75c",
+  "packagingSource": "4b7a1e1933083232fb8305a60a47bdd3c32e6689",
+  "workflowCommit": "bb8284f17e78667c6ea46a2de02de5dc3f3507af",
+  "runId": "43500949883",
+  "runAttempt": "1",
+  "repositoryRuntimeContract": "passed",
+  "scriptSyntaxAndShellCheck": "passed",
+  "openfgaInputScope": "exact_openfga_build_inputs_and_tests",
+  "verifiedInputs": {
+    ".dockerignore": {
+      "mode": "100644",
+      "git_blob": "50027e9f177f8494be292b0deb6eeda561cef36f",
+      "bytes": 135,
+      "sha256": "fbe9a19b267f85945ba052a70cf43ca595545a88d5b10ba2ecb1a50aa09c82e0"
+    },
+    "browser-single/OpenFGA.Dockerfile": {
+      "mode": "100644",
+      "git_blob": "fa42c99d166c438fa67975bc4a785d11fe8dbc27",
+      "bytes": 722,
+      "sha256": "18a0b7ce260898e3b59de9e59990ed913621039a0cff677bb7887a088d2b0750"
+    },
+    "browser-single/openfga/browser_http_dial.go": {
+      "mode": "100644",
+      "git_blob": "31b3266dc02553792d5c1c2f034e0460b9680e0c",
+      "bytes": 3691,
+      "sha256": "485d1452148f325e553ad82f79417ec27b46be24217ece9e149ee2f8452ad954"
+    },
+    "browser-single/openfga/browser_http_dial_test.go": {
+      "mode": "100644",
+      "git_blob": "7b264f38b040f6cbb22c924dfb56e471dcda61a4",
+      "bytes": 17869,
+      "sha256": "18784ee73b605cd74060c0e61d584d17fad54eee0db85b2ac91a490a21087285"
+    },
+    "browser-single/openfga/browser_http_warmup.go": {
+      "mode": "100644",
+      "git_blob": "d582ffc6b3aecd04d6b029774bb4f8c2524ae700",
+      "bytes": 10052,
+      "sha256": "5be5cca1bacc47f3b70b24de22eb513461efd96c71ab8f509b2fc20cbefce7df"
+    },
+    "browser-single/openfga/browser_http_warmup_test.go": {
+      "mode": "100644",
+      "git_blob": "aecbd19edce978ab97001e0373ed9d64744356ba",
+      "bytes": 8021,
+      "sha256": "2d9d6d7aee965a4a29d3cbf89f2e8faedb5040dee1d9e788b5901eddfbcfe320"
+    },
+    "browser-single/openfga/browser_model_codec.go": {
+      "mode": "100644",
+      "git_blob": "fb1f6246009396582670abda36c994f0f4d3539b",
+      "bytes": 6939,
+      "sha256": "eb70a26523c3e8020247403e9a2dd2187421fa3a72612112715425395cc4eae7"
+    },
+    "browser-single/openfga/browser_model_codec_integration_test.go": {
+      "mode": "100644",
+      "git_blob": "29e5fe3297e6ceddc29d1103d1c60d556884fea2",
+      "bytes": 24824,
+      "sha256": "d5f9d2a30c9bcc29fa702a8e36b0aeff41e96731130dcf2ecf1b932f5c355a1f"
+    },
+    "browser-single/openfga/browser_model_codec_test.go": {
+      "mode": "100644",
+      "git_blob": "a3cdb1e13fb2ca03f516b3b746204cc6bf132475",
+      "bytes": 26316,
+      "sha256": "f4e6b034bcc81af3dac07e2529906c6714b1531c6e6ff27b9a89f3821c01ab56"
+    },
+    "browser-single/openfga/browser_model_validation.go": {
+      "mode": "100644",
+      "git_blob": "624b9901870c300e814d04cd5a8023145e925c5f",
+      "bytes": 10629,
+      "sha256": "c960482baaced488a1afa206fefdbbee37ea90b8aadc40a1daeea955ad2a5584"
+    },
+    "browser-single/openfga/browser_model_validation_test.go": {
+      "mode": "100644",
+      "git_blob": "595b6c95118086f48c72077304c599fa6b32ffc2",
+      "bytes": 43697,
+      "sha256": "77a7b20efc52d8b179ffffc7e913df7009eeb962ca61bb5d15a2043bdf935bec"
+    },
+    "browser-single/openfga/browser_resolver_transfer_integration_test.go": {
+      "mode": "100644",
+      "git_blob": "dbdd976162dd73e3fe156fa0fbee7cb1871064aa",
+      "bytes": 6680,
+      "sha256": "23f160617087a505cf3736e7b092171b37e134f32585dee28e8ee9c2def45203"
+    },
+    "browser-single/openfga/browser_write_typesystem_test.go": {
+      "mode": "100644",
+      "git_blob": "22d3efcefba27d33e0b4b96bb1cef45d5ba29f14",
+      "bytes": 14430,
+      "sha256": "af0392bfbd9e31ffdafae4a1a9c703d6d0b9e11599da044287d88bda3ae9a2ce"
+    },
+    "browser-single/openfga/build.sh": {
+      "mode": "100755",
+      "git_blob": "8056d3ac2fe73d65858f98cc07d3124000ce30f5",
+      "bytes": 12892,
+      "sha256": "ce3569d4aa0de0bde00b31071be14c224d142e15410a03380eb0bb49360cfa90"
+    },
+    "browser-single/openfga/startup-dial.patch": {
+      "mode": "100644",
+      "git_blob": "3389ef60754e86ac7738f3932bfe7c86b8923562",
+      "bytes": 6609,
+      "sha256": "f699ff2d2cc55c2888ae3bc1e474990097fe21d7f4491f2ee8e23727f3c78ced"
+    },
+    "browser-single/openfga/upstream.sha256": {
+      "mode": "100644",
+      "git_blob": "cb123743eca640d4a74d299db55359e20738d1f1",
+      "bytes": 870,
+      "sha256": "3760b593143eff692784000767abe85fcbb4ecb8fc6717b76607fcfdf1a29851"
+    },
+    "fga/model.json": {
+      "mode": "100644",
+      "git_blob": "eaf36ef7f3b50ea8d147b5770517fbcc9ae709c8",
+      "bytes": 52709,
+      "sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d"
+    }
+  },
+  "inputSetSha256": "4aa64ff04caa1775295acd65d56605b3b8e8ab24042ce440327430b94fdcb15c",
+  "runtimeOpenfgaInputsMatchProducer": true,
+  "otherRuntimeFilesCompared": false,
+  "excludedDocumentation": [
+    "browser-single/openfga/README.md"
+  ],
+  "sourceSha256": {
+    "browser-single/OpenFGA.Dockerfile": "18a0b7ce260898e3b59de9e59990ed913621039a0cff677bb7887a088d2b0750",
+    "browser-single/openfga/build.sh": "ce3569d4aa0de0bde00b31071be14c224d142e15410a03380eb0bb49360cfa90",
+    "browser-single/bootstrap/build.sh": "f8a5879e0eaf6a241737673b263128fe5c97c2358a35241bedf7b28441e778c3",
+    "browser-single/bootstrap/native-proof.mjs": "5c84bd3035d18b6d9361042819b9578599fb6ffa5d556eacca87daff49ba7869"
+  },
+  "scope": "native producers and real native service verification; no emulator, kernel build or browser VM",
+  "browserAcceptanceVerified": false
+}

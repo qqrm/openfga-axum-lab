@@ -1,0 +1,17 @@
+{
+  "id": 136087192171,
+  "name": "Browser full-stack datastore comparison",
+  "run_id": 44675797208,
+  "head_sha": "9785f31adc0af939a6d1c5edac183593fc69c718",
+  "started_at": "2026-11-20T04:38:48Z",
+  "run_attempt": 1,
+  "source": "GitHub Actions current job API",
+  "observed_at": "2026-11-20T04:39:03.304758+00:00",
+  "checkedAt": "2026-11-20T04:48:54.499Z",
+  "jobElapsedMilliseconds": 606499,
+  "outerJobMinutes": 65,
+  "runtimeStepMinutes": 25,
+  "minimumRemainingJobMilliseconds": 1680000,
+  "latestLaunchJobElapsedMilliseconds": 2220000,
+  "launchPermitted": true
+}

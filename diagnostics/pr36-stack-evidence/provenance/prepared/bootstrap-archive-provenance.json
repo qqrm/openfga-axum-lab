@@ -1,0 +1,29 @@
+{
+  "label": "bootstrap",
+  "run": 43500949883,
+  "head": "bb8284f17e78667c6ea46a2de02de5dc3f3507af",
+  "artifact": 14074756932,
+  "artifact_name": "browser-bootstrap-openfga10-paths",
+  "archive": {
+    "bytes": 3321954,
+    "sha256": "584367cfa6d93ab98593ac9cc939695030b23dcc5634d5da762bee8455926917"
+  },
+  "members": {
+    "bootstrap": {
+      "bytes": 7444640,
+      "sha256": "e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275"
+    },
+    "build.json": {
+      "bytes": 2200,
+      "sha256": "6b8af0da27628584a144e22797faf5eed01dbe3bebe418aab7b8d3e258c25cbe"
+    },
+    "native-tests.log": {
+      "bytes": 13619,
+      "sha256": "8e440dbe5fbd36753baeb036377cdb7b1c3b96280ea3c2acac74c11febcec22b"
+    },
+    "SOURCE.txt": {
+      "bytes": 516,
+      "sha256": "470ea81662c48bf27679ae5b601bf757a399e78a79b5ec9066bd72d7a3ae5874"
+    }
+  }
+}

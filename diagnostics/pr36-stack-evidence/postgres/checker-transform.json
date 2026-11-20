@@ -1,0 +1,23 @@
+{
+  "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "engine": "chromium",
+  "datastoreEngine": "postgres",
+  "original": {
+    "bytes": 12325,
+    "sha256": "d890c6b0739bbc2cb6ae506e9261a7bf7dbf74cdffd52121064d8ea2bececd32"
+  },
+  "transformed": {
+    "bytes": 12372,
+    "sha256": "3740641840a3d9d27c127bbc98dc92b5df451f755b43b88a617bed7166b17d28"
+  },
+  "copiedRelativePath": "browser-single/check-pages.singleton-stack-postgres.mjs",
+  "inverseByteComparison": true,
+  "onlyChanges": [
+    "literal engine loop initializer",
+    "explicit system Chrome channel with sandbox"
+  ],
+  "maxVmStarts": 1,
+  "firstWaitMilliseconds": 1200000,
+  "secondWaitMilliseconds": 180000,
+  "diagnosticOnly": true
+}

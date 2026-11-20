@@ -1,0 +1,24 @@
+{
+  "originalSource": "99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58",
+  "runtimeSource": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+  "comparison": "git diff --quiet and exact Git subtree identity",
+  "allSelectedPathsEqual": true,
+  "paths": {
+    "src": {
+      "originalGitTree": "6e746309747f88b59514e409bd0cd2576f61f41b",
+      "runtimeGitTree": "6e746309747f88b59514e409bd0cd2576f61f41b",
+      "equal": true
+    },
+    "fga": {
+      "originalGitTree": "f548fbc505b0868a323c384f15bdc36ff4f10c82",
+      "runtimeGitTree": "f548fbc505b0868a323c384f15bdc36ff4f10c82",
+      "equal": true
+    },
+    "migrations": {
+      "originalGitTree": "5718c0c0c9a83d119d06dabc852ff6788cf735e3",
+      "runtimeGitTree": "5718c0c0c9a83d119d06dabc852ff6788cf735e3",
+      "equal": true
+    }
+  },
+  "scope": "Original Rust app source, pinned authorization model and SQL migrations; the separately built bootstrap and OpenFGA executable have their own producer records."
+}

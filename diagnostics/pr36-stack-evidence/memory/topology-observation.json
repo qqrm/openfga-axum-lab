@@ -1,0 +1,18 @@
+{
+  "requestedVirtualCPUs": 2,
+  "expectedTopology": "2,sockets=2,cores=1,threads=1",
+  "expectedCPUList": "0-1",
+  "observedVirtualCPUs": 2,
+  "observedTopology": "2,sockets=2,cores=1,threads=1",
+  "reportedHostLogicalCPUs": 4,
+  "onlineCPUMarkers": [
+    "0-1"
+  ],
+  "serviceCPUMarkers": [
+    "0-1"
+  ],
+  "launcherMatches": true,
+  "linuxOnlineMatches": true,
+  "serviceAvailabilityMatches": true,
+  "matches": true
+}

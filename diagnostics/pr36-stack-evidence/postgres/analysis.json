@@ -1,0 +1,1481 @@
+{
+  "schemaVersion": 1,
+  "reader": "analyze-stack-evidence.py",
+  "datastoreEngine": "postgres",
+  "archive": {
+    "path": "/workspace/scratch/f20459a5ff49/pr36-triage/stack-final.zip",
+    "bytes": 20432058,
+    "sha256": "2a0ce38614395e02da10d91f0c66cc64e6d430a2b61fa97dc4992cdca7c287cd",
+    "expectedDigestVerified": true
+  },
+  "summary": {
+    "member": "artifacts/pr36-stack-continuation/postgres/summary.json",
+    "bytes": 94010,
+    "sha256": "9eaca3e4bd748dc71cf32ffcf53a8ff392d58d7393097af081680aa87ea877b1"
+  },
+  "rawFilesVerified": {
+    "chromium-console-tail.txt": {
+      "bytes": 96149,
+      "sha256": "1ed844815a9d1588aad126235dcbe892a1a7678956439bb8a544709691186295"
+    },
+    "chromium-console.txt": {
+      "bytes": 96149,
+      "sha256": "1ed844815a9d1588aad126235dcbe892a1a7678956439bb8a544709691186295"
+    },
+    "chromium-stream.jsonl": {
+      "bytes": 327744,
+      "sha256": "5feaeac82f5bbc7c7f8f82d5344480af4cf6f104e8f1050a1ea4733d8ad43436"
+    },
+    "chromium.json": {
+      "bytes": 22586,
+      "sha256": "2fae920eb7f34f6535691415064025c64fe1290adefb62c2b0b3637af0331e67"
+    },
+    "chromium.png": {
+      "bytes": 176457,
+      "sha256": "aa7fa82bb4f41e93b5bc9b4ce08e2193daa4a00f9b387116b02b955e2973865f"
+    }
+  },
+  "stackOverlayHashVerified": {
+    "bytes": 55612,
+    "sha256": "92316f60c737f3a2310162f84c23ab634a622a3fdacdb2eb19bef42c58cc5668"
+  },
+  "sourceCapture": {
+    "verified": true,
+    "chunks": 64678,
+    "batches": 420,
+    "bytes": 96149,
+    "telemetryChunks": 101,
+    "telemetryBytes": 31497,
+    "consoleBytes": 96149,
+    "streamBytes": 327744,
+    "partialProtocolRecord": false
+  },
+  "identity": {
+    "engine": "chromium",
+    "browser": "157.0.8103.50",
+    "sourceCommit": "444b069daf16e9606a0bbf1ea0aea7f4d61b97d8",
+    "emulatorSource": "6f35f24b7ca345cf47c873becee6a41ef94e65a9",
+    "workflowCommit": "9785f31adc0af939a6d1c5edac183593fc69c718",
+    "runId": 44675797208,
+    "runAttempt": 1,
+    "job": {
+      "id": 136087192171,
+      "name": "Browser full-stack datastore comparison",
+      "run_id": 44675797208,
+      "head_sha": "9785f31adc0af939a6d1c5edac183593fc69c718",
+      "started_at": "2026-11-20T04:38:48Z",
+      "run_attempt": 1,
+      "source": "GitHub Actions current job API",
+      "observed_at": "2026-11-20T04:39:03.304758+00:00"
+    }
+  },
+  "host": {
+    "member": "artifacts/pr36-vcpu-gate/host-cpu.txt",
+    "bytes": 3427,
+    "sha256": "3d9601a374bc3faf0c92865c7dfdd07f45e654ae6742304cea818ce3e5a7bdb4",
+    "archiveBound": true,
+    "fields": {
+      "Architecture": "x86_64",
+      "CPU(s)": "4",
+      "On-line CPU(s) list": "0-3",
+      "Model name": "Intel(R) Xeon(R) 6975P-C",
+      "Hypervisor vendor": "KVM"
+    }
+  },
+  "resultStartedAt": "2026-11-20T04:48:54.745Z",
+  "resultFinishedAt": "2026-11-20T04:56:45.288Z",
+  "applicationAcceptancePassed": false,
+  "productionGatePassed": false,
+  "comparisonContinuationPermitted": true,
+  "vm": {
+    "cpus": 2,
+    "reportedLogicalCPUs": 4,
+    "cpuTopology": "2,sockets=2,cores=1,threads=1",
+    "memoryMiB": 512,
+    "slabDebug": false,
+    "kernelLogLevel": 7,
+    "qemuLiveInstanceLimit": 15000,
+    "entropyConfiguration": {
+      "backend": "rng-random",
+      "hostDevice": "/dev/urandom",
+      "guestDevice": "virtio-rng-pci",
+      "webCryptoRequired": true
+    }
+  },
+  "observedTopology": {
+    "requestedVirtualCPUs": 2,
+    "expectedTopology": "2,sockets=2,cores=1,threads=1",
+    "expectedCPUList": "0-1",
+    "observedVirtualCPUs": 2,
+    "observedTopology": "2,sockets=2,cores=1,threads=1",
+    "reportedHostLogicalCPUs": 4,
+    "onlineCPUMarkers": [
+      "0-1"
+    ],
+    "serviceCPUMarkers": [
+      "0-1"
+    ],
+    "launcherMatches": true,
+    "linuxOnlineMatches": true,
+    "serviceAvailabilityMatches": true,
+    "matches": true
+  },
+  "passes": [],
+  "pageErrors": [],
+  "guestError": "LAB|boot-failed",
+  "failure": "AssertionError [ERR_ASSERTION]: {\"booted\":true,\"ready\":false,\"accepted\":false,\"checks\":0,\"passes\":[],\"source\":\"99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58\",\"startupManifest\":{\"base_source_commit\":\"99f00cc170ca611ff4dc4c4ae3bbe98bb10cff58\",\"openfga_build\":{\"upstream_version\":\"1.10.3\",\"source_commit\":\"293893b22a53d8a130a5f7c97cab4bc8e91bcaa4\",\"go_version\":\"go1.24.6\",\"build_date\":\"2025-10-14T19:02:13Z\",\"target\":\"linux/amd64\",\"startup_dial_timeout_seconds\":60,\"transport_diagnostics\":\"http_and_unary_rpc_metadata_only\",\"unary_raw_logging\":\"disabled_browser_only\",\"startup_model_warmup\":\"in_process_codec_validation_with_exact_schema_cache\",\"model_validation_cache\":\"conditionless_exact_protobuf_body_except_id\",\"model_json_decoder\":\"pinned_json_decode_private_clone\",\"model_json_encoder\":\"single_exact_real_model_response\",\"first_resolver_typesystem_reuse\":\"one_shot_after_real_model_read\",\"schema_reachability_reuse\":\"readonly_plain_user_paths_on_startup_typesystem\",\"schema_reachability_max_relations\":512,\"schema_reachability_preparation\":\"two_breadth_first_walks\",\"schema_reachability_max_walks\":2,\"warmup_generated_validation\":\"ValidateAll\",\"tuple_write_typesystem_reuse\":\"same_request_store_and_model\",\"warmup_model_sha256\":\"a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d\",\"warmup_model_bytes\":52709,\"warmup_timeout_seconds\":60,\"warmup_cycles\":1,\"authorization_request_timeout_default_seconds\":3,\"patch_sha256\":\"f699ff2d2cc55c2888ae3bc1e474990097fe21d7f4491f2ee8e23727f3c78ced\",\"helper_sha256\":\"485d1452148f325e553ad82f79417ec27b46be24217ece9e149ee2f8452ad954\",\"tests_sha256\":\"18784ee73b605cd74060c0e61d584d17fad54eee0db85b2ac91a490a21087285\",\"warmup_helper_sha256\":\"5be5cca1bacc47f3b70b24de22eb513461efd96c71ab8f509b2fc20cbefce7df\",\"warmup_tests_sha256\":\"2d9d6d7aee965a4a29d3cbf89f2e8faedb5040dee1d9e788b5901eddfbcfe320\",\"model_codec_helper_sha256\":\"eb70a26523c3e8020247403e9a2dd2187421fa3a72612112715425395cc4eae7\",\"model_codec_tests_sha256\":\"f4e6b034bcc81af3dac07e2529906c6714b1531c6e6ff27b9a89f3821c01ab56\",\"model_codec_integration_tests_sha256\":\"d5f9d2a30c9bcc29fa702a8e36b0aeff41e96731130dcf2ecf1b932f5c355a1f\",\"model_validation_helper_sha256\":\"c960482baaced488a1afa206fefdbbee37ea90b8aadc40a1daeea955ad2a5584\",\"model_validation_tests_sha256\":\"77a7b20efc52d8b179ffffc7e913df7009eeb962ca61bb5d15a2043bdf935bec\",\"write_typesystem_tests_sha256\":\"af0392bfbd9e31ffdafae4a1a9c703d6d0b9e11599da044287d88bda3ae9a2ce\",\"resolver_transfer_integration_tests_sha256\":\"23f160617087a505cf3736e7b092171b37e134f32585dee28e8ee9c2def45203\",\"model_reuse_race_tests_sha256\":\"c928d27f0babcd9ecf3705ef69276b618d6ca4e72bc1161eaa0504fc2d7808f5\",\"go_sum_sha256\":\"ec04d405b1481247a862925af710f72d7a7e4684b8961ca4a6a3467911befb83\",\"binary_sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\",\"startup_dial_tests\":\"passed\",\"transport_diagnostics_tests\":\"passed\",\"warmup_tests\":\"passed\",\"model_codec_tests\":\"passed\",\"model_validation_tests\":\"passed\",\"schema_reachability_tests\":\"passed\",\"write_typesystem_tests\":\"passed\",\"model_reuse_race_tests\":\"passed\"},\"bootstrap_build\":{\"schema_version\":1,\"source_commit\":\"207d15fab685d3adb9c5d51a048982c2236ae75c\",\"target\":\"linux/amd64\",\"image_id\":\"sha256:1834dba7942932e1fe5abb176f9a65786e141d23128d607cec6be2fa87234865\",\"binary_bytes\":7444640,\"binary_sha256\":\"e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275\",\"dockerfile_sha256\":\"7b0294fb444df591975f914f0bd43aa0a46c903dcc36e688820f6b0ca6c00179\",\"cargo_toml_sha256\":\"1ed76c6d91b38b4ed0c3bf4f0e486b618bd1b41e79a4fd923071542474182544\",\"cargo_lock_sha256\":\"2ea76b7fe70c27b591400cc4574d039ef0712033df8edc7f8505d48cc5474679\",\"bootstrap_source_sha256\":\"53029e5aeee662c276346d32e0fb2edfff26a3d573512e2e9651cbca460e561d\",\"bootstrap_tests_sha256\":\"4e16aa34e3c19fd1c5d8c337eee13f2ccd5c8c48b0868f94783f05972cf2bb63\",\"timeout_scope\":\"bootstrap_model_post_and_get\",\"default_model_timeout_seconds\":5,\"min_model_timeout_seconds\":5,\"max_model_timeout_seconds\":30,\"browser_model_timeout_seconds\":30,\"empty_store_check\":\"one_real_higher_consistency_ownership_deny\",\"empty_store_check_default\":false,\"browser_empty_store_check\":true,\"empty_store_check_timeout_seconds\":5,\"empty_store_check_tests\":\"passed\",\"native_tests\":\"passed\",\"native_test_log_sha256\":\"8e440dbe5fbd36753baeb036377cdb7b1c3b96280ea3c2acac74c11febcec22b\",\"packaging_commit\":\"4b7a1e1933083232fb8305a60a47bdd3c32e6689\",\"native_proof_sha256\":\"d37029e3213995ff9d8fc58eb08adf0e3daeb30a0c0da5855231be7c16991646\",\"proof_semantics_origin_commit\":\"c8cf8630d86712567935e064dabd8b437640c8c6\",\"native_harness_runtime\":\"node\",\"expected_openfga_sha_input\":\"required_verified_build_metadata\",\"native_harness_sha256\":\"5c84bd3035d18b6d9361042819b9578599fb6ffa5d556eacca87daff49ba7869\",\"producer_sha256\":\"f8a5879e0eaf6a241737673b263128fe5c97c2358a35241bedf7b28441e778c3\",\"openfga_binary_sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\",\"openfga_build_sha256\":\"0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754\",\"workflow_commit\":\"bb8284f17e78667c6ea46a2de02de5dc3f3507af\",\"run_id\":\"43500949883\",\"run_attempt\":\"1\",\"browser_acceptance_verified\":false},\"emulator_build\":{\"converter_commit\":\"087c313479d51cdf255e4f28ded6ae7d8141297b\",\"converter_dockerfile_sha256\":\"f122e849fcb79d718a73dbef6c6cff6b2b71fd3032c8ea7686dc26c007caa508\",\"qemu_commit\":\"8604ed49a3cde392890b014a8d5a959c8a2fe72a\",\"backend_postimage_blob\":\"5b6be92da27d573577854f6badf7fbbb1082f83f\",\"emscripten_version\":\"4.0.10\",\"emsdk_image\":\"emscripten/emsdk:4.0.10@sha256:90b757eb11fa9a0e3ce4d2d9f76d932a56018e4accc37b5a28b2783751e60eb7\",\"max_instance_alive_before\":15000,\"max_instance_alive_after\":15000,\"max_instance_running_local\":2048,\"instance_budget_configuration\":\"shared_c_pre_run_setter\",\"firefox_instance_limit\":8192,\"chromium_instance_limit\":15000,\"instance_reservation\":\"atomic_compare_exchange\",\"instance_budget_tests\":\"passed\",\"instance_budget_bridge_tests\":\"passed\",\"runtime_diagnostics\":\"module_lifecycle_counters_v1\",\"runtime_diagnostics_tests\":\"passed\",\"i32_multiply_fix\":\"normalize_operands_before_widening_product\",\"multiply_emitter_preimage_blob\":\"3c85588be97b6c53a451e30c0593e8b433ede7b6\",\"multiply_emitter_postimage_blob\":\"d4078f5adac57d9ccc7d792773fff2ea65a33d6a\",\"i32_multiply_tests\":\"passed\",\"memory_barrier_fix\":\"emit_atomic_fence_for_tcg_mb\",\"barrier_emitter_preimage_blob\":\"d4078f5adac57d9ccc7d792773fff2ea65a33d6a\",\"barrier_emitter_postimage_blob\":\"4b3e9f8fabcaa3b9a2bb33746f7c1d7046691355\",\"memory_barrier_tests\":\"passed\",\"idle_gc_policy\":\"pending_local_finalizers_timed_idle_wait\",\"idle_gc_poll_ms\":20,\"idle_gc_tests\":\"passed\",\"idle_gc_bridge_tests\":\"passed\",\"idle_gc_preimages\":{\"tcg/wasm32.c\":\"e0b26bdc8d6d5b987061f9090ae0b62b76c34e16\",\"system/cpus.c\":\"a444a747f0164ee9a998ef4b25b49a2efc4607a8\",\"include/tcg/wasm32-gc.h\":null},\"idle_gc_postimages\":{\"tcg/wasm32.c\":\"5b6be92da27d573577854f6badf7fbbb1082f83f\",\"system/cpus.c\":\"9252d9478b067a88a776a47ca746e097591bf695\",\"include/tcg/wasm32-gc.h\":\"c3b9c7b9e3c65191cba9cc0cca117f45965a6a58\"},\"instantiate_num\":1500,\"change_kind\":\"wasm_idle_gc_scheduling_candidate\",\"patch_sha256\":\"b4c904228b9c7be1ba9cf933190bf7ca1d2f2dcd6f464d249dad51f5c8e6f661\",\"builder_sha256\":\"61d925ec4365b1bdd8c7714d631bc7436dca7d4879b95e216ea5b2f1a6838e9d\",\"dockerfile_appendix_sha256\":\"5502d1193666d14d7f60e1641caa5c21d151ad0a9eff17760490dd95bd863218\",\"budget_test_sha256\":\"dbe5368f4b3ea0a40176df5f4e2ea65649f399436a389f473c6df0354394a0d4\",\"diagnostics_test_sha256\":\"c33df305f637deed27cc120e6e7500dd51762aec05cc08f8cdc2db3a9d873cb6\",\"budget_bridge_test_sha256\":\"5a49d77aeabd1a2241cac7bdd1c7c1e1dfeef1b916fe053777050f11b0639528\",\"budget_bridge_proof_sha256\":\"22af5ca5096b036c9e6cfaab65dcd49e6d7ebeb98bd33a1ea0f188b6f46601d9\",\"multiply_patch_sha256\":\"c616ceaba05ed7a01bec6d9af5c0c5dab860a111f95b846c4465162d6d8377a2\",\"multiply_test_sha256\":\"ab2637b1967e6cff973ceddf9e3fbaeccc9a09c1ed90f977c8c06baf89d67fff\",\"multiply_proof_sha256\":\"d4c8e27682b953cf3653b24be5dcfb1949d2df8d710f0c6970a2631fb63350e5\",\"barrier_patch_sha256\":\"49e7301bd139c641a329ac0c433f6f6fe85dcd155e712bc159ee1818d538e339\",\"barrier_test_sha256\":\"13eac4096f969eb0ee9dda052f461d724dbf8eef732d6b43296ea82b5b4c50ca\",\"barrier_proof_sha256\":\"2a9fc5dd3e9d8bb76594a5e981db510eb76a4be76a2d62be136991b640bfc7ed\",\"idle_gc_patch_sha256\":\"48aa5fcb57790e51f2ad16e6075fc93bf6345c944df88de5b69e8daa45540e9f\",\"idle_gc_test_sha256\":\"d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14\",\"idle_gc_proof_sha256\":\"a7561bab0a0ab18a3e2b6f823e8a8889e2f660c8e34216f01c16c870f5a2f2a0\",\"idle_gc_bridge_test_sha256\":\"d14d30e5f0cfebfdea7f4fc89ac076d5c8276acea42a4b7f0c3a04a7f604de14\",\"idle_gc_bridge_proof_sha256\":\"434ef8628d8a1c6367f7e71843fd7c1cc3c8c2d276b063352f40f2302daa3a88\",\"files\":{\"out.js\":{\"bytes\":279363,\"sha256\":\"95f7e6b59d98cd7267e705aa0b2cd670970b984d13c7e81b4d4f677cd65534d2\"},\"qemu-system-x86_64.wasm\":{\"bytes\":41250530,\"sha256\":\"bca14ba86cff602c979e3ae93df80611b186ecbe101542ec14e6809c528e0db3\"}},\"browser_acceptance\":\"not_run\"},\"files\":{\"guest.sh\":{\"bytes\":7357,\"sha256\":\"3155b6cda39ce4eca48f21153eba9101dca5c10066e29f343e657310a789fef9\"},\"entrypoint.sh\":{\"bytes\":8192,\"sha256\":\"ba15f4333adf5784806dd902b8d16439be411b30b6d677d058382640f55df7be\"},\"runtime/openfga\":{\"bytes\":63074488,\"sha256\":\"d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b\"},\"runtime/bootstrap\":{\"bytes\":7444640,\"sha256\":\"e1143b7d5f8cc564e09d12c8f685bd7cf33bd0beb1505f2b7cfc1f6f53e1d275\"}}},\"vm\":{\"cpus\":2,\"reportedLogicalCPUs\":4,\"cpuTopology\":\"2,sockets=2,cores=1,threads=1\",\"memoryMiB\":512,\"slabDebug\":false,\"kernelLogLevel\":7,\"qemuLiveInstanceLimit\":15000,\"entropyConfiguration\":{\"backend\":\"rng-random\",\"hostDevice\":\"/dev/urandom\",\"guestDevice\":\"virtio-rng-pci\",\"webCryptoRequired\":true}},\"error\":\"LAB|boot-failed\"}\n+ actual - expected\n\n+ 'LAB|boot-failed'\n- undefined\n",
+  "diagnosticReplayBegins": {
+    "sourceLine": 421,
+    "firstSequence": 52939,
+    "lastSequence": 52986,
+    "firstStreamLine": 383,
+    "lastStreamLine": 383,
+    "firstHostReceivedAt": "2026-11-20T04:56:43.218Z",
+    "lastHostReceivedAt": "2026-11-20T04:56:43.218Z",
+    "text": "Guest diagnostic: /tmp/browser-lab-startup.log"
+  },
+  "completeSourceLinesBeforeReplay": 420,
+  "trailingUnterminatedText": "",
+  "phaseObservations": [
+    {
+      "sourceLine": 304,
+      "firstSequence": 22352,
+      "lastSequence": 22482,
+      "firstStreamLine": 184,
+      "lastStreamLine": 184,
+      "firstHostReceivedAt": "2026-11-20T04:50:02.057Z",
+      "lastHostReceivedAt": "2026-11-20T04:50:02.057Z",
+      "text": "STACK|phase|{\"phase\":\"initdb-start\",\"datastore\":\"postgres\",\"guest_seconds\":1,\"uptime_seconds\":\"59.79\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "initdb-start",
+        "datastore": "postgres",
+        "guest_seconds": 1,
+        "uptime_seconds": "59.79",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 305,
+      "firstSequence": 22514,
+      "lastSequence": 22650,
+      "firstStreamLine": 209,
+      "lastStreamLine": 209,
+      "firstHostReceivedAt": "2026-11-20T04:52:36.154Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:36.154Z",
+      "text": "STACK|phase|{\"phase\":\"initdb-complete\",\"datastore\":\"postgres\",\"guest_seconds\":155,\"uptime_seconds\":\"213.90\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "initdb-complete",
+        "datastore": "postgres",
+        "guest_seconds": 155,
+        "uptime_seconds": "213.90",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 306,
+      "firstSequence": 22651,
+      "lastSequence": 22786,
+      "firstStreamLine": 210,
+      "lastStreamLine": 210,
+      "firstHostReceivedAt": "2026-11-20T04:52:36.183Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:36.183Z",
+      "text": "STACK|phase|{\"phase\":\"postgres-start\",\"datastore\":\"postgres\",\"guest_seconds\":155,\"uptime_seconds\":\"213.93\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "postgres-start",
+        "datastore": "postgres",
+        "guest_seconds": 155,
+        "uptime_seconds": "213.93",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 309,
+      "firstSequence": 22845,
+      "lastSequence": 22980,
+      "firstStreamLine": 218,
+      "lastStreamLine": 218,
+      "firstHostReceivedAt": "2026-11-20T04:52:43.765Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:43.765Z",
+      "text": "STACK|phase|{\"phase\":\"postgres-ready\",\"datastore\":\"postgres\",\"guest_seconds\":163,\"uptime_seconds\":\"221.52\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "postgres-ready",
+        "datastore": "postgres",
+        "guest_seconds": 163,
+        "uptime_seconds": "221.52",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 310,
+      "firstSequence": 22981,
+      "lastSequence": 23124,
+      "firstStreamLine": 219,
+      "lastStreamLine": 219,
+      "firstHostReceivedAt": "2026-11-20T04:52:43.792Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:43.792Z",
+      "text": "STACK|phase|{\"phase\":\"createdb-openfga-start\",\"datastore\":\"postgres\",\"guest_seconds\":163,\"uptime_seconds\":\"221.55\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "createdb-openfga-start",
+        "datastore": "postgres",
+        "guest_seconds": 163,
+        "uptime_seconds": "221.55",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 311,
+      "firstSequence": 23125,
+      "lastSequence": 23271,
+      "firstStreamLine": 220,
+      "lastStreamLine": 220,
+      "firstHostReceivedAt": "2026-11-20T04:52:59.425Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:59.425Z",
+      "text": "STACK|phase|{\"phase\":\"createdb-openfga-complete\",\"datastore\":\"postgres\",\"guest_seconds\":178,\"uptime_seconds\":\"237.18\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "createdb-openfga-complete",
+        "datastore": "postgres",
+        "guest_seconds": 178,
+        "uptime_seconds": "237.18",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 312,
+      "firstSequence": 23272,
+      "lastSequence": 23416,
+      "firstStreamLine": 221,
+      "lastStreamLine": 221,
+      "firstHostReceivedAt": "2026-11-20T04:52:59.447Z",
+      "lastHostReceivedAt": "2026-11-20T04:52:59.447Z",
+      "text": "STACK|phase|{\"phase\":\"createdb-authzlab-start\",\"datastore\":\"postgres\",\"guest_seconds\":179,\"uptime_seconds\":\"237.21\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "createdb-authzlab-start",
+        "datastore": "postgres",
+        "guest_seconds": 179,
+        "uptime_seconds": "237.21",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 313,
+      "firstSequence": 23417,
+      "lastSequence": 23564,
+      "firstStreamLine": 222,
+      "lastStreamLine": 222,
+      "firstHostReceivedAt": "2026-11-20T04:53:11.924Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:11.924Z",
+      "text": "STACK|phase|{\"phase\":\"createdb-authzlab-complete\",\"datastore\":\"postgres\",\"guest_seconds\":191,\"uptime_seconds\":\"249.67\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "createdb-authzlab-complete",
+        "datastore": "postgres",
+        "guest_seconds": 191,
+        "uptime_seconds": "249.67",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 315,
+      "firstSequence": 23626,
+      "lastSequence": 23768,
+      "firstStreamLine": 223,
+      "lastStreamLine": 223,
+      "firstHostReceivedAt": "2026-11-20T04:53:11.956Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:11.956Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-migrate-start\",\"datastore\":\"postgres\",\"guest_seconds\":191,\"uptime_seconds\":\"249.72\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-migrate-start",
+        "datastore": "postgres",
+        "guest_seconds": 191,
+        "uptime_seconds": "249.72",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 316,
+      "firstSequence": 23797,
+      "lastSequence": 23942,
+      "firstStreamLine": 248,
+      "lastStreamLine": 248,
+      "firstHostReceivedAt": "2026-11-20T04:53:30.238Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:30.238Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-migrate-complete\",\"datastore\":\"postgres\",\"guest_seconds\":209,\"uptime_seconds\":\"267.98\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-migrate-complete",
+        "datastore": "postgres",
+        "guest_seconds": 209,
+        "uptime_seconds": "267.98",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 317,
+      "firstSequence": 23943,
+      "lastSequence": 24077,
+      "firstStreamLine": 249,
+      "lastStreamLine": 249,
+      "firstHostReceivedAt": "2026-11-20T04:53:30.258Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:30.258Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-start\",\"datastore\":\"postgres\",\"guest_seconds\":209,\"uptime_seconds\":\"268.01\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-start",
+        "datastore": "postgres",
+        "guest_seconds": 209,
+        "uptime_seconds": "268.01",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 318,
+      "firstSequence": 24078,
+      "lastSequence": 24214,
+      "firstStreamLine": 250,
+      "lastStreamLine": 250,
+      "firstHostReceivedAt": "2026-11-20T04:53:30.402Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:30.402Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-started\",\"datastore\":\"postgres\",\"guest_seconds\":209,\"uptime_seconds\":\"268.14\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-started",
+        "datastore": "postgres",
+        "guest_seconds": 209,
+        "uptime_seconds": "268.14",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 320,
+      "firstSequence": 24271,
+      "lastSequence": 24414,
+      "firstStreamLine": 252,
+      "lastStreamLine": 252,
+      "firstHostReceivedAt": "2026-11-20T04:53:30.470Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:30.470Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-listener-start\",\"datastore\":\"postgres\",\"guest_seconds\":210,\"uptime_seconds\":\"268.22\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-listener-start",
+        "datastore": "postgres",
+        "guest_seconds": 210,
+        "uptime_seconds": "268.22",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 329,
+      "firstSequence": 25381,
+      "lastSequence": 25524,
+      "firstStreamLine": 261,
+      "lastStreamLine": 261,
+      "firstHostReceivedAt": "2026-11-20T04:53:56.721Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:56.721Z",
+      "text": "STACK|phase|{\"phase\":\"openfga-listener-ready\",\"datastore\":\"postgres\",\"guest_seconds\":236,\"uptime_seconds\":\"294.48\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "openfga-listener-ready",
+        "datastore": "postgres",
+        "guest_seconds": 236,
+        "uptime_seconds": "294.48",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 331,
+      "firstSequence": 25605,
+      "lastSequence": 25741,
+      "firstStreamLine": 262,
+      "lastStreamLine": 262,
+      "firstHostReceivedAt": "2026-11-20T04:53:56.756Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:56.756Z",
+      "text": "STACK|phase|{\"phase\":\"bootstrap-start\",\"datastore\":\"postgres\",\"guest_seconds\":236,\"uptime_seconds\":\"294.52\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "bootstrap-start",
+        "datastore": "postgres",
+        "guest_seconds": 236,
+        "uptime_seconds": "294.52",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 364,
+      "firstSequence": 30187,
+      "lastSequence": 30326,
+      "firstStreamLine": 295,
+      "lastStreamLine": 295,
+      "firstHostReceivedAt": "2026-11-20T04:54:10.650Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:10.650Z",
+      "text": "STACK|phase|{\"phase\":\"bootstrap-complete\",\"datastore\":\"postgres\",\"guest_seconds\":250,\"uptime_seconds\":\"308.40\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "bootstrap-complete",
+        "datastore": "postgres",
+        "guest_seconds": 250,
+        "uptime_seconds": "308.40",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 366,
+      "firstSequence": 30380,
+      "lastSequence": 30510,
+      "firstStreamLine": 297,
+      "lastStreamLine": 297,
+      "firstHostReceivedAt": "2026-11-20T04:54:11.258Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:11.258Z",
+      "text": "STACK|phase|{\"phase\":\"app-start\",\"datastore\":\"postgres\",\"guest_seconds\":250,\"uptime_seconds\":\"309.02\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "app-start",
+        "datastore": "postgres",
+        "guest_seconds": 250,
+        "uptime_seconds": "309.02",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 367,
+      "firstSequence": 30511,
+      "lastSequence": 30643,
+      "firstStreamLine": 298,
+      "lastStreamLine": 298,
+      "firstHostReceivedAt": "2026-11-20T04:54:11.319Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:11.319Z",
+      "text": "STACK|phase|{\"phase\":\"app-started\",\"datastore\":\"postgres\",\"guest_seconds\":250,\"uptime_seconds\":\"309.08\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "app-started",
+        "datastore": "postgres",
+        "guest_seconds": 250,
+        "uptime_seconds": "309.08",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 368,
+      "firstSequence": 30644,
+      "lastSequence": 30773,
+      "firstStreamLine": 299,
+      "lastStreamLine": 299,
+      "firstHostReceivedAt": "2026-11-20T04:54:11.338Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:11.338Z",
+      "text": "STACK|phase|{\"phase\":\"app-wait\",\"datastore\":\"postgres\",\"guest_seconds\":250,\"uptime_seconds\":\"309.09\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "app-wait",
+        "datastore": "postgres",
+        "guest_seconds": 250,
+        "uptime_seconds": "309.09",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 416,
+      "firstSequence": 52281,
+      "lastSequence": 52419,
+      "firstStreamLine": 380,
+      "lastStreamLine": 380,
+      "firstHostReceivedAt": "2026-11-20T04:56:33.002Z",
+      "lastHostReceivedAt": "2026-11-20T04:56:33.002Z",
+      "text": "STACK|phase|{\"phase\":\"app-wait-finished\",\"datastore\":\"postgres\",\"guest_seconds\":392,\"uptime_seconds\":\"450.76\",\"clock_scope\":\"entrypoint\"}",
+      "kind": "phase",
+      "value": {
+        "phase": "app-wait-finished",
+        "datastore": "postgres",
+        "guest_seconds": 392,
+        "uptime_seconds": "450.76",
+        "clock_scope": "entrypoint"
+      }
+    },
+    {
+      "sourceLine": 418,
+      "firstSequence": 52475,
+      "lastSequence": 52737,
+      "firstStreamLine": 381,
+      "lastStreamLine": 381,
+      "firstHostReceivedAt": "2026-11-20T04:56:33.155Z",
+      "lastHostReceivedAt": "2026-11-20T04:56:33.155Z",
+      "text": "STACK|entrypoint-exit|{\"reason\":\"required-service-exited\",\"phase\":\"app-wait-finished\",\"datastore\":\"postgres\",\"exit_code\":1,\"guest_seconds\":392,\"uptime_seconds\":\"450.81\",\"clock_scope\":\"entrypoint\",\"app_pid\":228,\"fga_pid\":167,\"app_state\":\"exited\",\"fga_state\":\"S\"}",
+      "kind": "entrypoint-exit",
+      "value": {
+        "reason": "required-service-exited",
+        "phase": "app-wait-finished",
+        "datastore": "postgres",
+        "exit_code": 1,
+        "guest_seconds": 392,
+        "uptime_seconds": "450.81",
+        "clock_scope": "entrypoint",
+        "app_pid": 228,
+        "fga_pid": 167,
+        "app_state": "exited",
+        "fga_state": "S"
+      }
+    },
+    {
+      "sourceLine": 419,
+      "firstSequence": 52738,
+      "lastSequence": 52936,
+      "firstStreamLine": 382,
+      "lastStreamLine": 382,
+      "firstHostReceivedAt": "2026-11-20T04:56:42.812Z",
+      "lastHostReceivedAt": "2026-11-20T04:56:42.812Z",
+      "text": "STACK|guest-failure|{\"reason\":\"entrypoint-exited\",\"guest_seconds\":411,\"uptime_seconds\":\"460.57\",\"clock_scope\":\"guest-wrapper\",\"readiness_deadline_seconds\":900,\"child_pid\":10,\"child_state\":\"exited\"}",
+      "kind": "guest-failure",
+      "value": {
+        "reason": "entrypoint-exited",
+        "guest_seconds": 411,
+        "uptime_seconds": "460.57",
+        "clock_scope": "guest-wrapper",
+        "readiness_deadline_seconds": 900,
+        "child_pid": 10,
+        "child_state": "exited"
+      }
+    }
+  ],
+  "transportEventCounts": {
+    "warmup_start": 1,
+    "warmup_cycle": 1,
+    "warmup_end": 1,
+    "grpc_dial_start": 1,
+    "grpc_dial_end": 1,
+    "http_start": 17,
+    "rpc_start": 17,
+    "rpc_end": 17,
+    "http_end": 17,
+    "model_decode": 1,
+    "model_encode": 3
+  },
+  "checkCountsByPhase": {
+    "application_startup": {
+      "completed": 2,
+      "successful": 1,
+      "failed": 1,
+      "successfulGuestRpcMilliseconds": {
+        "count": 1,
+        "min": 2371,
+        "median": 2371,
+        "mean": 2371,
+        "max": 2371,
+        "p90": 2371,
+        "p95": 2371,
+        "p99": 2371,
+        "quantileMethod": "sorted[floor((count-1)*p)]",
+        "atLeast1000": 1,
+        "atLeast2000": 1
+      },
+      "successfulHostRpcReceiptMilliseconds": {
+        "count": 1,
+        "min": 2375.0,
+        "median": 2375.0,
+        "mean": 2375.0,
+        "max": 2375.0,
+        "p90": 2375.0,
+        "p95": 2375.0,
+        "p99": 2375.0,
+        "quantileMethod": "sorted[floor((count-1)*p)]",
+        "atLeast1000": 1,
+        "atLeast2000": 1
+      }
+    },
+    "bootstrap": {
+      "completed": 1,
+      "successful": 1,
+      "failed": 0,
+      "successfulGuestRpcMilliseconds": {
+        "count": 1,
+        "min": 1246,
+        "median": 1246,
+        "mean": 1246,
+        "max": 1246,
+        "p90": 1246,
+        "p95": 1246,
+        "p99": 1246,
+        "quantileMethod": "sorted[floor((count-1)*p)]",
+        "atLeast1000": 1,
+        "atLeast2000": 0
+      },
+      "successfulHostRpcReceiptMilliseconds": {
+        "count": 1,
+        "min": 1245.0,
+        "median": 1245.0,
+        "mean": 1245.0,
+        "max": 1245.0,
+        "p90": 1245.0,
+        "p95": 1245.0,
+        "p99": 1245.0,
+        "quantileMethod": "sorted[floor((count-1)*p)]",
+        "atLeast1000": 1,
+        "atLeast2000": 0
+      }
+    }
+  },
+  "checkRpcs": [
+    {
+      "start": {
+        "sourceLine": 359,
+        "firstSequence": 29588,
+        "lastSequence": 29685,
+        "firstStreamLine": 290,
+        "lastStreamLine": 290,
+        "firstHostReceivedAt": "2026-11-20T04:54:08.744Z",
+        "lastHostReceivedAt": "2026-11-20T04:54:08.744Z",
+        "text": "[browser-openfga] 2026/11/20 04:53:17.307579 rpc_start method=\"/openfga.v1.OpenFGAService/Check\"",
+        "phase": "bootstrap",
+        "guestPrintedAt": "2026/11/20 04:53:17.307579",
+        "kind": "rpc_start",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check"
+        }
+      },
+      "end": {
+        "sourceLine": 361,
+        "firstSequence": 29762,
+        "lastSequence": 29925,
+        "firstStreamLine": 292,
+        "lastStreamLine": 292,
+        "firstHostReceivedAt": "2026-11-20T04:54:09.989Z",
+        "lastHostReceivedAt": "2026-11-20T04:54:09.989Z",
+        "text": "[browser-openfga] 2026/11/20 04:53:18.554045 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"OK\" duration_ms=1246 context_state=\"none\" error_kind=\"none\"",
+        "phase": "bootstrap",
+        "guestPrintedAt": "2026/11/20 04:53:18.554045",
+        "kind": "rpc_end",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check",
+          "status": "OK",
+          "duration_ms": 1246,
+          "context_state": "none",
+          "error_kind": "none"
+        }
+      },
+      "association": "unique non-overlapping start/end",
+      "phase": "bootstrap",
+      "method": "/openfga.v1.OpenFGAService/Check",
+      "status": "OK",
+      "guestDurationMs": 1246,
+      "http": {
+        "start": {
+          "sourceLine": 358,
+          "firstSequence": 29450,
+          "lastSequence": 29587,
+          "firstStreamLine": 289,
+          "lastStreamLine": 289,
+          "firstHostReceivedAt": "2026-11-20T04:54:08.686Z",
+          "lastHostReceivedAt": "2026-11-20T04:54:08.686Z",
+          "text": "[browser-openfga] 2026/11/20 04:53:17.249970 http_start method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=217",
+          "phase": "bootstrap",
+          "guestPrintedAt": "2026/11/20 04:53:17.249970",
+          "kind": "http_start",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 217
+          }
+        },
+        "end": {
+          "sourceLine": 362,
+          "firstSequence": 29926,
+          "lastSequence": 30098,
+          "firstStreamLine": 293,
+          "lastStreamLine": 293,
+          "firstHostReceivedAt": "2026-11-20T04:54:10.017Z",
+          "lastHostReceivedAt": "2026-11-20T04:54:10.017Z",
+          "text": "[browser-openfga] 2026/11/20 04:53:18.580590 http_end method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=217 duration_ms=1330 context_error=<nil>",
+          "phase": "bootstrap",
+          "guestPrintedAt": "2026/11/20 04:53:18.580590",
+          "kind": "http_end",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 217,
+            "duration_ms": 1330,
+            "context_error": "<nil>"
+          }
+        },
+        "association": "unique non-overlapping start/end",
+        "guestDurationMs": 1330,
+        "hostReceiptIntervalMs": 1331.0
+      },
+      "hostRpcReceiptIntervalMs": 1245.0,
+      "hostIntervalMinusGuestDurationMs": -1.0,
+      "qemuTelemetryChunksDuringRpc": 0,
+      "checkOrdinalWithinPhase": 1
+    },
+    {
+      "start": {
+        "sourceLine": 408,
+        "firstSequence": 51193,
+        "lastSequence": 51290,
+        "firstStreamLine": 372,
+        "lastStreamLine": 372,
+        "firstHostReceivedAt": "2026-11-20T04:56:22.965Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:22.965Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:31.526535 rpc_start method=\"/openfga.v1.OpenFGAService/Check\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:31.526535",
+        "kind": "rpc_start",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check"
+        }
+      },
+      "end": {
+        "sourceLine": 409,
+        "firstSequence": 51291,
+        "lastSequence": 51454,
+        "firstStreamLine": 373,
+        "lastStreamLine": 373,
+        "firstHostReceivedAt": "2026-11-20T04:56:25.340Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:25.340Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:33.898140 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"OK\" duration_ms=2371 context_state=\"none\" error_kind=\"none\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:33.898140",
+        "kind": "rpc_end",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check",
+          "status": "OK",
+          "duration_ms": 2371,
+          "context_state": "none",
+          "error_kind": "none"
+        }
+      },
+      "association": "unique non-overlapping start/end",
+      "phase": "application_startup",
+      "method": "/openfga.v1.OpenFGAService/Check",
+      "status": "OK",
+      "guestDurationMs": 2371,
+      "http": {
+        "start": {
+          "sourceLine": 407,
+          "firstSequence": 51055,
+          "lastSequence": 51192,
+          "firstStreamLine": 371,
+          "lastStreamLine": 371,
+          "firstHostReceivedAt": "2026-11-20T04:56:22.923Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:22.923Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:31.487410 http_start method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=199",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:31.487410",
+          "kind": "http_start",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 199
+          }
+        },
+        "end": {
+          "sourceLine": 410,
+          "firstSequence": 51455,
+          "lastSequence": 51627,
+          "firstStreamLine": 374,
+          "lastStreamLine": 374,
+          "firstHostReceivedAt": "2026-11-20T04:56:25.588Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:25.588Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:34.149694 http_end method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=199 duration_ms=2662 context_error=<nil>",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:34.149694",
+          "kind": "http_end",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 199,
+            "duration_ms": 2662,
+            "context_error": "<nil>"
+          }
+        },
+        "association": "unique non-overlapping start/end",
+        "guestDurationMs": 2662,
+        "hostReceiptIntervalMs": 2665.0
+      },
+      "hostRpcReceiptIntervalMs": 2375.0,
+      "hostIntervalMinusGuestDurationMs": 4.0,
+      "qemuTelemetryChunksDuringRpc": 0,
+      "checkOrdinalWithinPhase": 1
+    },
+    {
+      "start": {
+        "sourceLine": 412,
+        "firstSequence": 51766,
+        "lastSequence": 51863,
+        "firstStreamLine": 376,
+        "lastStreamLine": 376,
+        "firstHostReceivedAt": "2026-11-20T04:56:25.813Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:25.813Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:34.373115 rpc_start method=\"/openfga.v1.OpenFGAService/Check\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:34.373115",
+        "kind": "rpc_start",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check"
+        }
+      },
+      "end": {
+        "sourceLine": 413,
+        "firstSequence": 51864,
+        "lastSequence": 52040,
+        "firstStreamLine": 377,
+        "lastStreamLine": 377,
+        "firstHostReceivedAt": "2026-11-20T04:56:29.497Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:29.497Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:38.058430 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"Code(4004)\" duration_ms=3685 context_state=\"deadline\" error_kind=\"other\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:38.058430",
+        "kind": "rpc_end",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check",
+          "status": "Code(4004)",
+          "duration_ms": 3685,
+          "context_state": "deadline",
+          "error_kind": "other"
+        }
+      },
+      "association": "unique non-overlapping start/end",
+      "phase": "application_startup",
+      "method": "/openfga.v1.OpenFGAService/Check",
+      "status": "Code(4004)",
+      "guestDurationMs": 3685,
+      "http": {
+        "start": {
+          "sourceLine": 411,
+          "firstSequence": 51628,
+          "lastSequence": 51765,
+          "firstStreamLine": 375,
+          "lastStreamLine": 375,
+          "firstHostReceivedAt": "2026-11-20T04:56:25.731Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:25.731Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:34.291920 http_start method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=202",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:34.291920",
+          "kind": "http_start",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 202
+          }
+        },
+        "end": {
+          "sourceLine": 414,
+          "firstSequence": 52041,
+          "lastSequence": 52213,
+          "firstStreamLine": 378,
+          "lastStreamLine": 378,
+          "firstHostReceivedAt": "2026-11-20T04:56:29.746Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:29.746Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:38.304935 http_end method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=202 duration_ms=4013 context_error=<nil>",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:38.304935",
+          "kind": "http_end",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 202,
+            "duration_ms": 4013,
+            "context_error": "<nil>"
+          }
+        },
+        "association": "unique non-overlapping start/end",
+        "guestDurationMs": 4013,
+        "hostReceiptIntervalMs": 4015.0
+      },
+      "hostRpcReceiptIntervalMs": 3684.0,
+      "hostIntervalMinusGuestDurationMs": -1.0,
+      "qemuTelemetryChunksDuringRpc": 0,
+      "checkOrdinalWithinPhase": 2
+    }
+  ],
+  "writeRpcs": [
+    {
+      "start": {
+        "sourceLine": 400,
+        "firstSequence": 50055,
+        "lastSequence": 50152,
+        "firstStreamLine": 364,
+        "lastStreamLine": 364,
+        "firstHostReceivedAt": "2026-11-20T04:56:20.827Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:20.827Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:29.392875 rpc_start method=\"/openfga.v1.OpenFGAService/Write\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:29.392875",
+        "kind": "rpc_start",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Write"
+        }
+      },
+      "end": {
+        "sourceLine": 401,
+        "firstSequence": 50153,
+        "lastSequence": 50316,
+        "firstStreamLine": 365,
+        "lastStreamLine": 365,
+        "firstHostReceivedAt": "2026-11-20T04:56:22.422Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:22.422Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:30.981135 rpc_end method=\"/openfga.v1.OpenFGAService/Write\" status=\"OK\" duration_ms=1588 context_state=\"none\" error_kind=\"none\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:30.981135",
+        "kind": "rpc_end",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Write",
+          "status": "OK",
+          "duration_ms": 1588,
+          "context_state": "none",
+          "error_kind": "none"
+        }
+      },
+      "association": "unique non-overlapping start/end",
+      "phase": "application_startup",
+      "method": "/openfga.v1.OpenFGAService/Write",
+      "status": "OK",
+      "guestDurationMs": 1588,
+      "http": {
+        "start": {
+          "sourceLine": 399,
+          "firstSequence": 49916,
+          "lastSequence": 50054,
+          "firstStreamLine": 363,
+          "lastStreamLine": 363,
+          "firstHostReceivedAt": "2026-11-20T04:56:20.706Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:20.706Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:29.270129 http_start method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/write\" content_length=3419",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:29.270129",
+          "kind": "http_start",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/write",
+            "content_length": 3419
+          }
+        },
+        "end": {
+          "sourceLine": 402,
+          "firstSequence": 50317,
+          "lastSequence": 50490,
+          "firstStreamLine": 366,
+          "lastStreamLine": 366,
+          "firstHostReceivedAt": "2026-11-20T04:56:22.450Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:22.450Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:31.012470 http_end method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/write\" content_length=3419 duration_ms=1742 context_error=<nil>",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:31.012470",
+          "kind": "http_end",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/write",
+            "content_length": 3419,
+            "duration_ms": 1742,
+            "context_error": "<nil>"
+          }
+        },
+        "association": "unique non-overlapping start/end",
+        "guestDurationMs": 1742,
+        "hostReceiptIntervalMs": 1744.0
+      },
+      "hostRpcReceiptIntervalMs": 1595.0,
+      "hostIntervalMinusGuestDurationMs": 7.0,
+      "qemuTelemetryChunksDuringRpc": 0
+    }
+  ],
+  "rpcFailures": [
+    {
+      "start": {
+        "sourceLine": 412,
+        "firstSequence": 51766,
+        "lastSequence": 51863,
+        "firstStreamLine": 376,
+        "lastStreamLine": 376,
+        "firstHostReceivedAt": "2026-11-20T04:56:25.813Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:25.813Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:34.373115 rpc_start method=\"/openfga.v1.OpenFGAService/Check\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:34.373115",
+        "kind": "rpc_start",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check"
+        }
+      },
+      "end": {
+        "sourceLine": 413,
+        "firstSequence": 51864,
+        "lastSequence": 52040,
+        "firstStreamLine": 377,
+        "lastStreamLine": 377,
+        "firstHostReceivedAt": "2026-11-20T04:56:29.497Z",
+        "lastHostReceivedAt": "2026-11-20T04:56:29.497Z",
+        "text": "[browser-openfga] 2026/11/20 04:55:38.058430 rpc_end method=\"/openfga.v1.OpenFGAService/Check\" status=\"Code(4004)\" duration_ms=3685 context_state=\"deadline\" error_kind=\"other\"",
+        "phase": "application_startup",
+        "guestPrintedAt": "2026/11/20 04:55:38.058430",
+        "kind": "rpc_end",
+        "fields": {
+          "method": "/openfga.v1.OpenFGAService/Check",
+          "status": "Code(4004)",
+          "duration_ms": 3685,
+          "context_state": "deadline",
+          "error_kind": "other"
+        }
+      },
+      "association": "unique non-overlapping start/end",
+      "phase": "application_startup",
+      "method": "/openfga.v1.OpenFGAService/Check",
+      "status": "Code(4004)",
+      "guestDurationMs": 3685,
+      "http": {
+        "start": {
+          "sourceLine": 411,
+          "firstSequence": 51628,
+          "lastSequence": 51765,
+          "firstStreamLine": 375,
+          "lastStreamLine": 375,
+          "firstHostReceivedAt": "2026-11-20T04:56:25.731Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:25.731Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:34.291920 http_start method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=202",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:34.291920",
+          "kind": "http_start",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 202
+          }
+        },
+        "end": {
+          "sourceLine": 414,
+          "firstSequence": 52041,
+          "lastSequence": 52213,
+          "firstStreamLine": 378,
+          "lastStreamLine": 378,
+          "firstHostReceivedAt": "2026-11-20T04:56:29.746Z",
+          "lastHostReceivedAt": "2026-11-20T04:56:29.746Z",
+          "text": "[browser-openfga] 2026/11/20 04:55:38.304935 http_end method=\"POST\" path=\"/stores/01M7VMT5JP239CGHYGS7953G6T/check\" content_length=202 duration_ms=4013 context_error=<nil>",
+          "phase": "application_startup",
+          "guestPrintedAt": "2026/11/20 04:55:38.304935",
+          "kind": "http_end",
+          "fields": {
+            "method": "POST",
+            "path": "/stores/01M7VMT5JP239CGHYGS7953G6T/check",
+            "content_length": 202,
+            "duration_ms": 4013,
+            "context_error": "<nil>"
+          }
+        },
+        "association": "unique non-overlapping start/end",
+        "guestDurationMs": 4013,
+        "hostReceiptIntervalMs": 4015.0
+      },
+      "hostRpcReceiptIntervalMs": 3684.0,
+      "hostIntervalMinusGuestDurationMs": -1.0,
+      "qemuTelemetryChunksDuringRpc": 0,
+      "checkOrdinalWithinPhase": 2
+    }
+  ],
+  "unfinishedRpcStarts": [],
+  "unfinishedHttpStarts": [],
+  "rpcAssociationAmbiguities": 0,
+  "httpAssociationAmbiguities": 0,
+  "nonRpcServiceEvents": [
+    {
+      "sourceLine": 321,
+      "firstSequence": 24415,
+      "lastSequence": 24597,
+      "firstStreamLine": 253,
+      "lastStreamLine": 253,
+      "firstHostReceivedAt": "2026-11-20T04:53:40.509Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:40.509Z",
+      "text": "[browser-openfga] 2026/11/20 04:52:49.029089 warmup_start model_sha256=a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d model_bytes=52709 cycles=1 timeout_seconds=60",
+      "phase": "service_startup",
+      "guestPrintedAt": "2026/11/20 04:52:49.029089",
+      "kind": "warmup_start",
+      "fields": {
+        "model_sha256": "a894f61fb40563467d0a16409981acb14224c619073f39c42dca233609a78e6d",
+        "model_bytes": 52709,
+        "cycles": 1,
+        "timeout_seconds": 60
+      }
+    },
+    {
+      "sourceLine": 322,
+      "firstSequence": 24598,
+      "lastSequence": 24821,
+      "firstStreamLine": 254,
+      "lastStreamLine": 254,
+      "firstHostReceivedAt": "2026-11-20T04:53:51.637Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:51.637Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:00.195215 warmup_cycle cycle=1 completed=true current_stage=complete failed=false json_decode_ms=2166 protobuf_ms=936 generated_validation_ms=225 typesystem_ms=5999 response_codec_ms=1657",
+      "phase": "service_startup",
+      "guestPrintedAt": "2026/11/20 04:53:00.195215",
+      "kind": "warmup_cycle",
+      "fields": {
+        "cycle": 1,
+        "completed": true,
+        "current_stage": "complete",
+        "failed": false,
+        "json_decode_ms": 2166,
+        "protobuf_ms": 936,
+        "generated_validation_ms": 225,
+        "typesystem_ms": 5999,
+        "response_codec_ms": 1657
+      }
+    },
+    {
+      "sourceLine": 323,
+      "firstSequence": 24822,
+      "lastSequence": 24909,
+      "firstStreamLine": 254,
+      "lastStreamLine": 255,
+      "firstHostReceivedAt": "2026-11-20T04:53:51.637Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:51.655Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:00.198369 warmup_end duration_ms=11174 failed=false",
+      "phase": "service_startup",
+      "guestPrintedAt": "2026/11/20 04:53:00.198369",
+      "kind": "warmup_end",
+      "fields": {
+        "duration_ms": 11174,
+        "failed": false
+      }
+    },
+    {
+      "sourceLine": 326,
+      "firstSequence": 25084,
+      "lastSequence": 25164,
+      "firstStreamLine": 258,
+      "lastStreamLine": 258,
+      "firstHostReceivedAt": "2026-11-20T04:53:53.073Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:53.073Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:01.638145 grpc_dial_start timeout_seconds=60",
+      "phase": "service_startup",
+      "guestPrintedAt": "2026/11/20 04:53:01.638145",
+      "kind": "grpc_dial_start",
+      "fields": {
+        "timeout_seconds": 60
+      }
+    },
+    {
+      "sourceLine": 327,
+      "firstSequence": 25165,
+      "lastSequence": 25273,
+      "firstStreamLine": 259,
+      "lastStreamLine": 259,
+      "firstHostReceivedAt": "2026-11-20T04:53:53.257Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:53.257Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:01.821535 grpc_dial_end duration_ms=183 failed=false context_error=<nil>",
+      "phase": "service_startup",
+      "guestPrintedAt": "2026/11/20 04:53:01.821535",
+      "kind": "grpc_dial_end",
+      "fields": {
+        "duration_ms": 183,
+        "failed": false,
+        "context_error": "<nil>"
+      }
+    },
+    {
+      "sourceLine": 341,
+      "firstSequence": 26905,
+      "lastSequence": 27019,
+      "firstStreamLine": 272,
+      "lastStreamLine": 272,
+      "firstHostReceivedAt": "2026-11-20T04:53:59.083Z",
+      "lastHostReceivedAt": "2026-11-20T04:53:59.083Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:07.649015 model_decode cache_hit=true bytes=52708 duration_ms=580 failed=false",
+      "phase": "bootstrap",
+      "guestPrintedAt": "2026/11/20 04:53:07.649015",
+      "kind": "model_decode",
+      "fields": {
+        "cache_hit": true,
+        "bytes": 52708,
+        "duration_ms": 580,
+        "failed": false
+      }
+    },
+    {
+      "sourceLine": 352,
+      "firstSequence": 28538,
+      "lastSequence": 28672,
+      "firstStreamLine": 283,
+      "lastStreamLine": 283,
+      "firstHostReceivedAt": "2026-11-20T04:54:05.005Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:05.005Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:13.566875 model_encode cache_hit=false cache_stored=true bytes=81691 duration_ms=2525 failed=false",
+      "phase": "bootstrap",
+      "guestPrintedAt": "2026/11/20 04:53:13.566875",
+      "kind": "model_encode",
+      "fields": {
+        "cache_hit": false,
+        "cache_stored": true,
+        "bytes": 81691,
+        "duration_ms": 2525,
+        "failed": false
+      }
+    },
+    {
+      "sourceLine": 376,
+      "firstSequence": 31802,
+      "lastSequence": 31935,
+      "firstStreamLine": 306,
+      "lastStreamLine": 306,
+      "firstHostReceivedAt": "2026-11-20T04:54:15.158Z",
+      "lastHostReceivedAt": "2026-11-20T04:54:15.158Z",
+      "text": "[browser-openfga] 2026/11/20 04:53:23.718615 model_encode cache_hit=true cache_stored=false bytes=81691 duration_ms=464 failed=false",
+      "phase": "application_startup",
+      "guestPrintedAt": "2026/11/20 04:53:23.718615",
+      "kind": "model_encode",
+      "fields": {
+        "cache_hit": true,
+        "cache_stored": false,
+        "bytes": 81691,
+        "duration_ms": 464,
+        "failed": false
+      }
+    },
+    {
+      "sourceLine": 389,
+      "firstSequence": 48441,
+      "lastSequence": 48574,
+      "firstStreamLine": 353,
+      "lastStreamLine": 353,
+      "firstHostReceivedAt": "2026-11-20T04:56:17.542Z",
+      "lastHostReceivedAt": "2026-11-20T04:56:17.542Z",
+      "text": "[browser-openfga] 2026/11/20 04:55:26.095460 model_encode cache_hit=true cache_stored=false bytes=81691 duration_ms=433 failed=false",
+      "phase": "application_startup",
+      "guestPrintedAt": "2026/11/20 04:55:26.095460",
+      "kind": "model_encode",
+      "fields": {
+        "cache_hit": true,
+        "cache_stored": false,
+        "bytes": 81691,
+        "duration_ms": 433,
+        "failed": false
+      }
+    }
+  ],
+  "firstFailureTimingContext": {
+    "method": "/openfga.v1.OpenFGAService/Check",
+    "phase": "application_startup",
+    "checkOrdinalWithinPhase": 2,
+    "lastQemuTelemetryBeforeRpcStart": {
+      "sequence": 45038,
+      "streamLine": 342,
+      "hostReceivedAt": "2026-11-20T04:55:14.131Z",
+      "bytes": 314,
+      "value": {
+        "event": "registered",
+        "phase": "add_function",
+        "core_id": 1,
+        "wasm_size": 1095,
+        "live_limit": 15000,
+        "attempted_total": 49152,
+        "module_created_total": 49152,
+        "instance_created_total": 49152,
+        "registered_total": 49152,
+        "detached_total": 47104,
+        "gc_total": 44032,
+        "encoded_bytes_total": 45601330,
+        "encoded_bytes_max": 9846
+      }
+    },
+    "lastTelemetryAgeAtRpcStartMs": 71682.0,
+    "qemuTelemetryChunksDuringRpc": 0
+  },
+  "hostMinusGuestPrintedTimestampOffsetSeconds": {
+    "min": 51.429546,
+    "median": 51.43743,
+    "max": 51.45561
+  },
+  "qemuTelemetry": {
+    "originalEventCount": 101,
+    "eventKinds": {
+      "registered": 101
+    },
+    "lastOriginalPerCore": {
+      "0": {
+        "sequence": 45037,
+        "streamLine": 342,
+        "hostReceivedAt": "2026-11-20T04:55:14.131Z",
+        "bytes": 315,
+        "value": {
+          "event": "registered",
+          "phase": "add_function",
+          "core_id": 0,
+          "wasm_size": 1044,
+          "live_limit": 15000,
+          "attempted_total": 54272,
+          "module_created_total": 54272,
+          "instance_created_total": 54272,
+          "registered_total": 54272,
+          "detached_total": 52224,
+          "gc_total": 45056,
+          "encoded_bytes_total": 50333705,
+          "encoded_bytes_max": 17480
+        }
+      },
+      "1": {
+        "sequence": 45038,
+        "streamLine": 342,
+        "hostReceivedAt": "2026-11-20T04:55:14.131Z",
+        "bytes": 314,
+        "value": {
+          "event": "registered",
+          "phase": "add_function",
+          "core_id": 1,
+          "wasm_size": 1095,
+          "live_limit": 15000,
+          "attempted_total": 49152,
+          "module_created_total": 49152,
+          "instance_created_total": 49152,
+          "registered_total": 49152,
+          "detached_total": 47104,
+          "gc_total": 44032,
+          "encoded_bytes_total": 45601330,
+          "encoded_bytes_max": 9846
+        }
+      }
+    }
+  },
+  "largestOriginalSourceReceiptGaps": [
+    {
+      "milliseconds": 95123.0,
+      "from": {
+        "streamLine": 184,
+        "firstSequence": 22352,
+        "hostReceivedAt": "2026-11-20T04:50:02.057Z"
+      },
+      "to": {
+        "streamLine": 185,
+        "firstSequence": 22483,
+        "hostReceivedAt": "2026-11-20T04:51:37.180Z"
+      }
+    },
+    {
+      "milliseconds": 60972.0,
+      "from": {
+        "streamLine": 342,
+        "firstSequence": 45037,
+        "hostReceivedAt": "2026-11-20T04:55:14.131Z"
+      },
+      "to": {
+        "streamLine": 343,
+        "firstSequence": 45039,
+        "hostReceivedAt": "2026-11-20T04:56:15.103Z"
+      }
+    },
+    {
+      "milliseconds": 57625.0,
+      "from": {
+        "streamLine": 208,
+        "firstSequence": 22512,
+        "hostReceivedAt": "2026-11-20T04:51:38.529Z"
+      },
+      "to": {
+        "streamLine": 209,
+        "firstSequence": 22514,
+        "hostReceivedAt": "2026-11-20T04:52:36.154Z"
+      }
+    },
+    {
+      "milliseconds": 43189.0,
+      "from": {
+        "streamLine": 331,
+        "firstSequence": 44821,
+        "hostReceivedAt": "2026-11-20T04:54:29.972Z"
+      },
+      "to": {
+        "streamLine": 332,
+        "firstSequence": 45025,
+        "hostReceivedAt": "2026-11-20T04:55:13.161Z"
+      }
+    },
+    {
+      "milliseconds": 15633.0,
+      "from": {
+        "streamLine": 219,
+        "firstSequence": 22981,
+        "hostReceivedAt": "2026-11-20T04:52:43.792Z"
+      },
+      "to": {
+        "streamLine": 220,
+        "firstSequence": 23125,
+        "hostReceivedAt": "2026-11-20T04:52:59.425Z"
+      }
+    },
+    {
+      "milliseconds": 12477.0,
+      "from": {
+        "streamLine": 221,
+        "firstSequence": 23272,
+        "hostReceivedAt": "2026-11-20T04:52:59.447Z"
+      },
+      "to": {
+        "streamLine": 222,
+        "firstSequence": 23417,
+        "hostReceivedAt": "2026-11-20T04:53:11.924Z"
+      }
+    },
+    {
+      "milliseconds": 11993.0,
+      "from": {
+        "streamLine": 223,
+        "firstSequence": 23626,
+        "hostReceivedAt": "2026-11-20T04:53:11.956Z"
+      },
+      "to": {
+        "streamLine": 224,
+        "firstSequence": 23769,
+        "hostReceivedAt": "2026-11-20T04:53:23.949Z"
+      }
+    },
+    {
+      "milliseconds": 11128.0,
+      "from": {
+        "streamLine": 253,
+        "firstSequence": 24415,
+        "hostReceivedAt": "2026-11-20T04:53:40.509Z"
+      },
+      "to": {
+        "streamLine": 254,
+        "firstSequence": 24598,
+        "hostReceivedAt": "2026-11-20T04:53:51.637Z"
+      }
+    },
+    {
+      "milliseconds": 10039.0,
+      "from": {
+        "streamLine": 252,
+        "firstSequence": 24271,
+        "hostReceivedAt": "2026-11-20T04:53:30.470Z"
+      },
+      "to": {
+        "streamLine": 253,
+        "firstSequence": 24415,
+        "hostReceivedAt": "2026-11-20T04:53:40.509Z"
+      }
+    },
+    {
+      "milliseconds": 9728.0,
+      "from": {
+        "streamLine": 307,
+        "firstSequence": 31936,
+        "hostReceivedAt": "2026-11-20T04:54:15.196Z"
+      },
+      "to": {
+        "streamLine": 308,
+        "firstSequence": 32148,
+        "hostReceivedAt": "2026-11-20T04:54:24.924Z"
+      }
+    }
+  ],
+  "interpretationLimits": [
+    "Transport results stop before the first Guest diagnostic replay; replayed tails are never new operations.",
+    "Only exact /openfga.v1.OpenFGAService/Check RPCs count as authorization Checks; health Checks and other methods remain separate.",
+    "Phase and ordinal come from original STACK/LAB markers and observed request order; no subject/object/relation identity is inferred.",
+    "Successful authorization results are not printed by these metadata-only traces; RPC OK is not proof of an allow decision.",
+    "Host times describe batch receipt, not guest execution time. Clock offsets are not transport latency, and matching intervals do not distinguish compute from scheduling pauses.",
+    "No request ID is logged: starts/ends and containing HTTP spans are associated only when uniquely non-overlapping.",
+    "QEMU registered snapshots occur every 1024 registrations; they are not a heartbeat. Their absence and stale GC counters do not establish a pause, budget saturation, or root cause.",
+    "This offline reader verifies retained evidence, not a rerun or a successful production gate."
+  ]
+}

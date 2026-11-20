@@ -1,0 +1,298 @@
+{
+  "label": "native",
+  "run": 43500949883,
+  "head": "bb8284f17e78667c6ea46a2de02de5dc3f3507af",
+  "artifact": 14075336387,
+  "artifact_name": "browser-openfga10-paths-native-evidence",
+  "archive": {
+    "bytes": 24005932,
+    "sha256": "7049ffbd41ba8a33f7f300fcf6c65ab3741145ba08a087b0c0e607b615203526"
+  },
+  "members": {
+    "browser-openfga/LICENSE": {
+      "bytes": 10176,
+      "sha256": "1c46d7b2bed94d457d745f28cabeb31f8d6c81dd9035bc5d24039989ee1e1bff"
+    },
+    "browser-openfga/SOURCE.txt": {
+      "bytes": 5607,
+      "sha256": "70614709df3cfb32153dd91defa42ba9f76ec56a0a6f5cf3b05e8f1c566e04b3"
+    },
+    "browser-openfga/browser_http_dial.go": {
+      "bytes": 3691,
+      "sha256": "485d1452148f325e553ad82f79417ec27b46be24217ece9e149ee2f8452ad954"
+    },
+    "browser-openfga/browser_http_warmup.go": {
+      "bytes": 10052,
+      "sha256": "5be5cca1bacc47f3b70b24de22eb513461efd96c71ab8f509b2fc20cbefce7df"
+    },
+    "browser-openfga/browser_model_codec.go": {
+      "bytes": 6939,
+      "sha256": "eb70a26523c3e8020247403e9a2dd2187421fa3a72612112715425395cc4eae7"
+    },
+    "browser-openfga/browser_model_codec_integration_test.go": {
+      "bytes": 24824,
+      "sha256": "d5f9d2a30c9bcc29fa702a8e36b0aeff41e96731130dcf2ecf1b932f5c355a1f"
+    },
+    "browser-openfga/browser_model_codec_test.go": {
+      "bytes": 26316,
+      "sha256": "f4e6b034bcc81af3dac07e2529906c6714b1531c6e6ff27b9a89f3821c01ab56"
+    },
+    "browser-openfga/browser_model_validation.go": {
+      "bytes": 10629,
+      "sha256": "c960482baaced488a1afa206fefdbbee37ea90b8aadc40a1daeea955ad2a5584"
+    },
+    "browser-openfga/browser_model_validation_test.go": {
+      "bytes": 43697,
+      "sha256": "77a7b20efc52d8b179ffffc7e913df7009eeb962ca61bb5d15a2043bdf935bec"
+    },
+    "browser-openfga/browser_resolver_transfer_integration_test.go": {
+      "bytes": 6680,
+      "sha256": "23f160617087a505cf3736e7b092171b37e134f32585dee28e8ee9c2def45203"
+    },
+    "browser-openfga/browser_write_typesystem_test.go": {
+      "bytes": 14430,
+      "sha256": "af0392bfbd9e31ffdafae4a1a9c703d6d0b9e11599da044287d88bda3ae9a2ce"
+    },
+    "browser-openfga/build.json": {
+      "bytes": 3012,
+      "sha256": "0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754"
+    },
+    "browser-openfga/dial-tests.log": {
+      "bytes": 32363,
+      "sha256": "ec1705301876dd79370202c3b3de1b1c5d8bd69e9402972a1c9c718560913d99"
+    },
+    "browser-openfga/model-reuse-race-tests.log": {
+      "bytes": 38987,
+      "sha256": "c928d27f0babcd9ecf3705ef69276b618d6ca4e72bc1161eaa0504fc2d7808f5"
+    },
+    "browser-openfga/openfga": {
+      "bytes": 63074488,
+      "sha256": "d779834ae225c95502b957efc96a6153937bb2f5f2a1cef9f134847ae8c0d02b"
+    },
+    "browser-openfga/model-validation-tests.log": {
+      "bytes": 66741,
+      "sha256": "40e3bd5a08dc1adf05f58a89a944e15651c53bbfbb6937eea177e03c294fb535"
+    },
+    "browser-openfga/startup-dial.patch": {
+      "bytes": 6609,
+      "sha256": "f699ff2d2cc55c2888ae3bc1e474990097fe21d7f4491f2ee8e23727f3c78ced"
+    },
+    "browser-openfga/write-typesystem-tests.log": {
+      "bytes": 50130,
+      "sha256": "a6fa9531f46f227448addc2d8c15a030ef60917728b35e2251ac1b46f32dee40"
+    },
+    "openfga10-verifier-input.json": {
+      "bytes": 5765,
+      "sha256": "a06e2cce43ab153a4814db609d06f6ed9d5a08bfc265862a0ed24ed1edd5d05a"
+    },
+    "openfga10-build-verification.json": {
+      "bytes": 3635,
+      "sha256": "add1548e37ad9657d9447201a98b8ecb4775ac487af77c5eef77b4256a95145c"
+    },
+    "browser-openfga-build.log": {
+      "bytes": 218786,
+      "sha256": "a863786e8d0f0e736a7d75d8bb766f29c0bdaf71118d2c551a7d2bbf30a3da60"
+    },
+    "openfga10-native-startup-timing.json": {
+      "bytes": 1188,
+      "sha256": "428d9b07258ae7e1e9171058cd1b6c6d1b27d33481deef84bd9bcd13b2f785f7"
+    },
+    "browser-bootstrap-proof/native-result.json": {
+      "bytes": 3145,
+      "sha256": "d37029e3213995ff9d8fc58eb08adf0e3daeb30a0c0da5855231be7c16991646"
+    },
+    "browser-bootstrap-proof/openfga-build.json": {
+      "bytes": 3012,
+      "sha256": "0f1e17aeb673f7531bcd4586c12b5b8685964ff5b85bd0647d2775c5cb4f9754"
+    }
+  },
+  "native_run_attempt": 1,
+  "native_job": {
+    "id": 132146260409,
+    "run_id": 43500949883,
+    "head_sha": "bb8284f17e78667c6ea46a2de02de5dc3f3507af",
+    "name": "native",
+    "status": "completed",
+    "conclusion": "success",
+    "started_at": "2026-11-13T20:22:29Z",
+    "completed_at": "2026-11-13T20:34:45Z",
+    "steps": [
+      {
+        "name": "Set up job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 1,
+        "started_at": "2026-11-13T20:22:30Z",
+        "completed_at": "2026-11-13T20:22:30Z"
+      },
+      {
+        "name": "Require a reviewed immutable source before checkout or build",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 2,
+        "started_at": "2026-11-13T20:22:30Z",
+        "completed_at": "2026-11-13T20:22:31Z"
+      },
+      {
+        "name": "Check out the exact combined versioned producer",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 3,
+        "started_at": "2026-11-13T20:22:31Z",
+        "completed_at": "2026-11-13T20:22:32Z"
+      },
+      {
+        "name": "Check out the fixed Rust source",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 4,
+        "started_at": "2026-11-13T20:22:32Z",
+        "completed_at": "2026-11-13T20:22:33Z"
+      },
+      {
+        "name": "Check out the exact reviewed entrypoint fixture",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 5,
+        "started_at": "2026-11-13T20:22:33Z",
+        "completed_at": "2026-11-13T20:22:34Z"
+      },
+      {
+        "name": "Check out the exact runtime source only to bind all OpenFGA inputs",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 6,
+        "started_at": "2026-11-13T20:22:34Z",
+        "completed_at": "2026-11-13T20:22:35Z"
+      },
+      {
+        "name": "Check out pinned upstream only to verify preimages and module hashes",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 7,
+        "started_at": "2026-11-13T20:22:35Z",
+        "completed_at": "2026-11-13T20:22:36Z"
+      },
+      {
+        "name": "Check source identity, repository contract and both producer scripts",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 8,
+        "started_at": "2026-11-13T20:22:36Z",
+        "completed_at": "2026-11-13T20:22:37Z"
+      },
+      {
+        "name": "Build and regression-test the fresh OpenFGA .10 producer",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 9,
+        "started_at": "2026-11-13T20:22:37Z",
+        "completed_at": "2026-11-13T20:31:30Z"
+      },
+      {
+        "name": "Bind the fresh binary to exact inputs and actual regular and race tests",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 10,
+        "started_at": "2026-11-13T20:31:30Z",
+        "completed_at": "2026-11-13T20:31:30Z"
+      },
+      {
+        "name": "Execute the versioned native bootstrap producer with this exact OpenFGA output",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 11,
+        "started_at": "2026-11-13T20:31:30Z",
+        "completed_at": "2026-11-13T20:34:36Z"
+      },
+      {
+        "name": "Verify all four outputs and their real native OpenFGA provenance",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 12,
+        "started_at": "2026-11-13T20:34:36Z",
+        "completed_at": "2026-11-13T20:34:36Z"
+      },
+      {
+        "name": "Record actual native startup timing without a browser performance claim",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 13,
+        "started_at": "2026-11-13T20:34:36Z",
+        "completed_at": "2026-11-13T20:34:36Z"
+      },
+      {
+        "name": "Clean only proof containers owned by this run",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 14,
+        "started_at": "2026-11-13T20:34:36Z",
+        "completed_at": "2026-11-13T20:34:36Z"
+      },
+      {
+        "name": "Retain the four-file verified native bootstrap output",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 15,
+        "started_at": "2026-11-13T20:34:36Z",
+        "completed_at": "2026-11-13T20:34:38Z"
+      },
+      {
+        "name": "Retain full OpenFGA output and native evidence even on failure",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 16,
+        "started_at": "2026-11-13T20:34:38Z",
+        "completed_at": "2026-11-13T20:34:41Z"
+      },
+      {
+        "name": "Post Check out pinned upstream only to verify preimages and module hashes",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 28,
+        "started_at": "2026-11-13T20:34:41Z",
+        "completed_at": "2026-11-13T20:34:41Z"
+      },
+      {
+        "name": "Post Check out the exact runtime source only to bind all OpenFGA inputs",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 29,
+        "started_at": "2026-11-13T20:34:41Z",
+        "completed_at": "2026-11-13T20:34:41Z"
+      },
+      {
+        "name": "Post Check out the exact reviewed entrypoint fixture",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 30,
+        "started_at": "2026-11-13T20:34:41Z",
+        "completed_at": "2026-11-13T20:34:41Z"
+      },
+      {
+        "name": "Post Check out the fixed Rust source",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 31,
+        "started_at": "2026-11-13T20:34:41Z",
+        "completed_at": "2026-11-13T20:34:42Z"
+      },
+      {
+        "name": "Post Check out the exact combined versioned producer",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 32,
+        "started_at": "2026-11-13T20:34:42Z",
+        "completed_at": "2026-11-13T20:34:42Z"
+      },
+      {
+        "name": "Complete job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 33,
+        "started_at": "2026-11-13T20:34:42Z",
+        "completed_at": "2026-11-13T20:34:42Z"
+      }
+    ]
+  }
+}
